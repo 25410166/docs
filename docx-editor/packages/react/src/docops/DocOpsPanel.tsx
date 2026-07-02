@@ -5,14 +5,15 @@
 /**
  * DocOpsPanel — AI document assistant backed by the JSON DocOps IR.
  *
- * Phase 0: in-process Anthropic tool loop, user-supplied API key
- * (stored in localStorage). Proves the full LLM → tool → PM loop
- * with zero server or Rust work.
+ * Phase 0: in-process Anthropic tool loop, user-supplied API key.
+ * Phase 2: pluggable transport (DirectTransport / CollabTransport /
+ *           DesktopTransport) — the panel no longer calls Anthropic
+ *           directly; it delegates to whatever transport is passed in.
  *
- * Architecture: the panel sends messages to the Anthropic API with the
- * DOCOPS_CATALOG tools attached. When the model calls a tool, the call
- * is routed through DocsBridge which reads/writes the PM doc. The loop
- * continues until stop_reason = 'end_turn'.
+ * Architecture: the panel sends messages via the transport with the
+ * DOCOPS_CATALOG tools. When the model calls a tool, DocsBridge
+ * reads/writes the PM doc. The loop continues until stop_reason =
+ * 'end_turn'.
  */
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
@@ -20,21 +21,22 @@ import { RightDockPanel } from '../components/RightDockPanel';
 import { MaterialSymbol } from '../components/ui/Icons';
 import type { DocsBridge } from './bridge';
 import { DOCOPS_CATALOG } from '@casualoffice/docops';
+import { DirectTransport, type DocOpsTransport, type LlmCallPayload } from './transport';
 
-// ── Anthropic wire types ───────────────────────────────────────────────────
+// ── LLM wire types (messages-API shape) ───────────────────────────────────
 
-type AnthropicContentBlock =
+type LlmContentBlock =
   | { type: 'text'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: string };
 
-interface AnthropicMessage {
+interface LlmMessage {
   role: 'user' | 'assistant';
-  content: AnthropicContentBlock[] | string;
+  content: LlmContentBlock[] | string;
 }
 
-interface AnthropicResponse {
-  content: AnthropicContentBlock[];
+interface LlmResponse {
+  content: LlmContentBlock[];
   stop_reason: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence';
 }
 
@@ -223,19 +225,25 @@ const spinnerStyle: CSSProperties = {
 export interface DocOpsPanelProps {
   bridge: DocsBridge;
   onClose: () => void;
+  /** LLM transport — defaults to DirectTransport (browser fetch to Anthropic). */
+  transport?: DocOpsTransport;
 }
 
-export function DocOpsPanel({ bridge, onClose }: DocOpsPanelProps) {
+export function DocOpsPanel({ bridge, onClose, transport: transportProp }: DocOpsPanelProps) {
+  const transport = transportProp ?? new DirectTransport();
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem(API_KEY_STORAGE) ?? '');
   const [keyDraft, setKeyDraft] = useState('');
-  const [showKeySetup, setShowKeySetup] = useState(() => !localStorage.getItem(API_KEY_STORAGE));
+  // Show setup screen only for transports that require a key AND none is stored.
+  const [showKeySetup, setShowKeySetup] = useState(
+    () => transport.requiresApiKey && !localStorage.getItem(API_KEY_STORAGE)
+  );
 
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [busy, setBusy] = useState(false);
 
   // Anthropic conversation history (separate from display)
-  const historyRef = useRef<AnthropicMessage[]>([]);
+  const historyRef = useRef<LlmMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -272,7 +280,9 @@ export function DocOpsPanel({ bridge, onClose }: DocOpsPanelProps) {
 
   const send = useCallback(async () => {
     const text = inputValue.trim();
-    if (!text || busy || !apiKey) return;
+    if (!text || busy) return;
+    // Block send if key is required and missing.
+    if (transport.requiresApiKey && !apiKey) return;
 
     setInputValue('');
     setBusy(true);
@@ -287,47 +297,41 @@ export function DocOpsPanel({ bridge, onClose }: DocOpsPanelProps) {
       let messages = [...historyRef.current];
 
       for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: MODEL,
-            max_tokens: 2048,
-            system: SYSTEM_PROMPT,
-            tools: DOCOPS_CATALOG,
-            messages,
-          }),
-          signal: ctrl.signal,
-        });
+        if (ctrl.signal.aborted) break;
 
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as {
-            error?: { message?: string };
-          } | null;
-          throw new Error(body?.error?.message ?? `API error ${res.status}`);
+        const payload: LlmCallPayload = {
+          model: MODEL,
+          max_tokens: 2048,
+          system: SYSTEM_PROMPT,
+          messages,
+          tools: DOCOPS_CATALOG,
+          apiKey: apiKey || undefined,
+        };
+
+        const { data, status } = await transport.call(payload);
+
+        if (status !== 200) {
+          const errMsg = (data as { error?: { message?: string } })?.error?.message;
+          throw new Error(errMsg ?? `API error ${status}`);
         }
 
-        const data = (await res.json()) as AnthropicResponse;
+        const response = data as LlmResponse;
 
         // Add full assistant response to history
-        messages = [...messages, { role: 'assistant', content: data.content }];
+        messages = [...messages, { role: 'assistant', content: response.content }];
 
         // Extract and display any text blocks
-        for (const block of data.content) {
+        for (const block of response.content) {
           if (block.type === 'text' && block.text.trim()) {
             appendDisplay({ kind: 'assistant', text: block.text });
           }
         }
 
-        if (data.stop_reason !== 'tool_use') break;
+        if (response.stop_reason !== 'tool_use') break;
 
         // Process tool calls
-        const toolResults: AnthropicContentBlock[] = [];
-        for (const block of data.content) {
+        const toolResults: LlmContentBlock[] = [];
+        for (const block of response.content) {
           if (block.type !== 'tool_use') continue;
 
           appendDisplay({ kind: 'tool_step', toolName: block.name, status: 'running' });
@@ -366,7 +370,7 @@ export function DocOpsPanel({ bridge, onClose }: DocOpsPanelProps) {
       setBusy(false);
       abortRef.current = null;
     }
-  }, [inputValue, busy, apiKey, bridge, appendDisplay, updateLastToolStep]);
+  }, [inputValue, busy, apiKey, transport, bridge, appendDisplay, updateLastToolStep]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();

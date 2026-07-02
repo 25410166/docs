@@ -51,6 +51,7 @@ import {
 } from 'react';
 
 import { DocxEditor, type DocxEditorProps, type DocxEditorRef } from './DocxEditor';
+import { createDocOpsTransport } from '../docops';
 import { createEmptyDocument } from '@eigenpal/docx-core/utils';
 import type { Document } from '@eigenpal/docx-core/types/document';
 import type { Comment } from '@eigenpal/docx-core/types/content';
@@ -327,6 +328,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
         onSave={onSave}
         onSelectionChange={onSelectionChange}
         onError={onError}
+        docopsTransport={createDocOpsTransport({ collabWsUrl: backendUrl })}
         {...docxEditorProps}
       />
     );

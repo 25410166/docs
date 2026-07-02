@@ -64,7 +64,13 @@ import { VoiceTypingIndicator } from './ui/VoiceTypingIndicator';
 import { UnifiedSidebar } from './UnifiedSidebar';
 import { AgentPanel } from './AgentPanel';
 import { PanelRail } from './PanelRail';
-import { DocOpsPanel, DocsBridge, isDocOpsEnabled, type DocsBridgeActions } from '../docops';
+import {
+  DocOpsPanel,
+  DocsBridge,
+  isDocOpsEnabled,
+  createDocOpsTransport,
+  type DocsBridgeActions,
+} from '../docops';
 import { AutosaveRestoreBanner } from './AutosaveRestoreBanner';
 import { writeAutosave, clearLegacyLocalStorageAutosave } from '../utils/autosave';
 import { restoreNativeBuildingBlocks } from '../utils/buildingBlocks';
@@ -783,6 +789,15 @@ export interface DocxEditorProps {
    * border` and GH #395.
    */
   wordCompat?: boolean;
+  /**
+   * DocOps AI transport. Controls how LLM calls are routed when the
+   * DocOps panel is enabled (`window.__casualFeatures__.docops`):
+   *   - Omit / `undefined` → auto-selected via `createDocOpsTransport`
+   *     (DesktopTransport when running in Tauri, DirectTransport otherwise)
+   *   - `CollabTransport` → proxy through the collab server's /api/ai/chat
+   *   - Any `DocOpsTransport` implementation
+   */
+  docopsTransport?: import('../docops/transport').DocOpsTransport;
 }
 
 /**
@@ -1667,6 +1682,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     i18n,
     agentPanel,
     wordCompat = false,
+    docopsTransport,
   },
   ref
 ) {
@@ -9757,6 +9773,7 @@ body { background: white; }
                     <DocOpsPanel
                       bridge={docsBridgeRef.current}
                       onClose={() => openRightPanel('none')}
+                      transport={docopsTransport ?? createDocOpsTransport()}
                     />
                   )}
 
