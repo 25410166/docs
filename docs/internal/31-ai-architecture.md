@@ -1,6 +1,6 @@
 # 31 — AI Architecture: JSON DocOps IR + MCP Tools (Docs & Sheets)
 
-**Date:** 2026-06-29 · **Status:** Phase 0 + Phase 1 + Phase 2 (collab WS) shipped; desktop Rust orchestrator pending · **Companion:** [32-ai-competitive-analysis.md](32-ai-competitive-analysis.md)
+**Date:** 2026-06-29 · **Status:** Phase 0 + Phase 1 + Phase 2 (collab WS) + Phase 3 partial (tracked-change tools + harmonize_styles + get_block) shipped; desktop Rust loop pending · **Companion:** [32-ai-competitive-analysis.md](32-ai-competitive-analysis.md)
 **Scope:** Casual Docs (this repo) + Casual Sheets, with server (collab) and desktop (Rust) execution.
 
 ---
@@ -217,8 +217,8 @@ stream assistant text + per-step progress to the chat UI
 
 - **Phase 0 — contract + skeleton.** ✅ `@casualoffice/docops` package (IR + tool catalog); bridge implementing 5 read tools (`get_outline`, `get_selection`, `get_doc_stats`, `list_styles`, `find_text`) + 2 write tools wrapping existing commands (`convert_range_to_table`, `insert_toc`); `DocOpsPanel` in-process orchestrator (Haiku, multi-turn loop); rail button behind `window.__casualFeatures__.docops` flag.
 - **Phase 1 — core mutations + suggestion mode.** ✅ 3 suggestion-mode write tools (`suggest_text_change`, `set_paragraph_style`, `add_comment`) wired through `DocsBridgeActions` → `DocxEditorRef`; system prompt updated for tracked-change UX.
-- **Phase 2 — topology.** ✅ `collab/src/ai.ts` — WebSocket endpoint `/api/ai`; server holds the full LLM tool loop; `tool_use` blocks routed back to originating client over WS; client executes via `DocsBridge` and returns `tool_result`. `CollabTransport` (WS-based, `drivesLoop=true`) in editor. Desktop Rust orchestrator pending.
-- **Phase 3 — generative + parity.** Composite/generative ops (resume, report-from-data, harmonize), agentic multi-step, and the Sheets catalog/bridge to parity.
+- **Phase 2 — topology.** ✅ `collab/src/ai.ts` — WebSocket endpoint `/api/ai`; server holds the full LLM tool loop; `tool_use` blocks routed back to originating client over WS; client executes via `DocsBridge` and returns `tool_result`. `CollabTransport` (WS-based, `drivesLoop=true`) in editor. Desktop generic LLM config (env vars) shipped; Rust loop-driving pending.
+- **Phase 3 — generative + parity.** Partial: `rewrite_selection`, `delete_paragraphs`, `insert_paragraph_after` (tracked-change write tools); `get_block` (read); `harmonize_styles` (bulk heading-remap + font unification, undoable). Pending: composite/generative ops (`create_document`, `insert_report_from_data`), agentic multi-step budgets, Sheets catalog/bridge.
 
 ---
 

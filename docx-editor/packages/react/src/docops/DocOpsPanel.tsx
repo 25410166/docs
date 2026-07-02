@@ -64,7 +64,7 @@ const SYSTEM_PROMPT = `You are DocOps, an AI document assistant embedded in Casu
 You help users read and edit their .docx documents using a structured tool catalog.
 
 Read tools (never mutate):
-  get_outline, get_selection, get_doc_stats, list_styles, find_text
+  get_outline, get_selection, get_doc_stats, list_styles, find_text, get_block
 
 Write tools — direct edits (immediately visible):
   convert_range_to_table — user must have the text selected first
@@ -77,6 +77,7 @@ Write tools — suggestion mode (user reviews in the sidebar):
   rewrite_selection — rewrites the current selection as a tracked change; always call get_selection first
   delete_paragraphs — marks paragraphs for deletion as tracked changes; pass paraIds from get_outline or find_text
   insert_paragraph_after — inserts a new paragraph after a block as a tracked change
+  harmonize_styles — bulk-correct heading levels and/or font inconsistencies; call list_styles first
 
 Guidelines:
 - Always read before you write. Call get_outline or get_doc_stats first on a fresh conversation.
@@ -675,6 +676,8 @@ const TOOL_LABELS: Record<string, string> = {
   rewrite_selection: 'Rewriting selection…',
   delete_paragraphs: 'Marking for deletion…',
   insert_paragraph_after: 'Inserting paragraph…',
+  get_block: 'Reading block…',
+  harmonize_styles: 'Harmonizing styles…',
 };
 
 export default DocOpsPanel;

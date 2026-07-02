@@ -947,6 +947,12 @@ export interface DocxEditorRef {
     styleId?: string;
     author: string;
   }) => boolean;
+  /** Apply bulk style corrections in one undoable transaction: remap heading levels and/or
+   * unify body-text font across the whole document. Returns null if the editor is not ready. */
+  harmonizeStyles: (options: {
+    headingRemap?: Record<string, string>;
+    unifyFont?: string;
+  }) => { changed: number; summary: string[] } | null;
 }
 
 /**
@@ -8158,6 +8164,78 @@ body { background: white; }
         view.dispatch(tr);
         setShowCommentsSidebar(true);
         return true;
+      },
+
+      harmonizeStyles: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return null;
+        const { schema } = view.state;
+
+        let tr = view.state.tr;
+        const summaryLines: string[] = [];
+        let headingChanges = 0;
+        let fontChanges = 0;
+
+        if (options.headingRemap && Object.keys(options.headingRemap).length > 0) {
+          view.state.doc.descendants((node, pos) => {
+            if (!node.isTextblock) return true;
+            const styleId = node.attrs.styleId as string | null;
+            if (!styleId) return true;
+            const newStyleId = options.headingRemap![styleId];
+            if (!newStyleId || newStyleId === styleId) return true;
+            tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, styleId: newStyleId });
+            headingChanges++;
+            return true;
+          });
+          if (headingChanges > 0) {
+            const remapStr = Object.entries(options.headingRemap)
+              .map(([a, b]) => `${a}→${b}`)
+              .join(', ');
+            summaryLines.push(`Remapped ${headingChanges} heading(s): ${remapStr}`);
+          }
+        }
+
+        if (options.unifyFont) {
+          const fontMarkType = schema.marks.font;
+          if (fontMarkType) {
+            view.state.doc.descendants((node, pos) => {
+              if (!node.isTextblock) return true;
+              const styleId = (node.attrs.styleId as string | null) ?? '';
+              if (/^[Hh]eading\d/.test(styleId)) return true;
+
+              let offset = 0;
+              node.forEach((child) => {
+                if (child.isText) {
+                  const hasWrongFont = child.marks.some(
+                    (m) => m.type === fontMarkType && m.attrs.fontFamily !== options.unifyFont
+                  );
+                  if (hasWrongFont) {
+                    const from = pos + 1 + offset;
+                    const to = from + child.nodeSize;
+                    tr = tr.addMark(
+                      from,
+                      to,
+                      fontMarkType.create({ fontFamily: options.unifyFont })
+                    );
+                    fontChanges++;
+                  }
+                }
+                offset += child.nodeSize;
+              });
+              return true;
+            });
+            if (fontChanges > 0) {
+              summaryLines.push(`Applied font "${options.unifyFont}" to ${fontChanges} run(s)`);
+            }
+          }
+        }
+
+        const changed = headingChanges + fontChanges;
+        if (changed === 0) {
+          return { changed: 0, summary: ['No changes needed — document already consistent.'] };
+        }
+        view.dispatch(tr);
+        return { changed, summary: summaryLines };
       },
     };
     // Expose the same handle to the onReady effect below,

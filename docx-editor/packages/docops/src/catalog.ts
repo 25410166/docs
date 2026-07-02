@@ -156,6 +156,51 @@ export const DOCOPS_CATALOG: DocOpsTool[] = [
       required: ['paraId', 'text'],
     },
   },
+  // ── Phase 3: composite tools ──────────────────────────────────────────────
+  {
+    name: 'get_block',
+    description:
+      'Return detailed information about a single paragraph block: full text, ' +
+      'per-run formatting (bold, italic, underline, font, size), and paragraph attrs ' +
+      '(styleId, alignment, outlineLevel). ' +
+      'Use when suggest_text_change needs an exact phrase and find_text snippets are truncated.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        blockId: {
+          type: 'string',
+          description: 'Stable block ID of the paragraph (from get_outline or find_text).',
+        },
+      },
+      required: ['blockId'],
+    },
+  },
+  {
+    name: 'harmonize_styles',
+    description:
+      'Apply bulk style corrections in one undoable edit. ' +
+      'Call list_styles first to identify inconsistencies, then call this with explicit targets. ' +
+      'headingRemap: map old heading styleId → new styleId to close non-sequential gaps ' +
+      '(e.g. {"Heading4":"Heading3"}). ' +
+      'unifyFont: font family to apply to all body-text runs that currently use a different font. ' +
+      'Changes are applied directly (not as tracked changes); the user can Undo the whole batch.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        headingRemap: {
+          type: 'object',
+          additionalProperties: { type: 'string' },
+          description:
+            'Map of old heading styleId to new. Example: {"Heading4":"Heading3"} to close a gap.',
+        },
+        unifyFont: {
+          type: 'string',
+          description:
+            'Font family to apply to all body-text runs that currently use a different font.',
+        },
+      },
+    },
+  },
   {
     name: 'rewrite_selection',
     description:

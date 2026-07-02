@@ -42,6 +42,10 @@ export interface DocsBridgeActions {
     styleId?: string;
     author: string;
   }): boolean;
+  harmonizeStyles(options: {
+    headingRemap?: Record<string, string>;
+    unifyFont?: string;
+  }): { changed: number; summary: string[] } | null;
 }
 
 export class DocsBridge {
@@ -72,6 +76,10 @@ export class DocsBridge {
         return this.setParagraphStyle(args);
       case 'add_comment':
         return this.addComment(args);
+      case 'get_block':
+        return this.getBlock(args);
+      case 'harmonize_styles':
+        return this.harmonizeStyles(args);
       case 'rewrite_selection':
         return this.rewriteSelection(args);
       case 'delete_paragraphs':
@@ -383,6 +391,117 @@ export class DocsBridge {
       };
     }
     return { ok: true, data: { commentId }, diffSummary: `Added comment to paragraph ${paraId}.` };
+  }
+
+  private getBlock(args: Record<string, unknown>): DocOpsResult {
+    const view = this.getView();
+    if (!view) return this.noView();
+
+    const blockId = String(args.blockId ?? '');
+    if (!blockId) {
+      return { ok: false, code: 'VALIDATION', message: 'blockId is required.', retryable: false };
+    }
+
+    type Run = {
+      text: string;
+      bold?: boolean;
+      italic?: boolean;
+      underline?: boolean;
+      fontFamily?: string;
+      fontSize?: number;
+    };
+    type BlockData = {
+      blockId: string;
+      type: string;
+      text: string;
+      attrs: Record<string, unknown>;
+      runs: Run[];
+    };
+
+    let found: BlockData | null = null;
+
+    view.state.doc.descendants((node) => {
+      if (found) return false;
+      if (!node.isTextblock || node.attrs?.paraId !== blockId) return true;
+
+      let text = '';
+      const runs: Run[] = [];
+
+      node.forEach((child) => {
+        if (!child.isText) return;
+        const t = child.text ?? '';
+        text += t;
+        const run: Run = { text: t };
+        for (const mark of child.marks) {
+          if (mark.type.name === 'bold') run.bold = true;
+          if (mark.type.name === 'italic') run.italic = true;
+          if (mark.type.name === 'underline') run.underline = true;
+          if (mark.type.name === 'font') run.fontFamily = mark.attrs.fontFamily as string;
+          if (mark.type.name === 'fontSize') run.fontSize = mark.attrs.fontSize as number;
+        }
+        runs.push(run);
+      });
+
+      found = {
+        blockId,
+        type: node.type.name,
+        text,
+        attrs: {
+          styleId: (node.attrs.styleId as string | null) ?? null,
+          outlineLevel: (node.attrs.outlineLevel as number | null) ?? null,
+          alignment: (node.attrs.alignment as string | null) ?? null,
+        },
+        runs,
+      };
+      return false;
+    });
+
+    if (!found) {
+      return {
+        ok: false,
+        code: 'LOCATOR_NOT_FOUND',
+        message: `Block ${blockId} not found.`,
+        retryable: false,
+      };
+    }
+    return { ok: true, data: found };
+  }
+
+  private harmonizeStyles(args: Record<string, unknown>): DocOpsResult {
+    const actions = this.getActions();
+    if (!actions) return this.noActions();
+
+    const headingRemap =
+      args.headingRemap &&
+      typeof args.headingRemap === 'object' &&
+      !Array.isArray(args.headingRemap)
+        ? (args.headingRemap as Record<string, string>)
+        : undefined;
+    const unifyFont = args.unifyFont != null ? String(args.unifyFont) : undefined;
+
+    if (!headingRemap && !unifyFont) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message: 'Provide at least one of: headingRemap, unifyFont.',
+        retryable: false,
+      };
+    }
+
+    const result = actions.harmonizeStyles({ headingRemap, unifyFont });
+    if (!result) {
+      return {
+        ok: false,
+        code: 'LOCATOR_NOT_FOUND',
+        message: 'Could not apply harmonization — editor is not ready.',
+        retryable: true,
+      };
+    }
+    return {
+      ok: true,
+      data: result,
+      diffSummary: result.summary.join('; ') || 'No changes needed.',
+    };
   }
 
   private rewriteSelection(args: Record<string, unknown>): DocOpsResult {
