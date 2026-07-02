@@ -230,15 +230,22 @@ export class CollabTransport implements DocOpsTransport {
 // ── DesktopTransport ───────────────────────────────────────────────────────
 
 /**
- * Routes LLM calls through a Tauri command (`docops_llm_call`).
- * The API key stays out of the webview — the Rust side can read it from
- * the native keychain or a secure store.
+ * Routes LLM calls through the Tauri `docops_llm_call` command.
+ * The LLM endpoint and key never touch the webview — the Rust side reads
+ * them from env vars (LLM_ENDPOINT / LLM_API_KEY / ANTHROPIC_API_KEY) and
+ * will eventually support the native keychain.
  *
- * Falls back to DirectTransport when running outside the desktop shell
- * (dev mode, web build).
+ * Supports any provider reachable from the machine — Anthropic, OpenAI,
+ * Ollama, llama.cpp — via env vars, making offline on-device AI available
+ * without a key.
+ *
+ * Falls back to DirectTransport (browser fetch) when running outside the
+ * desktop shell (dev mode, web build).
  */
 export class DesktopTransport implements DocOpsTransport {
-  readonly requiresApiKey = true;
+  // requiresApiKey = false because the Rust side manages the key + endpoint.
+  // If neither is configured the first call fails with a clear error.
+  readonly requiresApiKey = false;
   readonly drivesLoop = false;
 
   async call(payload: LlmCallPayload): Promise<LlmCallResult> {
