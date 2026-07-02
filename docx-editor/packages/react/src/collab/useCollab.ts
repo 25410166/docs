@@ -50,6 +50,8 @@ export interface CollabState {
   status: CollabStatus;
   /** Live snapshot of who's connected, including the local user. */
   peers: CollabPeer[];
+  /** True while the server-side AI orchestrator is running a tool loop for this room. */
+  aiIsEditing: boolean;
   /** The Yjs awareness instance — exposed for advanced consumers. */
   awareness: HocuspocusProvider['awareness'];
   /**
@@ -224,6 +226,7 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
 
   const [status, setStatus] = useState<CollabStatus>('connecting');
   const [peers, setPeers] = useState<CollabPeer[]>([]);
+  const [aiIsEditing, setAiIsEditing] = useState(false);
 
   // Publish local-user identity into awareness so peers can render
   // avatars + remote cursors. Re-runs on rename / recolor without
@@ -255,12 +258,25 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
 
     const onStatus = (e: { status: CollabStatus }) => setStatus(e.status);
 
+    const onStateless = ({ payload }: { payload: string }) => {
+      try {
+        const msg = JSON.parse(payload) as { type?: string; status?: string };
+        if (msg.type === 'ai-status') {
+          setAiIsEditing(msg.status === 'thinking');
+        }
+      } catch {
+        /* ignore non-JSON stateless messages */
+      }
+    };
+
     provider.on('status', onStatus);
+    provider.on('stateless', onStateless);
     awareness.on('change', refreshPeers);
     refreshPeers();
 
     return () => {
       provider.off('status', onStatus);
+      provider.off('stateless', onStateless);
       awareness.off('change', refreshPeers);
     };
   }, [provider]);
@@ -278,6 +294,7 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
     plugins,
     status,
     peers,
+    aiIsEditing,
     awareness: provider.awareness,
     metaMap,
     footnotesMap,
