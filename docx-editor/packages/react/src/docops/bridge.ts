@@ -46,6 +46,12 @@ export interface DocsBridgeActions {
     headingRemap?: Record<string, string>;
     unifyFont?: string;
   }): { changed: number; summary: string[] } | null;
+  insertReportFromData(options: {
+    title: string;
+    columns: string[];
+    rows: string[][];
+    afterParaId?: string;
+  }): boolean;
 }
 
 export class DocsBridge {
@@ -86,6 +92,8 @@ export class DocsBridge {
         return this.deleteParagraphs(args);
       case 'insert_paragraph_after':
         return this.insertParagraphAfter(args);
+      case 'insert_report_from_data':
+        return this.insertReportFromData(args);
       default:
         return {
           ok: false,
@@ -609,5 +617,55 @@ export class DocsBridge {
       };
     }
     return { ok: true, diffSummary: `Inserted new paragraph after ${paraId}.` };
+  }
+
+  private insertReportFromData(args: Record<string, unknown>): DocOpsResult {
+    const actions = this.getActions();
+    if (!actions) return this.noActions();
+
+    const title = String(args.title ?? '');
+    const columns = Array.isArray(args.columns)
+      ? (args.columns as unknown[]).filter((x) => typeof x === 'string').map(String)
+      : [];
+    const rows = Array.isArray(args.rows)
+      ? (args.rows as unknown[])
+          .filter(Array.isArray)
+          .map((r) => (r as unknown[]).map((c) => String(c ?? '')))
+      : [];
+    const afterParaId = args.afterParaId != null ? String(args.afterParaId) : undefined;
+
+    if (!title.trim()) {
+      return { ok: false, code: 'VALIDATION', message: 'title is required.', retryable: false };
+    }
+    if (columns.length === 0) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message: 'columns must be a non-empty array.',
+        retryable: false,
+      };
+    }
+    if (rows.length === 0) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message: 'rows must be a non-empty array.',
+        retryable: false,
+      };
+    }
+
+    const success = actions.insertReportFromData({ title, columns, rows, afterParaId });
+    if (!success) {
+      return {
+        ok: false,
+        code: 'LOCATOR_NOT_FOUND',
+        message: 'Could not insert report. Check that afterParaId (if given) is a valid block ID.',
+        retryable: false,
+      };
+    }
+    return {
+      ok: true,
+      diffSummary: `Inserted report "${title}" with ${columns.length} columns and ${rows.length} rows.`,
+    };
   }
 }

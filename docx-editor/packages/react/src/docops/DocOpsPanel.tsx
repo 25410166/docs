@@ -78,6 +78,7 @@ Write tools — suggestion mode (user reviews in the sidebar):
   delete_paragraphs — marks paragraphs for deletion as tracked changes; pass paraIds from get_outline or find_text
   insert_paragraph_after — inserts a new paragraph after a block as a tracked change
   harmonize_styles — bulk-correct heading levels and/or font inconsistencies; call list_styles first
+  insert_report_from_data — generate a heading + table from structured data; pass title, columns, and rows
 
 Guidelines:
 - Always read before you write. Call get_outline or get_doc_stats first on a fresh conversation.
@@ -678,6 +679,7 @@ const TOOL_LABELS: Record<string, string> = {
   insert_paragraph_after: 'Inserting paragraph…',
   get_block: 'Reading block…',
   harmonize_styles: 'Harmonizing styles…',
+  insert_report_from_data: 'Building report table…',
 };
 
 export default DocOpsPanel;

@@ -262,4 +262,38 @@ export const DOCOPS_CATALOG: DocOpsTool[] = [
       required: ['paraId', 'text'],
     },
   },
+  {
+    name: 'insert_report_from_data',
+    description:
+      'Insert a formatted report section — a heading and a table — built from structured data. ' +
+      'Use when the user provides data (e.g. a list of items, metrics, or comparisons) and wants ' +
+      'it formatted as a document table. Columns become the header row; each row becomes a data row. ' +
+      'Pass afterParaId to control placement; omit to append at the end of the document.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Heading for the report section (inserted as Heading 2 above the table).',
+        },
+        columns: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Column header labels (left to right).',
+        },
+        rows: {
+          type: 'array',
+          items: { type: 'array', items: { type: 'string' } },
+          description:
+            'Data rows. Each inner array must have the same number of entries as columns.',
+        },
+        afterParaId: {
+          type: 'string',
+          description:
+            'Block ID of the paragraph after which to insert. Omit to append at the end of the document.',
+        },
+      },
+      required: ['title', 'columns', 'rows'],
+    },
+  },
 ];

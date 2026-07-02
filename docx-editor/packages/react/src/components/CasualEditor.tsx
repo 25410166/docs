@@ -455,5 +455,6 @@ function noopDocxEditorRef(): DocxEditorRef {
     applyFormatting: () => false,
     setParagraphStyle: () => false,
     getPageContent: () => null,
+    insertReportFromData: () => false,
   } as unknown as DocxEditorRef;
 }
