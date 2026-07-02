@@ -86,4 +86,74 @@ export const DOCOPS_CATALOG: DocOpsTool[] = [
       properties: {},
     },
   },
+
+  // ── Phase 1: mutation tools (suggestion / tracked-change path) ────────────
+  {
+    name: 'suggest_text_change',
+    description:
+      "Suggest a text change in a paragraph as a tracked change — the user sees a diff in the sidebar and can Accept or Reject it. Pass search='' to insert text at the end of the paragraph; pass replaceWith='' to delete the matched text.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        paraId: {
+          type: 'string',
+          description: 'Stable block ID of the paragraph (from get_outline or find_text).',
+        },
+        search: {
+          type: 'string',
+          description:
+            "Exact text to replace (case-sensitive). Use '' to append to the paragraph end.",
+        },
+        replaceWith: {
+          type: 'string',
+          description: "Replacement text. Use '' to delete the matched text.",
+        },
+      },
+      required: ['paraId', 'search', 'replaceWith'],
+    },
+  },
+  {
+    name: 'set_paragraph_style',
+    description:
+      "Apply a paragraph style to a block. Use this to set heading levels, list styles, etc. Common styleIds: 'Heading1'–'Heading6', 'Normal', 'ListParagraph', 'Quote'. Call list_styles first to see styles actually present in this document.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        paraId: {
+          type: 'string',
+          description: 'Stable block ID of the paragraph.',
+        },
+        styleId: {
+          type: 'string',
+          description:
+            "Paragraph style ID. Examples: 'Heading1', 'Heading2', 'Normal', 'ListParagraph'.",
+        },
+      },
+      required: ['paraId', 'styleId'],
+    },
+  },
+  {
+    name: 'add_comment',
+    description:
+      'Add a review comment anchored to a paragraph (optionally to a specific phrase within it). The comment appears in the comments sidebar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        paraId: {
+          type: 'string',
+          description: 'Stable block ID of the paragraph.',
+        },
+        text: {
+          type: 'string',
+          description: 'The comment text.',
+        },
+        search: {
+          type: 'string',
+          description:
+            'Optional: a unique phrase in the paragraph to anchor the comment to. Omit to anchor to the whole paragraph.',
+        },
+      },
+      required: ['paraId', 'text'],
+    },
+  },
 ];

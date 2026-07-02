@@ -16,8 +16,31 @@ import { generateTOC } from '@eigenpal/docx-core/prosemirror/commands';
 import { convertSelectionToTable } from '../utils/convertTextToTable';
 import type { DocOpsResult } from '@casualoffice/docops';
 
+/**
+ * Subset of DocxEditorRef exposed to the bridge for mutation operations.
+ * Structurally compatible with DocxEditorRef so no cast is needed.
+ */
+export interface DocsBridgeActions {
+  proposeChange(options: {
+    paraId: string;
+    search: string;
+    replaceWith: string;
+    author: string;
+  }): boolean;
+  setParagraphStyle(options: { paraId: string; styleId: string }): boolean;
+  addComment(options: {
+    paraId: string;
+    text: string;
+    author: string;
+    search?: string;
+  }): number | null;
+}
+
 export class DocsBridge {
-  constructor(private readonly getView: () => EditorView | null) {}
+  constructor(
+    private readonly getView: () => EditorView | null,
+    private readonly getActions: () => DocsBridgeActions | null = () => null
+  ) {}
 
   async callTool(name: string, args: Record<string, unknown>): Promise<DocOpsResult> {
     switch (name) {
@@ -35,6 +58,12 @@ export class DocsBridge {
         return this.convertRangeToTable();
       case 'insert_toc':
         return this.insertToc();
+      case 'suggest_text_change':
+        return this.suggestTextChange(args);
+      case 'set_paragraph_style':
+        return this.setParagraphStyle(args);
+      case 'add_comment':
+        return this.addComment(args);
       default:
         return {
           ok: false,
@@ -248,5 +277,97 @@ export class DocsBridge {
       };
     }
     return { ok: true, diffSummary: 'Inserted table of contents.' };
+  }
+
+  private noActions(): DocOpsResult {
+    return {
+      ok: false,
+      code: 'UNSUPPORTED',
+      message: 'Mutation tools are not available yet — the editor is still initialising.',
+      retryable: true,
+    };
+  }
+
+  private suggestTextChange(args: Record<string, unknown>): DocOpsResult {
+    const actions = this.getActions();
+    if (!actions) return this.noActions();
+
+    const paraId = String(args.paraId ?? '');
+    const search = String(args.search ?? '');
+    const replaceWith = String(args.replaceWith ?? '');
+
+    if (!paraId) {
+      return { ok: false, code: 'VALIDATION', message: 'paraId is required.', retryable: false };
+    }
+
+    const success = actions.proposeChange({ paraId, search, replaceWith, author: 'DocOps AI' });
+    if (!success) {
+      return {
+        ok: false,
+        code: 'LOCATOR_NOT_FOUND',
+        message:
+          'Could not apply change. Check that paraId is correct, the search text exists in that paragraph, and there are no overlapping tracked changes.',
+        retryable: false,
+      };
+    }
+    return { ok: true, diffSummary: `Suggested change in paragraph ${paraId}.` };
+  }
+
+  private setParagraphStyle(args: Record<string, unknown>): DocOpsResult {
+    const actions = this.getActions();
+    if (!actions) return this.noActions();
+
+    const paraId = String(args.paraId ?? '');
+    const styleId = String(args.styleId ?? '');
+
+    if (!paraId || !styleId) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message: 'paraId and styleId are required.',
+        retryable: false,
+      };
+    }
+
+    const success = actions.setParagraphStyle({ paraId, styleId });
+    if (!success) {
+      return {
+        ok: false,
+        code: 'LOCATOR_NOT_FOUND',
+        message: `Could not apply style '${styleId}'. Check that paraId is correct and the style exists in this document.`,
+        retryable: false,
+      };
+    }
+    return { ok: true, diffSummary: `Applied style '${styleId}' to paragraph ${paraId}.` };
+  }
+
+  private addComment(args: Record<string, unknown>): DocOpsResult {
+    const actions = this.getActions();
+    if (!actions) return this.noActions();
+
+    const paraId = String(args.paraId ?? '');
+    const text = String(args.text ?? '');
+    const search = args.search != null ? String(args.search) : undefined;
+
+    if (!paraId || !text) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message: 'paraId and text are required.',
+        retryable: false,
+      };
+    }
+
+    const commentId = actions.addComment({ paraId, text, author: 'DocOps AI', search });
+    if (commentId == null) {
+      return {
+        ok: false,
+        code: 'LOCATOR_NOT_FOUND',
+        message:
+          'Could not add comment. Check that paraId is correct and the search phrase (if given) exists in the paragraph.',
+        retryable: false,
+      };
+    }
+    return { ok: true, data: { commentId }, diffSummary: `Added comment to paragraph ${paraId}.` };
   }
 }

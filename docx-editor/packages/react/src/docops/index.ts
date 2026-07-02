@@ -3,6 +3,7 @@
  */
 
 export { DocsBridge } from './bridge';
+export type { DocsBridgeActions } from './bridge';
 export { DocOpsPanel } from './DocOpsPanel';
 export type { DocOpsPanelProps } from './DocOpsPanel';
 export { isDocOpsEnabled } from './capability';

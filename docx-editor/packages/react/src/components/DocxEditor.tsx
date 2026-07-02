@@ -64,7 +64,7 @@ import { VoiceTypingIndicator } from './ui/VoiceTypingIndicator';
 import { UnifiedSidebar } from './UnifiedSidebar';
 import { AgentPanel } from './AgentPanel';
 import { PanelRail } from './PanelRail';
-import { DocOpsPanel, DocsBridge, isDocOpsEnabled } from '../docops';
+import { DocOpsPanel, DocsBridge, isDocOpsEnabled, type DocsBridgeActions } from '../docops';
 import { AutosaveRestoreBanner } from './AutosaveRestoreBanner';
 import { writeAutosave, clearLegacyLocalStorageAutosave } from '../utils/autosave';
 import { restoreNativeBuildingBlocks } from '../utils/buildingBlocks';
@@ -2702,9 +2702,14 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     void bootWriterController();
   }, []);
 
+  // Mutation actions populated by useImperativeHandle after first render.
+  const docsBridgeActionsRef = useRef<DocsBridgeActions | null>(null);
   const docsBridgeRef = useRef<DocsBridge | null>(null);
   if (docsBridgeRef.current === null) {
-    docsBridgeRef.current = new DocsBridge(() => getActiveEditorView() ?? null);
+    docsBridgeRef.current = new DocsBridge(
+      () => getActiveEditorView() ?? null,
+      () => docsBridgeActionsRef.current
+    );
   }
 
   // Right-side panel mutex. Google Docs / Microsoft Word only ever
@@ -8005,8 +8010,10 @@ body { background: white; }
         };
       },
     };
-    // Expose the same handle to the onReady effect below.
+    // Expose the same handle to the onReady effect below,
+    // and register mutation methods with the DocOps bridge.
     exposedApiRef.current = api;
+    docsBridgeActionsRef.current = api;
     return api;
   }, [
     history.state,
