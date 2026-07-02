@@ -967,6 +967,12 @@ export interface DocxEditorRef {
     rows: string[][];
     afterParaId?: string;
   }) => boolean;
+  /** Replace the entire document content with a new document built from the given spec.
+   * DESTRUCTIVE — direct edit, not a tracked change. Returns false if the editor is not ready. */
+  createDocument: (options: {
+    title: string;
+    sections: Array<{ heading: string; level?: number; paragraphs?: string[] }>;
+  }) => boolean;
 }
 
 /**
@@ -8334,6 +8340,43 @@ body { background: white; }
         tr.insert(insertPos, titlePara);
         tr.insert(insertPos + titlePara.nodeSize, table);
         tr.insert(insertPos + titlePara.nodeSize + table.nodeSize, trailing);
+        view.dispatch(tr.scrollIntoView());
+        return true;
+      },
+
+      createDocument: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        const { schema } = view.state;
+        const paragraphType = schema.nodes.paragraph;
+        if (!paragraphType) return false;
+
+        const nodes = [];
+
+        // Title as Heading 1
+        nodes.push(paragraphType.create({ styleId: 'Heading1' }, schema.text(options.title)));
+
+        // Sections
+        for (const section of options.sections) {
+          const level = section.level ?? 2;
+          const clampedLevel = Math.max(2, Math.min(6, level));
+          nodes.push(
+            paragraphType.create(
+              { styleId: `Heading${clampedLevel}` },
+              schema.text(section.heading)
+            )
+          );
+          for (const para of section.paragraphs ?? []) {
+            nodes.push(
+              para.trim() ? paragraphType.create({}, schema.text(para)) : paragraphType.create()
+            );
+          }
+        }
+
+        // Trailing empty paragraph — PM requires cursor can land after all content
+        nodes.push(paragraphType.create());
+
+        const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, nodes);
         view.dispatch(tr.scrollIntoView());
         return true;
       },

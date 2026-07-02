@@ -52,6 +52,10 @@ export interface DocsBridgeActions {
     rows: string[][];
     afterParaId?: string;
   }): boolean;
+  createDocument(options: {
+    title: string;
+    sections: Array<{ heading: string; level?: number; paragraphs?: string[] }>;
+  }): boolean;
 }
 
 export class DocsBridge {
@@ -94,6 +98,8 @@ export class DocsBridge {
         return this.insertParagraphAfter(args);
       case 'insert_report_from_data':
         return this.insertReportFromData(args);
+      case 'create_document':
+        return this.createDocument(args);
       default:
         return {
           ok: false,
@@ -666,6 +672,50 @@ export class DocsBridge {
     return {
       ok: true,
       diffSummary: `Inserted report "${title}" with ${columns.length} columns and ${rows.length} rows.`,
+    };
+  }
+
+  private createDocument(args: Record<string, unknown>): DocOpsResult {
+    const actions = this.getActions();
+    if (!actions) return this.noActions();
+
+    const title = String(args.title ?? '');
+
+    type SectionInput = { heading?: unknown; level?: unknown; paragraphs?: unknown };
+    const sections = Array.isArray(args.sections)
+      ? (args.sections as SectionInput[]).map((s) => ({
+          heading: String(s.heading ?? ''),
+          level: typeof s.level === 'number' ? Math.max(2, Math.min(6, s.level)) : 2,
+          paragraphs: Array.isArray(s.paragraphs)
+            ? (s.paragraphs as unknown[]).map((p) => String(p))
+            : [],
+        }))
+      : [];
+
+    if (!title.trim()) {
+      return { ok: false, code: 'VALIDATION', message: 'title is required.', retryable: false };
+    }
+    if (sections.length === 0) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message: 'sections must be a non-empty array.',
+        retryable: false,
+      };
+    }
+
+    const success = actions.createDocument({ title, sections });
+    if (!success) {
+      return {
+        ok: false,
+        code: 'LOCATOR_NOT_FOUND',
+        message: 'Could not create document — editor is not ready.',
+        retryable: true,
+      };
+    }
+    return {
+      ok: true,
+      diffSummary: `Created document "${title}" with ${sections.length} section(s).`,
     };
   }
 }

@@ -80,6 +80,7 @@ Write tools — suggestion mode (user reviews in the sidebar):
   insert_paragraph_after — inserts a new paragraph after a block as a tracked change
   harmonize_styles — bulk-correct heading levels and/or font inconsistencies; call list_styles first
   insert_report_from_data — generate a heading + table from structured data; pass title, columns, and rows
+  create_document — replace the entire document with a structured spec (title + sections); call get_doc_stats first and confirm wordCount === 0
 
 Guidelines:
 - Always read before you write. Call get_outline or get_doc_stats first on a fresh conversation.
@@ -718,6 +719,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_block: 'Reading block…',
   harmonize_styles: 'Harmonizing styles…',
   insert_report_from_data: 'Building report table…',
+  create_document: 'Building document…',
 };
 
 export default DocOpsPanel;

@@ -296,4 +296,45 @@ export const DOCOPS_CATALOG: DocOpsTool[] = [
       required: ['title', 'columns', 'rows'],
     },
   },
+  {
+    name: 'create_document',
+    description:
+      'Replace the entire document content with a new document built from a structured spec. ' +
+      'DESTRUCTIVE — this is a direct edit, not a tracked change. ' +
+      'Always call get_doc_stats first and confirm wordCount === 0 before using this tool. ' +
+      'Use only when the user explicitly asks to create a new document from scratch.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Document title (inserted as Heading 1).',
+        },
+        sections: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              heading: {
+                type: 'string',
+                description: 'Section heading text.',
+              },
+              level: {
+                type: 'number',
+                description: 'Heading level: 2 or 3. Defaults to 2.',
+              },
+              paragraphs: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Body paragraphs for this section, in order.',
+              },
+            },
+            required: ['heading'],
+          },
+          description: 'Document sections in order.',
+        },
+      },
+      required: ['title', 'sections'],
+    },
+  },
 ];
