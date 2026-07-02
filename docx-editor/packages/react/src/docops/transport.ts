@@ -36,6 +36,11 @@ export interface LlmCallPayload {
   onText?: (text: string) => void;
   /** Abort signal — close the WS when aborted. */
   signal?: AbortSignal;
+  /**
+   * Maximum number of tool-call rounds before the loop is stopped.
+   * Defaults to 12 when omitted.
+   */
+  maxToolRounds?: number;
 }
 
 export interface LlmCallResult {
@@ -47,6 +52,8 @@ export interface LlmCallResult {
   /** Full conversation history after all tool rounds (only set by CollabTransport). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   updatedHistory?: any[];
+  /** True when the loop was stopped because it hit the maxToolRounds cap. */
+  capHit?: boolean;
 }
 
 export interface DocOpsTransport {
@@ -159,6 +166,7 @@ export class CollabTransport implements DocOpsTransport {
             tools: payload.tools,
             ...(payload.apiKey ? { apiKey: payload.apiKey } : {}),
             ...(this.room ? { roomName: this.room } : {}),
+            ...(payload.maxToolRounds != null ? { maxToolRounds: payload.maxToolRounds } : {}),
           })
         );
       });
@@ -206,8 +214,13 @@ export class CollabTransport implements DocOpsTransport {
               );
             });
         } else if (msg.type === 'done') {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          settle({ data: { ok: true }, status: 200, updatedHistory: msg.history as any[] });
+          settle({
+            data: { ok: true },
+            status: 200,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            updatedHistory: msg.history as any[],
+            capHit: msg.capHit === true,
+          });
         } else if (msg.type === 'error') {
           settle({
             data: { error: { message: msg.message as string } },
@@ -271,11 +284,11 @@ export class DesktopTransport implements DocOpsTransport {
     payload: LlmCallPayload,
     invoke: (cmd: string, args?: unknown) => Promise<unknown>
   ): Promise<LlmCallResult> {
-    const MAX_ROUNDS = 12;
+    const maxRounds = payload.maxToolRounds ?? 12;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const messages: any[] = [...payload.messages];
 
-    for (let round = 0; round < MAX_ROUNDS; round++) {
+    for (let round = 0; round < maxRounds; round++) {
       if (payload.signal?.aborted) {
         throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
       }
@@ -340,6 +353,10 @@ export class DesktopTransport implements DocOpsTransport {
         }
       }
       messages.push({ role: 'user', content: toolResults });
+
+      if (round === maxRounds - 1) {
+        return { data: { ok: true }, status: 200, updatedHistory: messages, capHit: true };
+      }
     }
 
     return { data: { ok: true }, status: 200, updatedHistory: messages };

@@ -51,13 +51,14 @@ type DisplayMessage =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
   | { kind: 'tool_step'; toolName: string; status: 'running' | 'done' | 'error' }
-  | { kind: 'error'; text: string };
+  | { kind: 'error'; text: string }
+  | { kind: 'cap'; rounds: number };
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
 const API_KEY_STORAGE = 'casual_docops_api_key';
 const MODEL = 'claude-haiku-4-5-20251001';
-const MAX_TOOL_ROUNDS = 12;
+const DEFAULT_MAX_TOOL_ROUNDS = 12;
 
 const SYSTEM_PROMPT = `You are DocOps, an AI document assistant embedded in Casual Docs.
 
@@ -146,6 +147,16 @@ const msgErrorStyle: CSSProperties = {
   padding: '8px 12px',
   fontSize: 13,
   lineHeight: 1.45,
+};
+
+const msgCapStyle: CSSProperties = {
+  alignSelf: 'center',
+  fontSize: 11.5,
+  color: 'var(--doc-text-muted)',
+  padding: '3px 10px',
+  borderRadius: 6,
+  background: 'var(--doc-surface-sunken, #f8f9fa)',
+  border: '1px solid var(--doc-border-light)',
 };
 
 const inputRowStyle: CSSProperties = {
@@ -238,10 +249,21 @@ export interface DocOpsPanelProps {
   onClose: () => void;
   /** LLM transport — defaults to DirectTransport (browser fetch to Anthropic). */
   transport?: DocOpsTransport;
+  /**
+   * Maximum number of LLM tool-call rounds per message before the loop is
+   * stopped and the user is notified. Defaults to 12.
+   */
+  maxToolRounds?: number;
 }
 
-export function DocOpsPanel({ bridge, onClose, transport: transportProp }: DocOpsPanelProps) {
+export function DocOpsPanel({
+  bridge,
+  onClose,
+  transport: transportProp,
+  maxToolRounds: maxToolRoundsProp,
+}: DocOpsPanelProps) {
   const transport = transportProp ?? new DirectTransport();
+  const maxToolRounds = maxToolRoundsProp ?? DEFAULT_MAX_TOOL_ROUNDS;
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem(API_KEY_STORAGE) ?? '');
   const [keyDraft, setKeyDraft] = useState('');
   // Show setup screen only for transports that require a key AND none is stored.
@@ -329,24 +351,27 @@ export function DocOpsPanel({ bridge, onClose, transport: transportProp }: DocOp
           tools: DOCOPS_CATALOG,
           apiKey: apiKey || undefined,
           signal: ctrl.signal,
+          maxToolRounds,
           toolExecutor,
           onText: (text) => {
             if (text.trim()) appendDisplay({ kind: 'assistant', text });
           },
         };
 
-        const { data, status, updatedHistory } = await transport.call(payload);
+        const { data, status, updatedHistory, capHit } = await transport.call(payload);
 
         if (status !== 200) {
           const errMsg = (data as { error?: { message?: string } })?.error?.message;
           throw new Error(errMsg ?? `AI error ${status}`);
         }
         if (updatedHistory) historyRef.current = updatedHistory as LlmMessage[];
+        if (capHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
       } else {
         // ── Direct / Desktop transport: panel drives the loop ────────────
         let messages = [...historyRef.current];
+        let panelCapHit = false;
 
-        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        for (let round = 0; round < maxToolRounds; round++) {
           if (ctrl.signal.aborted) break;
 
           const payload: LlmCallPayload = {
@@ -357,6 +382,7 @@ export function DocOpsPanel({ bridge, onClose, transport: transportProp }: DocOp
             tools: DOCOPS_CATALOG,
             apiKey: apiKey || undefined,
             signal: ctrl.signal,
+            maxToolRounds,
           };
 
           const { data, status } = await transport.call(payload);
@@ -407,8 +433,13 @@ export function DocOpsPanel({ bridge, onClose, transport: transportProp }: DocOp
           }
 
           messages = [...messages, { role: 'user', content: toolResults }];
+
+          if (round === maxToolRounds - 1) {
+            panelCapHit = true;
+          }
         }
 
+        if (panelCapHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
         historyRef.current = messages;
       }
     } catch (err) {
@@ -633,6 +664,13 @@ export function DocOpsPanel({ bridge, onClose, transport: transportProp }: DocOp
                 return (
                   <div key={i} style={msgErrorStyle}>
                     {msg.text}
+                  </div>
+                );
+              }
+              if (msg.kind === 'cap') {
+                return (
+                  <div key={i} style={msgCapStyle}>
+                    Stopped after {msg.rounds} tool steps — send another message to continue.
                   </div>
                 );
               }

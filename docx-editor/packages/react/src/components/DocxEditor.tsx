@@ -798,6 +798,11 @@ export interface DocxEditorProps {
    *   - Any `DocOpsTransport` implementation
    */
   docopsTransport?: import('../docops/transport').DocOpsTransport;
+  /**
+   * Maximum number of LLM tool-call rounds per message before the DocOps panel
+   * stops the loop and tells the user. Defaults to 12.
+   */
+  docopsMaxToolRounds?: number;
 }
 
 /**
@@ -1712,6 +1717,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     agentPanel,
     wordCompat = false,
     docopsTransport,
+    docopsMaxToolRounds,
   },
   ref
 ) {
@@ -10080,6 +10086,7 @@ body { background: white; }
                       bridge={docsBridgeRef.current}
                       onClose={() => openRightPanel('none')}
                       transport={docopsTransport ?? createDocOpsTransport()}
+                      maxToolRounds={docopsMaxToolRounds}
                     />
                   )}
 
