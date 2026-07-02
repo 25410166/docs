@@ -73,6 +73,10 @@ export default defineConfig(async () => {
           replacement: path.join(monorepoRoot, 'packages/react/src/index.ts'),
         },
         {
+          find: '@casualoffice/docops',
+          replacement: path.join(monorepoRoot, 'packages/docops/src/index.ts'),
+        },
+        {
           find: '@eigenpal/docx-core/headless',
           replacement: path.join(monorepoRoot, 'packages/core/src/headless.ts'),
         },
