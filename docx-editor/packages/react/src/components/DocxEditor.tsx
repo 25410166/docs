@@ -64,6 +64,13 @@ import { VoiceTypingIndicator } from './ui/VoiceTypingIndicator';
 import { UnifiedSidebar } from './UnifiedSidebar';
 import { AgentPanel } from './AgentPanel';
 import { PanelRail } from './PanelRail';
+import {
+  DocOpsPanel,
+  DocsBridge,
+  isDocOpsEnabled,
+  createDocOpsTransport,
+  type DocsBridgeActions,
+} from '../docops';
 import { AutosaveRestoreBanner } from './AutosaveRestoreBanner';
 import { writeAutosave, clearLegacyLocalStorageAutosave } from '../utils/autosave';
 import { restoreNativeBuildingBlocks } from '../utils/buildingBlocks';
@@ -782,6 +789,20 @@ export interface DocxEditorProps {
    * border` and GH #395.
    */
   wordCompat?: boolean;
+  /**
+   * DocOps AI transport. Controls how LLM calls are routed when the
+   * DocOps panel is enabled (`window.__casualFeatures__.docops`):
+   *   - Omit / `undefined` → auto-selected via `createDocOpsTransport`
+   *     (DesktopTransport when running in Tauri, DirectTransport otherwise)
+   *   - `CollabTransport` → proxy through the collab server's /api/ai/chat
+   *   - Any `DocOpsTransport` implementation
+   */
+  docopsTransport?: import('../docops/transport').DocOpsTransport;
+  /**
+   * Maximum number of LLM tool-call rounds per message before the DocOps panel
+   * stops the loop and tells the user. Defaults to 12.
+   */
+  docopsMaxToolRounds?: number;
 }
 
 /**
@@ -917,6 +938,41 @@ export interface DocxEditorRef {
   onContentChange: (listener: (document: Document) => void) => () => void;
   /** Subscribe to selection changes (cursor moves / selection changes). Returns unsubscribe. */
   onSelectionChange: (listener: (selection: SelectionState | null) => void) => () => void;
+  /** Rewrite the current editor selection as a tracked change. Returns false if there is no
+   * selection or the selection overlaps an existing tracked change. */
+  rewriteSelection: (options: { newText: string; author: string }) => boolean;
+  /** Mark one or more paragraphs for deletion as tracked changes. Returns false if any paraId
+   * is invalid or already has a tracked change. */
+  deleteParagraphs: (options: { paraIds: string[]; author: string }) => boolean;
+  /** Insert a new paragraph after the given block as a tracked change. Returns false if
+   * paraId is invalid or styleId (if given) does not exist in the document. */
+  insertParagraphAfter: (options: {
+    paraId: string;
+    text: string;
+    styleId?: string;
+    author: string;
+  }) => boolean;
+  /** Apply bulk style corrections in one undoable transaction: remap heading levels and/or
+   * unify body-text font across the whole document. Returns null if the editor is not ready. */
+  harmonizeStyles: (options: {
+    headingRemap?: Record<string, string>;
+    unifyFont?: string;
+  }) => { changed: number; summary: string[] } | null;
+  /** Insert a Heading 2 + table built from structured data, after the given block (or at the
+   * end of the document when afterParaId is omitted). Returns false if the editor is not ready
+   * or afterParaId is supplied but not found. */
+  insertReportFromData: (options: {
+    title: string;
+    columns: string[];
+    rows: string[][];
+    afterParaId?: string;
+  }) => boolean;
+  /** Replace the entire document content with a new document built from the given spec.
+   * DESTRUCTIVE — direct edit, not a tracked change. Returns false if the editor is not ready. */
+  createDocument: (options: {
+    title: string;
+    sections: Array<{ heading: string; level?: number; paragraphs?: string[] }>;
+  }) => boolean;
 }
 
 /**
@@ -1666,6 +1722,8 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     i18n,
     agentPanel,
     wordCompat = false,
+    docopsTransport,
+    docopsMaxToolRounds,
   },
   ref
 ) {
@@ -2696,9 +2754,20 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // mount so capability checks + auto-load run before the sheet opens.
   const [showWritingAssistant, setShowWritingAssistant] = useState(false);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [showDocOpsPanel, setShowDocOpsPanel] = useState(false);
   useEffect(() => {
     void bootWriterController();
   }, []);
+
+  // Mutation actions populated by useImperativeHandle after first render.
+  const docsBridgeActionsRef = useRef<DocsBridgeActions | null>(null);
+  const docsBridgeRef = useRef<DocsBridge | null>(null);
+  if (docsBridgeRef.current === null) {
+    docsBridgeRef.current = new DocsBridge(
+      () => getActiveEditorView() ?? null,
+      () => docsBridgeActionsRef.current
+    );
+  }
 
   // Right-side panel mutex. Google Docs / Microsoft Word only ever
   // expose ONE right-edge panel at a time (Comments XOR Outline,
@@ -2712,11 +2781,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // `handleToggleVersionHistory`'s historical behaviour — those two
   // share the right-margin slot).
   const openRightPanel = useCallback(
-    (which: 'writer' | 'chat' | 'history' | 'properties' | 'aiSuggestion' | 'none') => {
+    (which: 'writer' | 'chat' | 'history' | 'properties' | 'aiSuggestion' | 'docops' | 'none') => {
       setShowWritingAssistant(which === 'writer');
       setShowChatPanel(which === 'chat');
       setShowVersionHistory(which === 'history');
       setShowProperties(which === 'properties');
+      setShowDocOpsPanel(which === 'docops');
       // Only ONE right-side surface is ever open: outline (TOC), comments,
       // properties, history. Opening any of the docked panels closes the
       // others (outline included — it was previously left open alongside).
@@ -7996,9 +8066,325 @@ body { background: white; }
           selectionChangeSubscribersRef.current.delete(listener);
         };
       },
+
+      rewriteSelection: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        const { schema } = view.state;
+        if (!schema.marks.deletion || !schema.marks.insertion) return false;
+
+        const { from, to, empty } = view.state.selection;
+        if (empty) return false;
+
+        let overlapsTrackedChange = false;
+        view.state.doc.nodesBetween(from, to, (node) => {
+          for (const m of node.marks) {
+            if (m.type === schema.marks.insertion || m.type === schema.marks.deletion) {
+              overlapsTrackedChange = true;
+              return false;
+            }
+          }
+          return true;
+        });
+        if (overlapsTrackedChange) return false;
+
+        const revisionId = nextCommentId++;
+        const date = new Date().toISOString();
+
+        const deletionMark = schema.marks.deletion.create({
+          revisionId,
+          author: options.author,
+          date,
+        });
+        const insertionMark = schema.marks.insertion.create({
+          revisionId,
+          author: options.author,
+          date,
+        });
+
+        let tr = view.state.tr;
+        tr = tr.addMark(from, to, deletionMark);
+        const insertedNode = schema.text(options.newText, [insertionMark]);
+        tr = tr.insert(to, insertedNode);
+
+        view.dispatch(tr);
+        setShowCommentsSidebar(true);
+        return true;
+      },
+
+      deleteParagraphs: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        const { schema } = view.state;
+        if (!schema.marks.deletion) return false;
+
+        const revisionId = nextCommentId++;
+        const date = new Date().toISOString();
+
+        let tr = view.state.tr;
+        let anyApplied = false;
+
+        for (const paraId of options.paraIds) {
+          const range = findParaIdRange(view.state.doc, paraId);
+          if (!range) continue;
+
+          const contentFrom = range.from + 1;
+          const contentTo = range.to - 1;
+          if (contentFrom >= contentTo) continue;
+
+          let overlaps = false;
+          view.state.doc.nodesBetween(contentFrom, contentTo, (node) => {
+            for (const m of node.marks) {
+              if (m.type === schema.marks.insertion || m.type === schema.marks.deletion) {
+                overlaps = true;
+                return false;
+              }
+            }
+            return true;
+          });
+          if (overlaps) continue;
+
+          const deletionMark = schema.marks.deletion.create({
+            revisionId,
+            author: options.author,
+            date,
+          });
+          tr = tr.addMark(contentFrom, contentTo, deletionMark);
+          anyApplied = true;
+        }
+
+        if (!anyApplied) return false;
+        view.dispatch(tr);
+        setShowCommentsSidebar(true);
+        return true;
+      },
+
+      insertParagraphAfter: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        const { schema } = view.state;
+        if (!schema.marks.insertion || !schema.nodes.paragraph) return false;
+
+        const range = findParaIdRange(view.state.doc, options.paraId);
+        if (!range) return false;
+
+        const revisionId = nextCommentId++;
+        const date = new Date().toISOString();
+
+        const insertionMark = schema.marks.insertion.create({
+          revisionId,
+          author: options.author,
+          date,
+        });
+        const textNode = schema.text(options.text, [insertionMark]);
+        const paraAttrs: Record<string, unknown> = {};
+        if (options.styleId) paraAttrs.styleId = options.styleId;
+        const newPara = schema.nodes.paragraph.create(paraAttrs, textNode);
+
+        const tr = view.state.tr.insert(range.to, newPara);
+        view.dispatch(tr);
+        setShowCommentsSidebar(true);
+        return true;
+      },
+
+      harmonizeStyles: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return null;
+        const { schema } = view.state;
+
+        let tr = view.state.tr;
+        const summaryLines: string[] = [];
+        let headingChanges = 0;
+        let fontChanges = 0;
+
+        if (options.headingRemap && Object.keys(options.headingRemap).length > 0) {
+          view.state.doc.descendants((node, pos) => {
+            if (!node.isTextblock) return true;
+            const styleId = node.attrs.styleId as string | null;
+            if (!styleId) return true;
+            const newStyleId = options.headingRemap![styleId];
+            if (!newStyleId || newStyleId === styleId) return true;
+            tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, styleId: newStyleId });
+            headingChanges++;
+            return true;
+          });
+          if (headingChanges > 0) {
+            const remapStr = Object.entries(options.headingRemap)
+              .map(([a, b]) => `${a}→${b}`)
+              .join(', ');
+            summaryLines.push(`Remapped ${headingChanges} heading(s): ${remapStr}`);
+          }
+        }
+
+        if (options.unifyFont) {
+          const fontMarkType = schema.marks.font;
+          if (fontMarkType) {
+            view.state.doc.descendants((node, pos) => {
+              if (!node.isTextblock) return true;
+              const styleId = (node.attrs.styleId as string | null) ?? '';
+              if (/^[Hh]eading\d/.test(styleId)) return true;
+
+              let offset = 0;
+              node.forEach((child) => {
+                if (child.isText) {
+                  const hasWrongFont = child.marks.some(
+                    (m) => m.type === fontMarkType && m.attrs.fontFamily !== options.unifyFont
+                  );
+                  if (hasWrongFont) {
+                    const from = pos + 1 + offset;
+                    const to = from + child.nodeSize;
+                    tr = tr.addMark(
+                      from,
+                      to,
+                      fontMarkType.create({ fontFamily: options.unifyFont })
+                    );
+                    fontChanges++;
+                  }
+                }
+                offset += child.nodeSize;
+              });
+              return true;
+            });
+            if (fontChanges > 0) {
+              summaryLines.push(`Applied font "${options.unifyFont}" to ${fontChanges} run(s)`);
+            }
+          }
+        }
+
+        const changed = headingChanges + fontChanges;
+        if (changed === 0) {
+          return { changed: 0, summary: ['No changes needed — document already consistent.'] };
+        }
+        view.dispatch(tr);
+        return { changed, summary: summaryLines };
+      },
+
+      insertReportFromData: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        const { schema } = view.state;
+
+        const tableType = schema.nodes.table;
+        const rowType = schema.nodes.tableRow;
+        const cellType = schema.nodes.tableCell;
+        const headerCellType = schema.nodes.tableHeader ?? cellType;
+        const paragraphType = schema.nodes.paragraph;
+        if (!tableType || !rowType || !cellType || !paragraphType) return false;
+
+        const cols = options.columns.length;
+        if (cols === 0 || options.rows.length === 0) return false;
+
+        const CONTENT_WIDTH_TWIPS = 9360;
+        const DEFAULT_ROW_HEIGHT_TWIPS = 360;
+        const colWidthTwips = Math.floor(CONTENT_WIDTH_TWIPS / cols);
+
+        const defaultBorder = { style: 'single', size: 4, color: { rgb: '000000' } };
+        const defaultBorders = {
+          top: defaultBorder,
+          bottom: defaultBorder,
+          left: defaultBorder,
+          right: defaultBorder,
+        };
+        const cellAttrs = {
+          colspan: 1,
+          rowspan: 1,
+          borders: defaultBorders,
+          width: colWidthTwips,
+          widthType: 'dxa',
+        };
+
+        const makeCell = (text: string, isHeader: boolean) => {
+          const nodeType = isHeader ? headerCellType : cellType;
+          const para = text ? paragraphType.create({}, schema.text(text)) : paragraphType.create();
+          return nodeType.create(cellAttrs, para);
+        };
+
+        const tableRows = [];
+
+        // Header row
+        const headerCells = options.columns.map((col) => makeCell(col, true));
+        tableRows.push(
+          rowType.create({ height: DEFAULT_ROW_HEIGHT_TWIPS, heightRule: 'atLeast' }, headerCells)
+        );
+
+        // Data rows
+        for (const row of options.rows) {
+          const cells = options.columns.map((_, i) => makeCell(row[i] ?? '', false));
+          tableRows.push(
+            rowType.create({ height: DEFAULT_ROW_HEIGHT_TWIPS, heightRule: 'atLeast' }, cells)
+          );
+        }
+
+        const table = tableType.create(
+          {
+            columnWidths: Array(cols).fill(colWidthTwips),
+            width: CONTENT_WIDTH_TWIPS,
+            widthType: 'dxa',
+          },
+          tableRows
+        );
+
+        const titlePara = paragraphType.create({ styleId: 'Heading2' }, schema.text(options.title));
+        const trailing = paragraphType.create();
+
+        let insertPos: number;
+        if (options.afterParaId) {
+          const range = findParaIdRange(view.state.doc, options.afterParaId);
+          if (!range) return false;
+          insertPos = range.to;
+        } else {
+          insertPos = view.state.doc.content.size;
+        }
+
+        const tr = view.state.tr;
+        tr.insert(insertPos, titlePara);
+        tr.insert(insertPos + titlePara.nodeSize, table);
+        tr.insert(insertPos + titlePara.nodeSize + table.nodeSize, trailing);
+        view.dispatch(tr.scrollIntoView());
+        return true;
+      },
+
+      createDocument: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        const { schema } = view.state;
+        const paragraphType = schema.nodes.paragraph;
+        if (!paragraphType) return false;
+
+        const nodes = [];
+
+        // Title as Heading 1
+        nodes.push(paragraphType.create({ styleId: 'Heading1' }, schema.text(options.title)));
+
+        // Sections
+        for (const section of options.sections) {
+          const level = section.level ?? 2;
+          const clampedLevel = Math.max(2, Math.min(6, level));
+          nodes.push(
+            paragraphType.create(
+              { styleId: `Heading${clampedLevel}` },
+              schema.text(section.heading)
+            )
+          );
+          for (const para of section.paragraphs ?? []) {
+            nodes.push(
+              para.trim() ? paragraphType.create({}, schema.text(para)) : paragraphType.create()
+            );
+          }
+        }
+
+        // Trailing empty paragraph — PM requires cursor can land after all content
+        nodes.push(paragraphType.create());
+
+        const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, nodes);
+        view.dispatch(tr.scrollIntoView());
+        return true;
+      },
     };
-    // Expose the same handle to the onReady effect below.
+    // Expose the same handle to the onReady effect below,
+    // and register mutation methods with the DocOps bridge.
     exposedApiRef.current = api;
+    docsBridgeActionsRef.current = api;
     return api;
   }, [
     history.state,
@@ -9735,6 +10121,18 @@ body { background: white; }
                       restoring is a copy-paste of the JSX back in
                       from git history. */}
 
+                  {/* DocOps AI panel — gated behind window.__casualFeatures__.docops.
+                      Uses the Anthropic API directly (user-supplied key) with the
+                      JSON DocOps IR tool catalog. No WebLLM, no server inference. */}
+                  {showDocOpsPanel && isDocOpsEnabled() && docsBridgeRef.current && (
+                    <DocOpsPanel
+                      bridge={docsBridgeRef.current}
+                      onClose={() => openRightPanel('none')}
+                      transport={docopsTransport ?? createDocOpsTransport()}
+                      maxToolRounds={docopsMaxToolRounds}
+                    />
+                  )}
+
                   {/* Right-edge PanelRail (X7) — always-visible activity bar
                     with toggles for Outline / Comments / Version history.
                     Lives inside the below-toolbar flex row so it spans only
@@ -9758,6 +10156,12 @@ body { background: white; }
                       //   onToggleWriter={() => openRightPanel(showWritingAssistant ? 'none' : 'writer')}
                       //   chatVisible={showChatPanel}
                       //   onToggleChat={() => openRightPanel(showChatPanel ? 'none' : 'chat')}
+                      docopsVisible={isDocOpsEnabled() ? showDocOpsPanel : undefined}
+                      onToggleDocOps={
+                        isDocOpsEnabled()
+                          ? () => openRightPanel(showDocOpsPanel ? 'none' : 'docops')
+                          : undefined
+                      }
                     />
                   )}
                 </div>
