@@ -107,7 +107,9 @@ export class CollabTransport implements DocOpsTransport {
 
   constructor(
     /** WebSocket URL for the AI endpoint, e.g. "wss://collab.example.com/api/ai". */
-    private readonly aiWsUrl: string
+    private readonly aiWsUrl: string,
+    /** Room name — included in the chat init so the server can broadcast presence. */
+    private readonly room?: string
   ) {}
 
   call(payload: LlmCallPayload): Promise<LlmCallResult> {
@@ -156,6 +158,7 @@ export class CollabTransport implements DocOpsTransport {
             messages: payload.messages,
             tools: payload.tools,
             ...(payload.apiKey ? { apiKey: payload.apiKey } : {}),
+            ...(this.room ? { roomName: this.room } : {}),
           })
         );
       });
@@ -230,25 +233,27 @@ export class CollabTransport implements DocOpsTransport {
 // ── DesktopTransport ───────────────────────────────────────────────────────
 
 /**
- * Routes LLM calls through the Tauri `docops_llm_call` command.
+ * Routes AI orchestration through the Tauri `docops_llm_call` command.
  * The LLM endpoint and key never touch the webview — the Rust side reads
- * them from env vars (LLM_ENDPOINT / LLM_API_KEY / ANTHROPIC_API_KEY) and
- * will eventually support the native keychain.
+ * them from env vars (LLM_ENDPOINT / LLM_API_KEY / ANTHROPIC_API_KEY).
  *
- * Supports any provider reachable from the machine — Anthropic, OpenAI,
- * Ollama, llama.cpp — via env vars, making offline on-device AI available
- * without a key.
+ * Drives the full multi-round tool loop in JS (drivesLoop=true): each LLM
+ * round calls Rust via invoke, tool_use blocks are executed locally via
+ * payload.toolExecutor, and the loop continues until end_turn or the step
+ * cap. This mirrors the CollabTransport pattern without a WS round-trip —
+ * no Rust changes are required.
  *
- * Falls back to DirectTransport (browser fetch) when running outside the
- * desktop shell (dev mode, web build).
+ * Falls back to DirectTransport when running outside the Tauri shell.
  */
 export class DesktopTransport implements DocOpsTransport {
-  // requiresApiKey = false because the Rust side manages the key + endpoint.
-  // If neither is configured the first call fails with a clear error.
   readonly requiresApiKey = false;
-  readonly drivesLoop = false;
+  readonly drivesLoop = true;
 
-  async call(payload: LlmCallPayload): Promise<LlmCallResult> {
+  call(payload: LlmCallPayload): Promise<LlmCallResult> {
+    if (payload.signal?.aborted) {
+      return Promise.reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }));
+    }
+
     const tauri = (
       window as {
         __TAURI_INTERNALS__?: { invoke?: (cmd: string, args?: unknown) => Promise<unknown> };
@@ -259,22 +264,85 @@ export class DesktopTransport implements DocOpsTransport {
       return new DirectTransport().call(payload);
     }
 
-    try {
-      const data = await tauri.invoke('docops_llm_call', {
-        messages: payload.messages,
-        tools: payload.tools,
-        model: payload.model,
-        system: payload.system,
-        maxTokens: payload.max_tokens,
-        apiKey: payload.apiKey ?? '',
-      });
-      return { data, status: 200 };
-    } catch (err) {
-      return {
-        data: { error: { message: String(err) } },
-        status: 500,
-      };
+    return this.runLoop(payload, tauri.invoke.bind(tauri));
+  }
+
+  private async runLoop(
+    payload: LlmCallPayload,
+    invoke: (cmd: string, args?: unknown) => Promise<unknown>
+  ): Promise<LlmCallResult> {
+    const MAX_ROUNDS = 12;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const messages: any[] = [...payload.messages];
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      if (payload.signal?.aborted) {
+        throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any;
+      try {
+        data = await invoke('docops_llm_call', {
+          model: payload.model,
+          system: payload.system,
+          messages,
+          tools: payload.tools,
+          maxTokens: payload.max_tokens,
+          apiKey: payload.apiKey ?? '',
+        });
+      } catch (err) {
+        return { data: { error: { message: String(err) } }, status: 500 };
+      }
+
+      // Stream text blocks as they arrive
+      if (Array.isArray(data?.content)) {
+        for (const block of data.content) {
+          if (block?.type === 'text' && typeof block.text === 'string') {
+            payload.onText?.(block.text);
+          }
+        }
+      }
+
+      messages.push({ role: 'assistant', content: data?.content ?? [] });
+
+      // Terminate if no tool_use blocks or model signalled end_turn
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const toolUseBlocks: any[] = Array.isArray(data?.content)
+        ? data.content.filter((b: any) => b?.type === 'tool_use')
+        : [];
+
+      if (toolUseBlocks.length === 0 || data?.stop_reason === 'end_turn') break;
+      if (!payload.toolExecutor) break;
+
+      // Execute tool calls and collect results
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const toolResults: any[] = [];
+      for (const block of toolUseBlocks) {
+        try {
+          const result = await payload.toolExecutor(
+            block.name as string,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (block.input ?? {}) as Record<string, unknown>
+          );
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id as string,
+            content: JSON.stringify(result),
+          });
+        } catch (err) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id as string,
+            content: err instanceof Error ? err.message : String(err),
+            is_error: true,
+          });
+        }
+      }
+      messages.push({ role: 'user', content: toolResults });
     }
+
+    return { data: { ok: true }, status: 200, updatedHistory: messages };
   }
 }
 
@@ -286,7 +354,11 @@ export class DesktopTransport implements DocOpsTransport {
  *  - Collab (ws URL)   → CollabTransport (derives /api/ai WS URL from the Yjs URL)
  *  - Otherwise         → DirectTransport
  */
-export function createDocOpsTransport(opts?: { collabWsUrl?: string }): DocOpsTransport {
+export function createDocOpsTransport(opts?: {
+  collabWsUrl?: string;
+  /** Room name for presence broadcasting. Only used with CollabTransport. */
+  room?: string;
+}): DocOpsTransport {
   const isDesktop = !!(window as { __deskApp__?: { isDesktop?: boolean } }).__deskApp__?.isDesktop;
 
   if (isDesktop) return new DesktopTransport();
@@ -295,7 +367,7 @@ export function createDocOpsTransport(opts?: { collabWsUrl?: string }): DocOpsTr
     // wss://host/yjs  →  wss://host/api/ai
     // ws://host/yjs   →  ws://host/api/ai
     const aiWsUrl = opts.collabWsUrl.replace(/\/yjs$/, '').replace(/\/+$/, '') + '/api/ai';
-    return new CollabTransport(aiWsUrl);
+    return new CollabTransport(aiWsUrl, opts.room);
   }
 
   return new DirectTransport();

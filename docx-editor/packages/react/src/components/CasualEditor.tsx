@@ -328,7 +328,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
         onSave={onSave}
         onSelectionChange={onSelectionChange}
         onError={onError}
-        docopsTransport={createDocOpsTransport({ collabWsUrl: backendUrl })}
+        docopsTransport={createDocOpsTransport({ collabWsUrl: backendUrl, room: docId })}
         {...docxEditorProps}
       />
     );
