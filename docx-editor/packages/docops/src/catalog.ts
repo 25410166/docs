@@ -156,4 +156,65 @@ export const DOCOPS_CATALOG: DocOpsTool[] = [
       required: ['paraId', 'text'],
     },
   },
+  {
+    name: 'rewrite_selection',
+    description:
+      'Rewrite the current editor selection with new text as a tracked change. ' +
+      'Always call get_selection first to confirm there is a selection and read ' +
+      'the text you are replacing. The user sees the old text struck through and ' +
+      'the new text highlighted in the sidebar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        new_text: {
+          type: 'string',
+          description: 'The replacement text for the selected content.',
+        },
+      },
+      required: ['new_text'],
+    },
+  },
+  {
+    name: 'delete_paragraphs',
+    description:
+      'Mark one or more paragraphs for deletion as tracked changes. ' +
+      'The user can Accept to confirm or Reject to restore them. ' +
+      'Pass the paraIds from get_outline or find_text.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        paraIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Block IDs of the paragraphs to delete.',
+        },
+      },
+      required: ['paraIds'],
+    },
+  },
+  {
+    name: 'insert_paragraph_after',
+    description:
+      'Insert a new paragraph after an existing block as a tracked change. ' +
+      'Use for adding new content: summaries, conclusions, introductions, ' +
+      'section starters. The user reviews and accepts from the sidebar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        paraId: {
+          type: 'string',
+          description: 'Block ID of the paragraph after which to insert.',
+        },
+        text: {
+          type: 'string',
+          description: 'The text content of the new paragraph.',
+        },
+        styleId: {
+          type: 'string',
+          description: "Optional paragraph style. Defaults to 'Normal'.",
+        },
+      },
+      required: ['paraId', 'text'],
+    },
+  },
 ];

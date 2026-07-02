@@ -74,11 +74,15 @@ Write tools — suggestion mode (user reviews in the sidebar):
   suggest_text_change — creates a tracked change the user can Accept or Reject
   set_paragraph_style — changes heading level, list style, etc.
   add_comment — adds a review comment anchored to a paragraph
+  rewrite_selection — rewrites the current selection as a tracked change; always call get_selection first
+  delete_paragraphs — marks paragraphs for deletion as tracked changes; pass paraIds from get_outline or find_text
+  insert_paragraph_after — inserts a new paragraph after a block as a tracked change
 
 Guidelines:
 - Always read before you write. Call get_outline or get_doc_stats first on a fresh conversation.
 - For suggest_text_change, the search text must be exact (case-sensitive). Call find_text first to confirm the exact phrasing.
-- Tracked changes (suggest_text_change) appear in the comments sidebar — tell the user to open it to review.
+- For rewrite_selection, call get_selection first to confirm a selection exists and read its current text.
+- Tracked changes appear in the comments sidebar — tell the user to open it to review.
 - Keep responses short. Users want results, not explanations.
 - Never invent content about what's in the document — always call a read tool first.`;
 
@@ -668,6 +672,9 @@ const TOOL_LABELS: Record<string, string> = {
   suggest_text_change: 'Suggesting change…',
   set_paragraph_style: 'Applying style…',
   add_comment: 'Adding comment…',
+  rewrite_selection: 'Rewriting selection…',
+  delete_paragraphs: 'Marking for deletion…',
+  insert_paragraph_after: 'Inserting paragraph…',
 };
 
 export default DocOpsPanel;

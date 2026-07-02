@@ -933,6 +933,20 @@ export interface DocxEditorRef {
   onContentChange: (listener: (document: Document) => void) => () => void;
   /** Subscribe to selection changes (cursor moves / selection changes). Returns unsubscribe. */
   onSelectionChange: (listener: (selection: SelectionState | null) => void) => () => void;
+  /** Rewrite the current editor selection as a tracked change. Returns false if there is no
+   * selection or the selection overlaps an existing tracked change. */
+  rewriteSelection: (options: { newText: string; author: string }) => boolean;
+  /** Mark one or more paragraphs for deletion as tracked changes. Returns false if any paraId
+   * is invalid or already has a tracked change. */
+  deleteParagraphs: (options: { paraIds: string[]; author: string }) => boolean;
+  /** Insert a new paragraph after the given block as a tracked change. Returns false if
+   * paraId is invalid or styleId (if given) does not exist in the document. */
+  insertParagraphAfter: (options: {
+    paraId: string;
+    text: string;
+    styleId?: string;
+    author: string;
+  }) => boolean;
 }
 
 /**
@@ -8024,6 +8038,126 @@ body { background: white; }
         return () => {
           selectionChangeSubscribersRef.current.delete(listener);
         };
+      },
+
+      rewriteSelection: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        const { schema } = view.state;
+        if (!schema.marks.deletion || !schema.marks.insertion) return false;
+
+        const { from, to, empty } = view.state.selection;
+        if (empty) return false;
+
+        let overlapsTrackedChange = false;
+        view.state.doc.nodesBetween(from, to, (node) => {
+          for (const m of node.marks) {
+            if (m.type === schema.marks.insertion || m.type === schema.marks.deletion) {
+              overlapsTrackedChange = true;
+              return false;
+            }
+          }
+          return true;
+        });
+        if (overlapsTrackedChange) return false;
+
+        const revisionId = nextCommentId++;
+        const date = new Date().toISOString();
+
+        const deletionMark = schema.marks.deletion.create({
+          revisionId,
+          author: options.author,
+          date,
+        });
+        const insertionMark = schema.marks.insertion.create({
+          revisionId,
+          author: options.author,
+          date,
+        });
+
+        let tr = view.state.tr;
+        tr = tr.addMark(from, to, deletionMark);
+        const insertedNode = schema.text(options.newText, [insertionMark]);
+        tr = tr.insert(to, insertedNode);
+
+        view.dispatch(tr);
+        setShowCommentsSidebar(true);
+        return true;
+      },
+
+      deleteParagraphs: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        const { schema } = view.state;
+        if (!schema.marks.deletion) return false;
+
+        const revisionId = nextCommentId++;
+        const date = new Date().toISOString();
+
+        let tr = view.state.tr;
+        let anyApplied = false;
+
+        for (const paraId of options.paraIds) {
+          const range = findParaIdRange(view.state.doc, paraId);
+          if (!range) continue;
+
+          const contentFrom = range.from + 1;
+          const contentTo = range.to - 1;
+          if (contentFrom >= contentTo) continue;
+
+          let overlaps = false;
+          view.state.doc.nodesBetween(contentFrom, contentTo, (node) => {
+            for (const m of node.marks) {
+              if (m.type === schema.marks.insertion || m.type === schema.marks.deletion) {
+                overlaps = true;
+                return false;
+              }
+            }
+            return true;
+          });
+          if (overlaps) continue;
+
+          const deletionMark = schema.marks.deletion.create({
+            revisionId,
+            author: options.author,
+            date,
+          });
+          tr = tr.addMark(contentFrom, contentTo, deletionMark);
+          anyApplied = true;
+        }
+
+        if (!anyApplied) return false;
+        view.dispatch(tr);
+        setShowCommentsSidebar(true);
+        return true;
+      },
+
+      insertParagraphAfter: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        const { schema } = view.state;
+        if (!schema.marks.insertion || !schema.nodes.paragraph) return false;
+
+        const range = findParaIdRange(view.state.doc, options.paraId);
+        if (!range) return false;
+
+        const revisionId = nextCommentId++;
+        const date = new Date().toISOString();
+
+        const insertionMark = schema.marks.insertion.create({
+          revisionId,
+          author: options.author,
+          date,
+        });
+        const textNode = schema.text(options.text, [insertionMark]);
+        const paraAttrs: Record<string, unknown> = {};
+        if (options.styleId) paraAttrs.styleId = options.styleId;
+        const newPara = schema.nodes.paragraph.create(paraAttrs, textNode);
+
+        const tr = view.state.tr.insert(range.to, newPara);
+        view.dispatch(tr);
+        setShowCommentsSidebar(true);
+        return true;
       },
     };
     // Expose the same handle to the onReady effect below,

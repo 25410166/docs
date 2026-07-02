@@ -34,6 +34,14 @@ export interface DocsBridgeActions {
     author: string;
     search?: string;
   }): number | null;
+  rewriteSelection(options: { newText: string; author: string }): boolean;
+  deleteParagraphs(options: { paraIds: string[]; author: string }): boolean;
+  insertParagraphAfter(options: {
+    paraId: string;
+    text: string;
+    styleId?: string;
+    author: string;
+  }): boolean;
 }
 
 export class DocsBridge {
@@ -64,6 +72,12 @@ export class DocsBridge {
         return this.setParagraphStyle(args);
       case 'add_comment':
         return this.addComment(args);
+      case 'rewrite_selection':
+        return this.rewriteSelection(args);
+      case 'delete_paragraphs':
+        return this.deleteParagraphs(args);
+      case 'insert_paragraph_after':
+        return this.insertParagraphAfter(args);
       default:
         return {
           ok: false,
@@ -369,5 +383,112 @@ export class DocsBridge {
       };
     }
     return { ok: true, data: { commentId }, diffSummary: `Added comment to paragraph ${paraId}.` };
+  }
+
+  private rewriteSelection(args: Record<string, unknown>): DocOpsResult {
+    const view = this.getView();
+    if (!view) return this.noView();
+    const actions = this.getActions();
+    if (!actions) return this.noActions();
+
+    const newText = String(args.new_text ?? '');
+    if (!newText.trim()) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message: 'new_text is required.',
+        retryable: false,
+      };
+    }
+
+    const { empty } = view.state.selection;
+    if (empty) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message: 'No selection active. Call get_selection first to confirm a selection exists.',
+        retryable: false,
+      };
+    }
+
+    const success = actions.rewriteSelection({ newText, author: 'DocOps AI' });
+    if (!success) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message:
+          'Could not rewrite selection. The selection may overlap an existing tracked change.',
+        retryable: false,
+      };
+    }
+    return { ok: true, diffSummary: 'Rewrote selection as tracked change.' };
+  }
+
+  private deleteParagraphs(args: Record<string, unknown>): DocOpsResult {
+    const actions = this.getActions();
+    if (!actions) return this.noActions();
+
+    const paraIds = Array.isArray(args.paraIds)
+      ? (args.paraIds as unknown[]).filter((x) => typeof x === 'string').map(String)
+      : [];
+
+    if (!paraIds.length) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message: 'paraIds must be a non-empty array.',
+        retryable: false,
+      };
+    }
+
+    const success = actions.deleteParagraphs({ paraIds, author: 'DocOps AI' });
+    if (!success) {
+      return {
+        ok: false,
+        code: 'LOCATOR_NOT_FOUND',
+        message:
+          'Could not mark paragraphs for deletion. Check that all paraIds are valid and no paragraph already has a tracked change.',
+        retryable: false,
+      };
+    }
+    return {
+      ok: true,
+      diffSummary: `Marked ${paraIds.length} paragraph(s) for deletion.`,
+    };
+  }
+
+  private insertParagraphAfter(args: Record<string, unknown>): DocOpsResult {
+    const actions = this.getActions();
+    if (!actions) return this.noActions();
+
+    const paraId = String(args.paraId ?? '');
+    const text = String(args.text ?? '');
+    const styleId = args.styleId != null ? String(args.styleId) : undefined;
+
+    if (!paraId || !text.trim()) {
+      return {
+        ok: false,
+        code: 'VALIDATION',
+        message: 'paraId and text are required.',
+        retryable: false,
+      };
+    }
+
+    const success = actions.insertParagraphAfter({
+      paraId,
+      text,
+      styleId,
+      author: 'DocOps AI',
+    });
+    if (!success) {
+      return {
+        ok: false,
+        code: 'LOCATOR_NOT_FOUND',
+        message:
+          'Could not insert paragraph. Check that paraId is valid and styleId (if given) exists in this document.',
+        retryable: false,
+      };
+    }
+    return { ok: true, diffSummary: `Inserted new paragraph after ${paraId}.` };
   }
 }
