@@ -21,7 +21,12 @@ import { RightDockPanel } from '../components/RightDockPanel';
 import { MaterialSymbol } from '../components/ui/Icons';
 import type { DocsBridge } from './bridge';
 import { DOCOPS_CATALOG } from '@casualoffice/docops';
-import { DirectTransport, type DocOpsTransport, type LlmCallPayload } from './transport';
+import {
+  DirectTransport,
+  type DocOpsTransport,
+  type LlmCallPayload,
+  type ToolExecutor,
+} from './transport';
 
 // ── LLM wire types (messages-API shape) ───────────────────────────────────
 
@@ -294,74 +299,112 @@ export function DocOpsPanel({ bridge, onClose, transport: transportProp }: DocOp
     abortRef.current = ctrl;
 
     try {
-      let messages = [...historyRef.current];
-
-      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-        if (ctrl.signal.aborted) break;
+      if (transport.drivesLoop) {
+        // ── Collab transport: server holds the LLM loop ──────────────────
+        // tool_call messages are routed back over WS; we execute via
+        // DocsBridge and return the results to the server.
+        const toolExecutor: ToolExecutor = async (toolName, args) => {
+          appendDisplay({ kind: 'tool_step', toolName, status: 'running' });
+          try {
+            const result = await bridge.callTool(toolName, args);
+            updateLastToolStep('done');
+            return result;
+          } catch (err) {
+            updateLastToolStep('error');
+            throw err;
+          }
+        };
 
         const payload: LlmCallPayload = {
           model: MODEL,
           max_tokens: 2048,
           system: SYSTEM_PROMPT,
-          messages,
+          messages: historyRef.current,
           tools: DOCOPS_CATALOG,
           apiKey: apiKey || undefined,
+          signal: ctrl.signal,
+          toolExecutor,
+          onText: (text) => {
+            if (text.trim()) appendDisplay({ kind: 'assistant', text });
+          },
         };
 
-        const { data, status } = await transport.call(payload);
+        const { data, status, updatedHistory } = await transport.call(payload);
 
         if (status !== 200) {
           const errMsg = (data as { error?: { message?: string } })?.error?.message;
-          throw new Error(errMsg ?? `API error ${status}`);
+          throw new Error(errMsg ?? `AI error ${status}`);
         }
+        if (updatedHistory) historyRef.current = updatedHistory as LlmMessage[];
+      } else {
+        // ── Direct / Desktop transport: panel drives the loop ────────────
+        let messages = [...historyRef.current];
 
-        const response = data as LlmResponse;
+        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          if (ctrl.signal.aborted) break;
 
-        // Add full assistant response to history
-        messages = [...messages, { role: 'assistant', content: response.content }];
+          const payload: LlmCallPayload = {
+            model: MODEL,
+            max_tokens: 2048,
+            system: SYSTEM_PROMPT,
+            messages,
+            tools: DOCOPS_CATALOG,
+            apiKey: apiKey || undefined,
+            signal: ctrl.signal,
+          };
 
-        // Extract and display any text blocks
-        for (const block of response.content) {
-          if (block.type === 'text' && block.text.trim()) {
-            appendDisplay({ kind: 'assistant', text: block.text });
+          const { data, status } = await transport.call(payload);
+
+          if (status !== 200) {
+            const errMsg = (data as { error?: { message?: string } })?.error?.message;
+            throw new Error(errMsg ?? `API error ${status}`);
           }
-        }
 
-        if (response.stop_reason !== 'tool_use') break;
+          const response = data as LlmResponse;
 
-        // Process tool calls
-        const toolResults: LlmContentBlock[] = [];
-        for (const block of response.content) {
-          if (block.type !== 'tool_use') continue;
+          messages = [...messages, { role: 'assistant', content: response.content }];
 
-          appendDisplay({ kind: 'tool_step', toolName: block.name, status: 'running' });
-          try {
-            const result = await bridge.callTool(block.name, block.input);
-            updateLastToolStep('done');
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: block.id,
-              content: JSON.stringify(result),
-            });
-          } catch (err) {
-            updateLastToolStep('error');
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: block.id,
-              content: JSON.stringify({
-                ok: false,
-                code: 'UNSUPPORTED',
-                message: err instanceof Error ? err.message : String(err),
-                retryable: false,
-              }),
-            });
+          for (const block of response.content) {
+            if (block.type === 'text' && block.text.trim()) {
+              appendDisplay({ kind: 'assistant', text: block.text });
+            }
           }
+
+          if (response.stop_reason !== 'tool_use') break;
+
+          const toolResults: LlmContentBlock[] = [];
+          for (const block of response.content) {
+            if (block.type !== 'tool_use') continue;
+
+            appendDisplay({ kind: 'tool_step', toolName: block.name, status: 'running' });
+            try {
+              const result = await bridge.callTool(block.name, block.input);
+              updateLastToolStep('done');
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: JSON.stringify(result),
+              });
+            } catch (err) {
+              updateLastToolStep('error');
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: JSON.stringify({
+                  ok: false,
+                  code: 'UNSUPPORTED',
+                  message: err instanceof Error ? err.message : String(err),
+                  retryable: false,
+                }),
+              });
+            }
+          }
+
+          messages = [...messages, { role: 'user', content: toolResults }];
         }
 
-        messages = [...messages, { role: 'user', content: toolResults }];
+        historyRef.current = messages;
       }
-
-      historyRef.current = messages;
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') return;
       const msg = err instanceof Error ? err.message : String(err);

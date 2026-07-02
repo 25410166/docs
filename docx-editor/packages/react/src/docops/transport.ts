@@ -5,38 +5,66 @@
  *
  * Three concrete implementations:
  *  - DirectTransport  — browser fetch straight to Anthropic (Phase 0/1 default)
- *  - CollabTransport  — proxy through the collab server /api/ai/chat
+ *  - CollabTransport  — WebSocket to the collab server; SERVER holds the LLM
+ *                       tool loop and routes tool_call messages back to this
+ *                       client, which executes them via DocsBridge
  *  - DesktopTransport — Tauri invoke (native HTTP, keychain-ready)
+ *
+ * CollabTransport.drivesLoop === true: call() drives the complete multi-round
+ * conversation internally. DirectTransport and DesktopTransport return a
+ * single LLM round; the panel loops externally for those.
  */
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+export type ToolExecutor = (toolName: string, args: Record<string, unknown>) => Promise<unknown>;
 
 export interface LlmCallPayload {
   model: string;
   system: string;
-  messages: unknown;
-  tools: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  messages: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tools: any;
   max_tokens: number;
   /** API key — required for DirectTransport; optional when the server holds one. */
   apiKey?: string;
+  // ── collab-loop extras (only used when transport.drivesLoop === true) ──
+  /** Executes a tool on behalf of the server and returns the result. */
+  toolExecutor?: ToolExecutor;
+  /** Called for each text block streamed by the server. */
+  onText?: (text: string) => void;
+  /** Abort signal — close the WS when aborted. */
+  signal?: AbortSignal;
 }
 
 export interface LlmCallResult {
-  /** Raw Anthropic messages-API response (or error envelope). */
+  /** Raw LLM response, or a synthetic `{ok:true}` for loop-driving transports. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any;
-  /** HTTP status from upstream. */
+  /** HTTP/WS status code. */
   status: number;
+  /** Full conversation history after all tool rounds (only set by CollabTransport). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  updatedHistory?: any[];
 }
 
 export interface DocOpsTransport {
   call(payload: LlmCallPayload): Promise<LlmCallResult>;
   /** True when an API key UI should be shown to the user. */
   readonly requiresApiKey: boolean;
+  /**
+   * True when the transport drives the full multi-round tool loop internally.
+   * The panel must NOT run its own loop for these transports.
+   */
+  readonly drivesLoop: boolean;
 }
 
 // ── DirectTransport ────────────────────────────────────────────────────────
 
 export class DirectTransport implements DocOpsTransport {
   readonly requiresApiKey = true;
+  readonly drivesLoop = false;
 
   async call(payload: LlmCallPayload): Promise<LlmCallResult> {
     if (!payload.apiKey) {
@@ -56,6 +84,7 @@ export class DirectTransport implements DocOpsTransport {
         messages: payload.messages,
         tools: payload.tools,
       }),
+      signal: payload.signal,
     });
     return { data: await resp.json(), status: resp.status };
   }
@@ -64,44 +93,137 @@ export class DirectTransport implements DocOpsTransport {
 // ── CollabTransport ────────────────────────────────────────────────────────
 
 /**
- * Routes LLM calls through the collab server's /api/ai/chat endpoint.
- * The server holds the Anthropic API key; the user doesn't need one.
- * BYO-key fallback: if the server has no key configured it returns 503
- * and the panel falls back to prompting for a key.
+ * Routes AI orchestration through the collab server's `/api/ai` WebSocket.
+ * The server holds the full LLM tool loop; when the model requests a tool
+ * call, the server sends `{type:'tool_call', id, toolName, args}` back down
+ * the same socket. This client executes the tool via `payload.toolExecutor`
+ * and returns `{type:'tool_result', id, result}`. Text blocks stream as
+ * `{type:'text', text}`. When the loop ends the server sends
+ * `{type:'done', history}` and closes the connection.
  */
 export class CollabTransport implements DocOpsTransport {
   readonly requiresApiKey = false;
+  readonly drivesLoop = true;
 
   constructor(
-    /** HTTP base URL of the collab server, e.g. "https://collab.example.com". */
-    private readonly baseUrl: string,
-    /** Optional BYO key — sent in the body; ignored if the server has its own key. */
-    private readonly fallbackApiKey?: string
+    /** WebSocket URL for the AI endpoint, e.g. "wss://collab.example.com/api/ai". */
+    private readonly aiWsUrl: string
   ) {}
 
-  async call(payload: LlmCallPayload): Promise<LlmCallResult> {
-    const body: Record<string, unknown> = {
-      model: payload.model,
-      max_tokens: payload.max_tokens,
-      system: payload.system,
-      messages: payload.messages,
-      tools: payload.tools,
-    };
-    if (payload.apiKey ?? this.fallbackApiKey) {
-      body.apiKey = payload.apiKey ?? this.fallbackApiKey;
-    }
-    const resp = await fetch(`${this.baseUrl}/api/ai/chat`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      credentials: 'include', // carry session cookies for personal-mode auth
-      body: JSON.stringify(body),
+  call(payload: LlmCallPayload): Promise<LlmCallResult> {
+    return new Promise((resolve, reject) => {
+      // Abort before even opening the socket.
+      if (payload.signal?.aborted) {
+        reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }));
+        return;
+      }
+
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(this.aiWsUrl);
+      } catch (err) {
+        reject(new Error(`Failed to open AI WebSocket: ${String(err)}`));
+        return;
+      }
+
+      let settled = false;
+
+      const settle = (v: LlmCallResult | null, err?: Error) => {
+        if (settled) return;
+        settled = true;
+        payload.signal?.removeEventListener('abort', onAbort);
+        if (err) reject(err);
+        else resolve(v!);
+      };
+
+      const onAbort = () => {
+        try {
+          ws.close(1000, 'aborted');
+        } catch {
+          /* ignore */
+        }
+        settle(null, Object.assign(new Error('AbortError'), { name: 'AbortError' }));
+      };
+      payload.signal?.addEventListener('abort', onAbort);
+
+      ws.addEventListener('open', () => {
+        ws.send(
+          JSON.stringify({
+            type: 'chat',
+            model: payload.model,
+            max_tokens: payload.max_tokens,
+            system: payload.system,
+            messages: payload.messages,
+            tools: payload.tools,
+            ...(payload.apiKey ? { apiKey: payload.apiKey } : {}),
+          })
+        );
+      });
+
+      ws.addEventListener('message', ({ data }: MessageEvent<string>) => {
+        let msg: Record<string, unknown>;
+        try {
+          msg = JSON.parse(data) as Record<string, unknown>;
+        } catch {
+          settle(null, new Error('AI WS: received non-JSON frame'));
+          ws.close();
+          return;
+        }
+
+        if (msg.type === 'text') {
+          payload.onText?.(msg.text as string);
+        } else if (msg.type === 'tool_call') {
+          const id = msg.id as string;
+          const toolName = msg.toolName as string;
+          const args = (msg.args ?? {}) as Record<string, unknown>;
+
+          if (!payload.toolExecutor) {
+            ws.send(
+              JSON.stringify({
+                type: 'tool_result',
+                id,
+                error: 'no toolExecutor configured on this client',
+              })
+            );
+            return;
+          }
+
+          payload
+            .toolExecutor(toolName, args)
+            .then((result) => {
+              ws.send(JSON.stringify({ type: 'tool_result', id, result }));
+            })
+            .catch((err) => {
+              ws.send(
+                JSON.stringify({
+                  type: 'tool_result',
+                  id,
+                  error: err instanceof Error ? err.message : String(err),
+                })
+              );
+            });
+        } else if (msg.type === 'done') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          settle({ data: { ok: true }, status: 200, updatedHistory: msg.history as any[] });
+        } else if (msg.type === 'error') {
+          settle({
+            data: { error: { message: msg.message as string } },
+            status: 500,
+          });
+        }
+      });
+
+      ws.addEventListener('error', () => {
+        settle(null, new Error('AI WebSocket connection failed'));
+      });
+
+      ws.addEventListener('close', ({ code, reason }: CloseEvent) => {
+        if (!settled) {
+          if (code === 1000 || reason === 'aborted') return; // normal or intentional
+          settle(null, new Error(`AI WebSocket closed unexpectedly (${code})`));
+        }
+      });
     });
-    const data = await resp.json();
-    // Server returned 503 "no_api_key" — signal that we need a key from the user.
-    if (resp.status === 503 && (data as { error?: string }).error === 'no_api_key') {
-      return { data, status: 503 };
-    }
-    return { data, status: resp.status };
   }
 }
 
@@ -109,14 +231,15 @@ export class CollabTransport implements DocOpsTransport {
 
 /**
  * Routes LLM calls through a Tauri command (`docops_llm_call`).
- * This keeps the API key out of the webview entirely — the Rust side
- * can read it from the native keychain or a secure store.
+ * The API key stays out of the webview — the Rust side can read it from
+ * the native keychain or a secure store.
  *
- * Falls back to DirectTransport when Tauri is not detected (dev mode
- * running the web build outside of the desktop shell).
+ * Falls back to DirectTransport when running outside the desktop shell
+ * (dev mode, web build).
  */
 export class DesktopTransport implements DocOpsTransport {
   readonly requiresApiKey = true;
+  readonly drivesLoop = false;
 
   async call(payload: LlmCallPayload): Promise<LlmCallResult> {
     const tauri = (
@@ -126,7 +249,6 @@ export class DesktopTransport implements DocOpsTransport {
     ).__TAURI_INTERNALS__;
 
     if (!tauri?.invoke) {
-      // Not running inside the desktop shell — fall back to direct.
       return new DirectTransport().call(payload);
     }
 
@@ -154,7 +276,7 @@ export class DesktopTransport implements DocOpsTransport {
 /**
  * Picks the right transport for the current environment.
  *  - Desktop (Tauri)   → DesktopTransport
- *  - Collab (ws URL)   → CollabTransport (derives HTTP base from the WS URL)
+ *  - Collab (ws URL)   → CollabTransport (derives /api/ai WS URL from the Yjs URL)
  *  - Otherwise         → DirectTransport
  */
 export function createDocOpsTransport(opts?: { collabWsUrl?: string }): DocOpsTransport {
@@ -163,10 +285,10 @@ export function createDocOpsTransport(opts?: { collabWsUrl?: string }): DocOpsTr
   if (isDesktop) return new DesktopTransport();
 
   if (opts?.collabWsUrl) {
-    const httpBase = opts.collabWsUrl
-      .replace(/^wss?:\/\//, (m) => (m === 'wss://' ? 'https://' : 'http://'))
-      .replace(/\/yjs$/, '');
-    return new CollabTransport(httpBase);
+    // wss://host/yjs  →  wss://host/api/ai
+    // ws://host/yjs   →  ws://host/api/ai
+    const aiWsUrl = opts.collabWsUrl.replace(/\/yjs$/, '').replace(/\/+$/, '') + '/api/ai';
+    return new CollabTransport(aiWsUrl);
   }
 
   return new DirectTransport();
