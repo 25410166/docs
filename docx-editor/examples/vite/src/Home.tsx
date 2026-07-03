@@ -706,10 +706,11 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
     };
   }, []);
   const openRecent = (r: RecentFile) => {
-    const fileName = /\.docx$/i.test(r.name) ? r.name : `${r.name}.docx`;
-    const file = new File([r.buffer], fileName, {
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    });
+    // Preserve the original extension — handleOpenFromHome routes .md/.txt/.rtf
+    // via formatFromFilename(file.name). Appending .docx would break that check.
+    const hasExt = /\.[a-z0-9]+$/i.test(r.name);
+    const fileName = hasExt ? r.name : `${r.name}.docx`;
+    const file = new File([r.buffer], fileName, { type: 'application/octet-stream' });
     onOpenFile(file);
   };
   const autoReopenCandidate = autoReopenDismissed ? null : (recents[0] ?? null);
