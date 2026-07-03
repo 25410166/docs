@@ -40,8 +40,19 @@ function toggleList(numId: number): Command {
     const paragraph = $from.parent;
     if (paragraph.type.name !== 'paragraph') return false;
 
-    const currentNumPr = paragraph.attrs.numPr;
-    const isInSameList = currentNumPr?.numId === numId;
+    // Toggle off only when EVERY selected paragraph is already in the target
+    // list — otherwise convert all of them to it (matches Word / Google Docs
+    // for mixed selections). Judging from the anchor paragraph alone would
+    // wrongly strip the list from bullet items when the anchor was numbered.
+    let allInSameList = true;
+    let sawParagraph = false;
+    state.doc.nodesBetween($from.pos, $to.pos, (node) => {
+      if (node.type.name === 'paragraph') {
+        sawParagraph = true;
+        if (node.attrs.numPr?.numId !== numId) allInSameList = false;
+      }
+    });
+    const isInSameList = sawParagraph && allInSameList;
 
     if (!dispatch) return true;
 

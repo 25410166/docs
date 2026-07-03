@@ -1528,6 +1528,9 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
     const pendingIncrementalScrollSnapshotWrittenAtRef = useRef(0);
     const hiddenPMRef = useRef<HiddenProseMirrorRef>(null);
     const painterRef = useRef<LayoutPainter | null>(null);
+    // Removes the IME composition listeners registered in handleEditorViewReady.
+    // Called on view destroy so they don't accumulate across document reloads.
+    const imeCleanupRef = useRef<(() => void) | null>(null);
 
     const { t } = useTranslation();
 
@@ -4488,6 +4491,15 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
         view.dom.addEventListener('compositionstart', syncImeCaret);
         view.dom.addEventListener('compositionupdate', syncImeCaret);
         view.dom.addEventListener('compositionend', clearImeCaret);
+        // Tear down the previous view's listeners (if any) and register this
+        // view's removal so they don't leak across document reloads / readOnly
+        // flips that remount the HiddenProseMirror.
+        imeCleanupRef.current?.();
+        imeCleanupRef.current = () => {
+          view.dom.removeEventListener('compositionstart', syncImeCaret);
+          view.dom.removeEventListener('compositionupdate', syncImeCaret);
+          view.dom.removeEventListener('compositionend', clearImeCaret);
+        };
 
         // Auto-focus the editor so the user can start typing immediately
         if (!readOnly) {
@@ -4702,6 +4714,10 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
           extensionManager={extensionManager}
           ariaLabel={contentLabel}
           onEditorViewReady={handleEditorViewReady}
+          onEditorViewDestroy={() => {
+            imeCleanupRef.current?.();
+            imeCleanupRef.current = null;
+          }}
           onKeyDown={handlePMKeyDown}
         />
 
