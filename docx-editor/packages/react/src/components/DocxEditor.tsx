@@ -9666,6 +9666,9 @@ body { background: white; }
                             onContextMenu={handleContextMenu}
                             onOpenProperties={handleOpenProperties}
                             onResizeTextBox={handleTextBoxSetSize}
+                            onMoveTextBox={handleTextBoxSetPosition}
+                            textBoxPosOffsetH={state.pmTextBoxContext?.posOffsetH ?? null}
+                            textBoxPosOffsetV={state.pmTextBoxContext?.posOffsetV ?? null}
                             onEditFootnote={handleEditFootnote}
                             onEditEquation={handleEditEquation}
                             onEditEndnote={handleEditEndnote}

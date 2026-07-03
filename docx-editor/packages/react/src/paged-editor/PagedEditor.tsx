@@ -379,6 +379,12 @@ export interface PagedEditorProps {
   onOpenProperties?: () => void;
   /** Apply a new text box size (node px) from an on-canvas resize-handle drag. */
   onResizeTextBox?: (width: number, height: number) => void;
+  /** Move a floating text box to (x, y) in node-px from the content-area origin. */
+  onMoveTextBox?: (x: number, y: number) => void;
+  /** Current posOffsetH (node px) of the text box containing the caret. */
+  textBoxPosOffsetH?: number | null;
+  /** Current posOffsetV (node px) of the text box containing the caret. */
+  textBoxPosOffsetV?: number | null;
   /** Open the footnote text editor for the footnote double-clicked at page bottom. */
   onEditFootnote?: (footnoteId: number) => void;
   /** Double-click a painted equation → edit it. Receives the math node's
@@ -1475,6 +1481,9 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
       onContextMenu,
       onOpenProperties,
       onResizeTextBox,
+      onMoveTextBox,
+      textBoxPosOffsetH,
+      textBoxPosOffsetV,
       onEditFootnote,
       onEditEquation,
       onEditEndnote,
@@ -1659,6 +1668,10 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
     } | null>(null);
     // Live drag preview rect during a textbox resize (viewport-relative px).
     const [textBoxResize, setTextBoxResize] = useState<{ w: number; h: number } | null>(null);
+    // Live translate delta during a textbox drag-to-move (screen px).
+    const [textBoxDragDelta, setTextBoxDragDelta] = useState<{ dx: number; dy: number } | null>(
+      null
+    );
 
     /** Build ImageSelectionInfo from a DOM element with data-pm-start */
     const buildImageSelectionInfo = useCallback(
@@ -4936,13 +4949,50 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
               corner to resize the box (resize-only; no move). Mirrors the image
               overlay. The new size is converted from screen px to node px via
               the live zoom and applied through onResizeTextBox. */}
-          {onResizeTextBox &&
+          {(onResizeTextBox || onMoveTextBox) &&
             textBoxChipPos &&
             isFocused &&
             (() => {
-              const box = textBoxResize
-                ? { ...textBoxChipPos, width: textBoxResize.w, height: textBoxResize.h }
-                : textBoxChipPos;
+              const dragDx = textBoxDragDelta?.dx ?? 0;
+              const dragDy = textBoxDragDelta?.dy ?? 0;
+              const box = {
+                ...(textBoxResize
+                  ? { ...textBoxChipPos, width: textBoxResize.w, height: textBoxResize.h }
+                  : textBoxChipPos),
+                left: textBoxChipPos.left + dragDx,
+                top: textBoxChipPos.top + dragDy,
+                x: textBoxChipPos.x + dragDx,
+                y: textBoxChipPos.y + dragDy,
+              };
+
+              const startDrag = (e: React.MouseEvent) => {
+                if (!onMoveTextBox) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const sx = e.clientX;
+                const sy = e.clientY;
+                let fdx = 0;
+                let fdy = 0;
+                const move = (me: MouseEvent) => {
+                  fdx = me.clientX - sx;
+                  fdy = me.clientY - sy;
+                  setTextBoxDragDelta({ dx: fdx, dy: fdy });
+                };
+                const up = () => {
+                  window.removeEventListener('mousemove', move);
+                  window.removeEventListener('mouseup', up);
+                  setTextBoxDragDelta(null);
+                  if (Math.abs(fdx) < 2 && Math.abs(fdy) < 2) return;
+                  // screen px → node px (undo zoom), then add to current offsets
+                  onMoveTextBox(
+                    (textBoxPosOffsetH ?? 0) + fdx / zoom,
+                    (textBoxPosOffsetV ?? 0) + fdy / zoom
+                  );
+                };
+                window.addEventListener('mousemove', move);
+                window.addEventListener('mouseup', up);
+              };
+
               const startResize = (corner: 'nw' | 'ne' | 'se' | 'sw', e: React.MouseEvent) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -4964,7 +5014,7 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
                   window.removeEventListener('mouseup', up);
                   setTextBoxResize(null);
                   // screen px -> node px via zoom
-                  onResizeTextBox(Math.round(fw / zoom), Math.round(fh / zoom));
+                  onResizeTextBox?.(Math.round(fw / zoom), Math.round(fh / zoom));
                 };
                 window.addEventListener('mousemove', move);
                 window.addEventListener('mouseup', up);
@@ -4985,16 +5035,44 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
                       top: box.top,
                       width: box.width,
                       height: box.height,
-                      // Subtle while editing text inside; the corner grips carry
-                      // the resize affordance without a heavy frame.
-                      border: textBoxResize
-                        ? '1.5px solid #2563eb'
-                        : '1px dashed rgba(37,99,235,0.45)',
+                      // Stronger border while dragging; subtle dashed otherwise.
+                      border:
+                        textBoxResize || textBoxDragDelta
+                          ? '1.5px solid #2563eb'
+                          : '1px dashed rgba(37,99,235,0.45)',
                       pointerEvents: 'none',
                       zIndex: 199,
                       boxSizing: 'border-box',
                     }}
                   />
+                  {/* Drag-to-move grip — top-left blue square */}
+                  {onMoveTextBox && (
+                    <div
+                      data-testid="textbox-drag-grip"
+                      title="Drag to move"
+                      onMouseDown={startDrag}
+                      style={{
+                        position: 'absolute',
+                        left: box.left - 1,
+                        top: box.top - 1,
+                        width: 20,
+                        height: 20,
+                        background: '#2563eb',
+                        cursor: 'move',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        pointerEvents: 'auto',
+                        borderRadius: '0 0 4px 0',
+                        zIndex: 201,
+                      }}
+                    >
+                      {/* four-arrow move icon */}
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="white" aria-hidden="true">
+                        <path d="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z" />
+                      </svg>
+                    </div>
+                  )}
                   {corners.map(([c, cx, cy, cursor]) => (
                     <div
                       key={c}
