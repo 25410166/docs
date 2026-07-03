@@ -454,7 +454,7 @@ export const InlineHeaderFooterEditor = forwardRef<
         // Persist override so syncBoxPositions() keeps the new position
         dragOverridesRef.current.set(rect.id, { left: newLeft, top: newTop });
 
-        // Dispatch PM transaction for textboxes to update posOffsetH/V
+        // Dispatch PM transaction to persist the new position.
         const view = viewRef.current;
         if (view && rect.kind === 'textbox') {
           let foundPos = -1;
@@ -472,6 +472,40 @@ export const InlineHeaderFooterEditor = forwardRef<
               ...foundNode.attrs,
               posOffsetH: (foundNode.attrs.posOffsetH ?? 0) + dx,
               posOffsetV: (foundNode.attrs.posOffsetV ?? 0) + dy,
+              displayMode: 'float',
+            });
+            view.dispatch(tr);
+          }
+        } else if (view && rect.kind === 'image') {
+          // Image position is stored in EMU (914400 per inch at 96 DPI → 9525 per pixel).
+          const PIXELS_TO_EMU = 9525;
+          let foundPos = -1;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let foundNode: any = null;
+          view.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'image' && !foundNode) {
+              foundPos = pos;
+              foundNode = node;
+              return false;
+            }
+          });
+          if (foundNode && foundPos >= 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const existingPos = (foundNode.attrs.position as any) ?? null;
+            const newPosition = {
+              horizontal: {
+                relativeTo: existingPos?.horizontal?.relativeTo ?? 'column',
+                posOffset:
+                  (existingPos?.horizontal?.posOffset ?? 0) + Math.round(dx * PIXELS_TO_EMU),
+              },
+              vertical: {
+                relativeTo: existingPos?.vertical?.relativeTo ?? 'paragraph',
+                posOffset: (existingPos?.vertical?.posOffset ?? 0) + Math.round(dy * PIXELS_TO_EMU),
+              },
+            };
+            const tr = view.state.tr.setNodeMarkup(foundPos, null, {
+              ...foundNode.attrs,
+              position: newPosition,
               displayMode: 'float',
             });
             view.dispatch(tr);
@@ -570,6 +604,26 @@ export const InlineHeaderFooterEditor = forwardRef<
               posOffsetH: (foundNode.attrs.posOffsetH ?? 0) + (nl - rect.left),
               posOffsetV: (foundNode.attrs.posOffsetV ?? 0) + (nt - rect.top),
               displayMode: 'float',
+            });
+            view.dispatch(tr);
+          }
+        } else if (view && rect.kind === 'image') {
+          // Persist resized dimensions to the PM image node so they survive save.
+          let foundPos = -1;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let foundNode: any = null;
+          view.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'image' && !foundNode) {
+              foundPos = pos;
+              foundNode = node;
+              return false;
+            }
+          });
+          if (foundNode && foundPos >= 0) {
+            const tr = view.state.tr.setNodeMarkup(foundPos, null, {
+              ...foundNode.attrs,
+              width: nw,
+              height: nh,
             });
             view.dispatch(tr);
           }
@@ -789,6 +843,20 @@ export const InlineHeaderFooterEditor = forwardRef<
         // Prevent clicks from bubbling to pages container / body click handler
         e.stopPropagation();
       }}
+      onMouseMove={(e) => {
+        const outer = hfOuterRef.current;
+        if (!outer || boxRects.length === 0) return;
+        const r = outer.getBoundingClientRect();
+        const x = e.clientX - r.left;
+        const y = e.clientY - r.top;
+        const hit = boxRects.find((b) => {
+          const bx = b.left + pmEditorOffset.left;
+          const by = b.top + pmEditorOffset.top;
+          return x >= bx && x <= bx + b.width && y >= by && y <= by + b.height;
+        });
+        setHoveredBoxId(hit?.id ?? null);
+      }}
+      onMouseLeave={() => setHoveredBoxId(null)}
       onContextMenu={(e) => {
         const target = e.target as HTMLElement | null;
         if (target?.closest('td, th')) {
@@ -851,8 +919,6 @@ export const InlineHeaderFooterEditor = forwardRef<
               if (el) handleElsRef.current.set(rect.id, el);
               else handleElsRef.current.delete(rect.id);
             }}
-            onMouseEnter={() => setHoveredBoxId(rect.id)}
-            onMouseLeave={() => setHoveredBoxId(null)}
             style={{
               position: 'absolute',
               left: rect.left + pmEditorOffset.left,
