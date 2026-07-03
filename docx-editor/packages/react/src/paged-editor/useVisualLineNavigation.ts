@@ -294,8 +294,11 @@ export function useVisualLineNavigation({ pagesContainerRef }: VisualLineNavigat
         stickyXRef.current = null;
         lastVisualLineIndexRef.current = -1;
         if (!pagesContainerRef.current) return false;
-        const { from, anchor } = view.state.selection;
-        const line = findLineElementAtPosition(from);
+        const { from, anchor, head } = view.state.selection;
+        // For Shift+Home/End we want the line where the caret (head) is,
+        // not where the selection anchor is.
+        const lineLookupPos = event.shiftKey ? head : from;
+        const line = findLineElementAtPosition(lineLookupPos);
         if (!line) return false; // off the painted layout — let PM try
         const spans = Array.from(
           line.querySelectorAll('span[data-pm-start][data-pm-end]')
@@ -330,10 +333,19 @@ export function useVisualLineNavigation({ pagesContainerRef }: VisualLineNavigat
         return true;
       }
 
-      // Clear sticky state on non-vertical navigation
+      // Clear sticky state on non-vertical navigation (including edits that shift layout)
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
         if (
-          ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) ||
+          [
+            'ArrowLeft',
+            'ArrowRight',
+            'Home',
+            'End',
+            'Delete',
+            'Backspace',
+            'Tab',
+            'Enter',
+          ].includes(event.key) ||
           (event.key.length === 1 && !event.ctrlKey && !event.metaKey)
         ) {
           stickyXRef.current = null;

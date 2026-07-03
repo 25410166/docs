@@ -7690,6 +7690,7 @@ body { background: white; }
       return null;
     }
     const newIndex = findReplace.goToNextMatch();
+    findResultRef.current = { ...findResultRef.current, currentIndex: newIndex };
     const match = findResultRef.current.matches[newIndex];
     navigateToMatch(match);
     setFindHighlights(findResultRef.current.matches, newIndex);
@@ -7702,6 +7703,7 @@ body { background: white; }
       return null;
     }
     const newIndex = findReplace.goToPreviousMatch();
+    findResultRef.current = { ...findResultRef.current, currentIndex: newIndex };
     const match = findResultRef.current.matches[newIndex];
     navigateToMatch(match);
     setFindHighlights(findResultRef.current.matches, newIndex);

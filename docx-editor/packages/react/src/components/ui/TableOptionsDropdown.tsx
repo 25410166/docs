@@ -238,11 +238,22 @@ function VerticalAlignRow({ onAction }: { onAction: (action: TableAction) => voi
 // CELL MARGINS SUBCOMPONENT
 // ============================================================================
 
-function CellMarginsRow({ onAction }: { onAction: (action: TableAction) => void }) {
+function CellMarginsRow({
+  onAction,
+  initialMargins,
+}: {
+  onAction: (action: TableAction) => void;
+  initialMargins?: { top?: number; bottom?: number; left?: number; right?: number };
+}) {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
-  const [marginValues, setMarginValues] = useState({ top: 0, bottom: 0, left: 108, right: 108 });
+  const [marginValues, setMarginValues] = useState({
+    top: initialMargins?.top ?? 0,
+    bottom: initialMargins?.bottom ?? 0,
+    left: initialMargins?.left ?? 108,
+    right: initialMargins?.right ?? 108,
+  });
 
   const handleApply = () => {
     onAction({ type: 'cellMargins', margins: marginValues });
@@ -898,7 +909,7 @@ export function TableOptionsDropdown({
           <VerticalAlignRow onAction={handleAction} />
 
           {/* Cell margins section */}
-          <CellMarginsRow onAction={handleAction} />
+          <CellMarginsRow onAction={handleAction} initialMargins={tableContext?.cellMargins} />
 
           {/* Text direction + no-wrap section */}
           <div style={separatorStyles} role="separator" />

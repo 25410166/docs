@@ -284,6 +284,10 @@ export const InlineHeaderFooterEditor = forwardRef<
     width: number;
   } | null>(null);
 
+  // Stable ref so the scroll/resize listener can call syncBoxPositions without
+  // being declared after it (syncBoxPositions is a useCallback declared below).
+  const syncBoxPositionsRef = useRef<() => void>(() => {});
+
   useLayoutEffect(() => {
     const computePosition = () => {
       const parentRect = parentElement.getBoundingClientRect();
@@ -293,6 +297,8 @@ export const InlineHeaderFooterEditor = forwardRef<
         left: targetRect.left - parentRect.left + parentElement.scrollLeft,
         width: targetRect.width,
       });
+      // Keep drag/resize handle overlay in sync with the new container position.
+      requestAnimationFrame(() => syncBoxPositionsRef.current());
     };
     computePosition();
 
@@ -406,6 +412,12 @@ export const InlineHeaderFooterEditor = forwardRef<
     // Track hf-editor-pm offset within hf-inline-editor for handle positioning
     setPmEditorOffset({ top: container.offsetTop, left: container.offsetLeft });
   }, [targetElement]);
+
+  // Keep the ref up-to-date so the scroll/resize listener (declared above) can
+  // always call the latest version of syncBoxPositions.
+  useEffect(() => {
+    syncBoxPositionsRef.current = syncBoxPositions;
+  }, [syncBoxPositions]);
 
   // ── Drag to move ──────────────────────────────────────────────────────────
   const startDrag = useCallback(
@@ -731,7 +743,7 @@ export const InlineHeaderFooterEditor = forwardRef<
       viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlayPos]); // Re-run when position is computed (container becomes available)
+  }, [!!overlayPos]); // Only fire when container transitions from unavailable→available, not on every scroll/resize recompute
 
   // Save current content
   const handleSave = useCallback(() => {

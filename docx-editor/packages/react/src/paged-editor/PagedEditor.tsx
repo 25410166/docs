@@ -4003,19 +4003,11 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
           }
         }
 
-        // Double-click: select entire cell (CellSelection) if in table, otherwise word selection
+        // Double-click: word selection (same as Word / Google Docs — even inside table cells)
+        // Triple-click is used for cell/paragraph selection.
         if (e.detail === 2 && hiddenPMRef.current) {
           const pmPos = getPositionFromMouse(e.clientX, e.clientY);
           if (pmPos !== null) {
-            // If inside a table cell, select the entire cell
-            const cellPos = findCellPosFromPmPos(pmPos);
-            if (cellPos !== null) {
-              e.preventDefault();
-              e.stopPropagation();
-              hiddenPMRef.current.setCellSelection(cellPos, cellPos);
-              return;
-            }
-
             const view = hiddenPMRef.current.getView();
             if (view) {
               const { doc } = view.state;

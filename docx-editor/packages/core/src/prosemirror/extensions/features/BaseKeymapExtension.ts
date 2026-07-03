@@ -65,11 +65,15 @@ const clearIndentOnBackspace: Command = (state, dispatch) => {
 
   if (dispatch) {
     const pos = $cursor.before();
+    // Preserve a negative indentLeft — it's part of a hanging-indent pair
+    // (e.g. indentLeft:-360 + hangingIndent:360) and should not be zeroed out.
+    const nextIndentLeft =
+      attrs.indentLeft != null && (attrs.indentLeft as number) < 0 ? attrs.indentLeft : null;
     const tr = state.tr.setNodeMarkup(pos, undefined, {
       ...attrs,
       indentFirstLine: null,
       hangingIndent: null,
-      indentLeft: null,
+      indentLeft: nextIndentLeft,
     });
     dispatch(tr.scrollIntoView());
   }

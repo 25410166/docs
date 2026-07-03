@@ -425,7 +425,11 @@ export const clearFormatting: Command = (state, dispatch) => {
 
   if (empty) {
     if (dispatch) {
-      dispatch(state.tr.setStoredMarks([]));
+      // Mirror the cleared marks into the paragraph's defaultTextFormatting so
+      // the StoredMarksRestoreExtension doesn't resurrect them on next re-focus.
+      let tr = saveStoredMarksToParagraph(state, state.tr, []);
+      tr = tr.setStoredMarks([]);
+      dispatch(tr);
     }
     return true;
   }

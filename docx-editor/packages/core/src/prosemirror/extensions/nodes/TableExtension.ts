@@ -515,6 +515,8 @@ export interface TableContextInfo {
   cellBorderColor?: ColorValue;
   /** Current cell's background/fill color (RGB hex without #), if any */
   cellBackgroundColor?: string;
+  /** Current cell's margin values in twips (top/bottom/left/right). */
+  cellMargins?: { top?: number; bottom?: number; left?: number; right?: number };
   /** Current row's isHeader attr — true when the row is pinned to
    * repeat on page breaks (serializes to <w:tblHeader/>). Lets the
    * toolbar show an active/checked state on the "Pin header row"
@@ -588,7 +590,10 @@ function getTableContext(state: EditorState): TableContextInfo {
     }
   });
 
-  const canSplitCell = !!cellNode && !hasMultiCellSelection;
+  const canSplitCell =
+    !!cellNode &&
+    !hasMultiCellSelection &&
+    ((cellNode.attrs.colspan ?? 1) > 1 || (cellNode.attrs.rowspan ?? 1) > 1);
 
   // Extract border color and background color from current cell
   let cellBorderColor: TableContextInfo['cellBorderColor'];
@@ -613,6 +618,12 @@ function getTableContext(state: EditorState): TableContextInfo {
     }
   }
 
+  const cellMargins = cellNode
+    ? (cellNode.attrs.margins as
+        | { top?: number; bottom?: number; left?: number; right?: number }
+        | undefined)
+    : undefined;
+
   return {
     isInTable: true,
     table,
@@ -626,6 +637,7 @@ function getTableContext(state: EditorState): TableContextInfo {
     cellBorderColor,
     cellBackgroundColor,
     currentRowIsHeader,
+    cellMargins,
   };
 }
 
@@ -1378,11 +1390,23 @@ export const TablePluginExtension = createExtension({
       if (!context.isInTable || context.tablePos === undefined || !context.table) return false;
 
       if (dispatch) {
-        const tableStart = context.tablePos + 1;
-        // Find first and last cell in the table
-        const $first = state.doc.resolve(tableStart);
-        const $last = state.doc.resolve(context.tablePos + context.table.nodeSize - 2);
-        const cellSel = CellSelection.create(state.doc, $first.pos, $last.pos);
+        const tableStart = context.tablePos + 1; // inside the table, before first row
+        // +1 into first row, +1 into first cell = content inside first cell
+        const firstCellPos = tableStart + 1 + 1;
+        // Walk to the last row, last cell
+        const lastRow = context.table.child(context.table.childCount - 1);
+        let lastRowStart = tableStart;
+        for (let r = 0; r < context.table.childCount - 1; r++) {
+          lastRowStart += context.table.child(r).nodeSize;
+        }
+        // +1 into last row, then walk cells to find the last one
+        let lastCellPos = lastRowStart + 1;
+        let cellOffset = lastRowStart + 1;
+        lastRow.forEach((cell) => {
+          lastCellPos = cellOffset + 1; // inside this cell's content
+          cellOffset += cell.nodeSize;
+        });
+        const cellSel = CellSelection.create(state.doc, firstCellPos, lastCellPos);
         dispatch(state.tr.setSelection(cellSel));
       }
       return true;
@@ -1407,8 +1431,15 @@ export const TablePluginExtension = createExtension({
           rowPos += row.nodeSize;
         }
         const row = context.table.child(context.rowIndex);
-        const firstCellPos = rowPos + 1; // inside the row
-        const lastCellPos = rowPos + row.nodeSize - 2;
+        // rowPos is the row's nodePos; +1 enters the row, +1 enters the first cell content
+        const firstCellPos = rowPos + 1 + 1;
+        // Walk cells to find the last one's content position
+        let lastCellPos = firstCellPos;
+        let cellOffset = rowPos + 1;
+        row.forEach((cell) => {
+          lastCellPos = cellOffset + 1; // inside this cell's content
+          cellOffset += cell.nodeSize;
+        });
         const cellSel = CellSelection.create(state.doc, firstCellPos, lastCellPos);
         dispatch(state.tr.setSelection(cellSel));
       }
