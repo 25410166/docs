@@ -33,6 +33,8 @@ export interface AISuggestionPanelProps {
   onAccept: () => void;
   /** Drop the suggestion + close the panel. */
   onReject: () => void;
+  /** Abort an in-flight run without closing the panel. */
+  onCancel?: () => void;
   /** Re-run inference with the current tone + selection. */
   onRetry: () => void;
   /** Tone presets — rewrite only. Clicking a chip re-runs inline. */
@@ -174,6 +176,7 @@ export function AISuggestionPanel({
   inferenceMs,
   onAccept,
   onReject,
+  onCancel,
   onRetry,
   tones,
   onTone,
@@ -206,15 +209,26 @@ export function AISuggestionPanel({
 
   const footer = (
     <div style={footerStyle}>
-      <button
-        type="button"
-        style={hintBtnStyle}
-        onClick={onRetry}
-        disabled={busy}
-        data-testid="ai-suggestion-retry"
-      >
-        Retry
-      </button>
+      {busy && onCancel ? (
+        <button
+          type="button"
+          style={hintBtnStyle}
+          onClick={onCancel}
+          data-testid="ai-suggestion-stop"
+        >
+          Stop
+        </button>
+      ) : (
+        <button
+          type="button"
+          style={hintBtnStyle}
+          onClick={onRetry}
+          disabled={busy}
+          data-testid="ai-suggestion-retry"
+        >
+          Retry
+        </button>
+      )}
       <button
         type="button"
         style={secondaryBtnStyle}
@@ -287,7 +301,9 @@ export function AISuggestionPanel({
             {busy && <span style={spinnerStyle} aria-hidden="true" />}
             <span>
               {busy
-                ? 'Running on-device…'
+                ? mode === 'rewrite'
+                  ? 'Rewriting…'
+                  : 'Summarizing…'
                 : inferenceMs !== null
                   ? `${inferenceMs} ms · on-device`
                   : 'On-device'}

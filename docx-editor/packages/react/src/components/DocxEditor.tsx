@@ -2884,6 +2884,53 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // Busy gate while a selection-prompt request is in flight, so the
   // user can't queue a second request while the first runs.
   const [askAiBusy, setAskAiBusy] = useState(false);
+  // Whether an AI backend is ready: collab server connected, or desktop
+  // with a local model loaded. SelectionAskAi and AISuggestionPanel are
+  // gated here so the pill never appears when there's nothing to call.
+  const [aiEnabled, setAiEnabled] = useState(false);
+  useEffect(() => {
+    const isTauri = !!(window as { __TAURI__?: unknown }).__TAURI__;
+    type TauriWindow = {
+      __TAURI__?: {
+        core?: { invoke?: (cmd: string, args?: unknown) => Promise<unknown> };
+        event?: {
+          listen?: (event: string, cb: (e: { payload: unknown }) => void) => Promise<() => void>;
+        };
+      };
+    };
+    const tw = window as TauriWindow;
+
+    if (isTauri) {
+      // Desktop: enabled only when a local model is loaded.
+      const invoke = tw.__TAURI__?.core?.invoke;
+      if (invoke) {
+        void invoke('ai_get_active_model')
+          .then((m) => setAiEnabled(!!m))
+          .catch(() => {});
+      }
+      const listen = tw.__TAURI__?.event?.listen;
+      if (listen) {
+        const cleanup = listen('ai:model-changed', (e) => {
+          setAiEnabled(!!(e.payload as { modelId?: string | null })?.modelId);
+        });
+        return () => {
+          void cleanup.then((fn) => fn());
+        };
+      }
+      return;
+    }
+
+    // Web: enabled if the effective transport doesn't require a user API key
+    // (collab server holds one), or if the user has already saved a key for
+    // the direct path.
+    const effectiveTransport = docopsTransport ?? createDocOpsTransport();
+    if (!effectiveTransport.requiresApiKey) {
+      setAiEnabled(true);
+    } else {
+      // Direct transport: check for a saved key (same storage key as DocOpsPanel).
+      setAiEnabled(!!localStorage.getItem('docops-api-key'));
+    }
+  }, [docopsTransport]);
   useEffect(() => {
     const listener = (sel: SelectionState | null): void => {
       setHasTextSelection(!!sel?.hasSelection);
@@ -3850,6 +3897,21 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [disableFindReplaceShortcuts, findReplace, hyperlinkDialog, tableSelection, focusMode]);
+
+  // Mod+J → open the AI inline-ask pill (Notion convention; Cmd+I is
+  // taken by italic). Only fires when AI is available.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const cmdOrCtrl = e.metaKey || e.ctrlKey;
+      if (cmdOrCtrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'j') {
+        if (!aiEnabled) return;
+        e.preventDefault();
+        setHasTextSelection(true);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [aiEnabled, setHasTextSelection]);
 
   // Ref holds the latest file-op handlers so the global keydown listener
   // (registered once above) can call them without depending on their
@@ -6035,6 +6097,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     setAiSuggestion(null);
   }, []);
 
+  const handleAiCancel = useCallback(() => {
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = null;
+    setAiSuggestion((prev) => (prev ? { ...prev, busy: false } : prev));
+  }, []);
+
   const handleAiRetry = useCallback(() => {
     if (!aiSuggestion) return;
     void runAiSuggestion(aiSuggestion.mode, aiSuggestion.tone, {
@@ -6227,18 +6295,18 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         // the user Accept / Reject; nothing changes in the doc until
         // they explicitly click Replace.
         case 'aiRewrite': {
-          openAiSuggestion('rewrite');
+          if (aiEnabled) openAiSuggestion('rewrite');
           break;
         }
         case 'aiSummarize': {
-          openAiSuggestion('summarize');
+          if (aiEnabled) openAiSuggestion('summarize');
           break;
         }
-        // AI Ask — opens the chat panel; the selection chip will
-        // auto-include the current selection because the panel reads
-        // it on mount.
+        // AI Ask — re-opens the SelectionAskAi floating pill. If the
+        // user dismissed it and then chose "Ask AI" from the context
+        // menu, this brings the pill back for the current selection.
         case 'aiAsk': {
-          openRightPanel('chat');
+          if (aiEnabled) setHasTextSelection(true);
           break;
         }
         // Comment — same flow as floating comment button
@@ -10113,13 +10181,57 @@ body { background: white; }
                       which sets the canonical RIGHT_PANEL_WIDTH so the
                       doc area shifts by a uniform amount regardless of
                       which panel the user opens. */}
-                  {/* AI surfaces gated off until WebLLM has a yielding
-                      inference path. <AISuggestionPanel>, <WritingAssistantSheet>,
-                      <ChatPanel> render blocks intentionally removed
-                      to prevent the long-doc freeze the user kept
-                      hitting. Hooks / state / handlers preserved so
-                      restoring is a copy-paste of the JSX back in
-                      from git history. */}
+                  {aiSuggestion && (
+                    <AISuggestionPanel
+                      mode={aiSuggestion.mode}
+                      original={aiSuggestion.original}
+                      suggestion={aiSuggestion.suggestion}
+                      inferenceMs={aiSuggestion.inferenceMs}
+                      onAccept={handleAiAccept}
+                      onReject={handleAiReject}
+                      onCancel={handleAiCancel}
+                      onRetry={handleAiRetry}
+                      tones={
+                        aiSuggestion.mode === 'rewrite'
+                          ? [
+                              {
+                                id: 'polish',
+                                label: 'Polish',
+                                active: aiSuggestion.tone === 'polish',
+                              },
+                              {
+                                id: 'concise',
+                                label: 'Concise',
+                                active: aiSuggestion.tone === 'concise',
+                              },
+                              {
+                                id: 'formal',
+                                label: 'Formal',
+                                active: aiSuggestion.tone === 'formal',
+                              },
+                              {
+                                id: 'casual',
+                                label: 'Casual',
+                                active: aiSuggestion.tone === 'casual',
+                              },
+                              {
+                                id: 'shorter',
+                                label: 'Shorter',
+                                active: aiSuggestion.tone === 'shorter',
+                              },
+                              {
+                                id: 'longer',
+                                label: 'Longer',
+                                active: aiSuggestion.tone === 'longer',
+                              },
+                            ]
+                          : undefined
+                      }
+                      onTone={handleAiTone}
+                      busy={aiSuggestion.busy}
+                      error={aiSuggestion.error}
+                    />
+                  )}
 
                   {/* DocOps AI panel — gated behind window.__casualFeatures__.docops.
                       Uses the Anthropic API directly (user-supplied key) with the
@@ -10418,9 +10530,8 @@ body { background: white; }
                 with the user's free-form prompt; the resulting
                 proposal goes into the inline preview popover (same
                 surface as chat-driven proposals). */}
-            {/* SelectionAskAi forced off — LLM gating. */}
             <SelectionAskAi
-              isOpen={false}
+              isOpen={hasTextSelection && aiEnabled}
               getView={() => getActiveEditorView() ?? null}
               busy={askAiBusy}
               onDismiss={() => setHasTextSelection(false)}
