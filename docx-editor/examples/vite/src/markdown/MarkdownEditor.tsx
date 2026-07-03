@@ -879,8 +879,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     height: '100vh',
-    background: 'var(--md-surface-2, #f8fafc)',
+    background: 'var(--md-surface-2, #eef1f5)',
     color: COLORS.text,
+    // Same chrome typeface as the docx editor (DS --font-sans / Inter).
+    fontFamily: "var(--font-sans, 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif)",
   },
   bar: {
     display: 'flex',
@@ -888,8 +890,9 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     gap: 16,
     padding: '8px 16px',
-    background: COLORS.bar,
-    borderBottom: `1px solid ${COLORS.border}`,
+    // Title bar + toolbar + desk share the docx editor's chrome grey (one
+    // continuous strip), so only the editing panes read as white cards.
+    background: 'var(--md-chrome, #eef1f5)',
     flex: '0 0 auto',
   },
   barLeft: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 },
@@ -899,7 +902,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 2,
     padding: '7px 16px',
-    background: 'var(--md-surface-2, #f8fafc)',
+    background: 'var(--md-chrome, #eef1f5)',
     borderBottom: `1px solid ${COLORS.border}`,
     flex: '0 0 auto',
     flexWrap: 'wrap',

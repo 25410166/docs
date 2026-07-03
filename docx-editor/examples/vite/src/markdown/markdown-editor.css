@@ -7,54 +7,48 @@
  * styles reference these via var(--md-*); the classes below use them too.
  */
 
+/*
+ * The markdown/text editor shares the ONE Casual Office design language with
+ * the docs (docx) editor: every --md-* token maps onto a @schnsrw/design-system
+ * --color-* token (the same tokens the docx editor's --doc-* chrome reads), so
+ * the two editors render with the same palette, Inter chrome font, teal-cyan
+ * accent, and dark-mode swap. The hex fallbacks ARE the DS light values, so the
+ * editors still match if the DS stylesheet isn't on the page.
+ */
 :root {
-  --md-surface: #ffffff;
-  --md-surface-2: #f1f5f9;
-  --md-surface-3: #e2e8f0;
-  --md-border: #e2e8f0;
-  --md-text: #0f172a;
-  --md-text-soft: #334155;
-  --md-text-muted: #64748b;
-  --md-accent: #2563eb;
-  --md-accent-soft: rgba(37, 99, 235, 0.2);
+  /* Chrome (title bar + toolbar + desk) uses the docx editor's chrome grey;
+     the editing/preview panes use its page-paper white — so both editors read
+     as one product. --doc-* is defined globally by editor.css (imported in
+     styles.css); the hex fallbacks are the DS light values. */
+  --md-chrome: var(--doc-chrome, #eef1f5);
+  --md-paper: var(--doc-page-paper, #ffffff);
+  --md-surface: var(--doc-page-paper, #ffffff);
+  --md-surface-2: var(--doc-chrome, #eef1f5);
+  --md-surface-3: var(--doc-bg-hover, #e3e7ee);
+  --md-border: var(--doc-border, #cdd3db);
+  --md-text: var(--doc-text, #201f1e);
+  --md-text-soft: var(--doc-text-muted, #4a4d55);
+  --md-text-muted: var(--doc-text-subtle, #7a7f88);
+  --md-accent: var(--doc-primary, #1a73e8);
+  --md-accent-soft: var(--doc-primary-light, rgba(26, 115, 232, 0.14));
 }
 
+/* Dark: --doc-* already swaps under [data-theme='dark'] set by editor.css;
+   these fallbacks cover a bare page with the OS in dark mode. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --md-surface: #0f172a;
-    --md-surface-2: #1e293b;
-    --md-surface-3: #334155;
-    --md-border: #334155;
-    --md-text: #e2e8f0;
-    --md-text-soft: #cbd5e1;
-    --md-text-muted: #94a3b8;
-    --md-accent: #60a5fa;
-    --md-accent-soft: rgba(96, 165, 250, 0.24);
+    --md-chrome: var(--doc-chrome, #2a2e35);
+    --md-paper: var(--doc-page-paper, #1b1e23);
+    --md-surface: var(--doc-page-paper, #1b1e23);
+    --md-surface-2: var(--doc-chrome, #2a2e35);
+    --md-surface-3: var(--doc-bg-hover, #14161a);
+    --md-border: var(--doc-border, #424751);
+    --md-text: var(--doc-text, #e6e6e6);
+    --md-text-soft: var(--doc-text-muted, #b8bcc4);
+    --md-text-muted: var(--doc-text-subtle, #8b909a);
+    --md-accent: var(--doc-primary, #22d3ee);
+    --md-accent-soft: var(--doc-primary-light, rgba(34, 211, 238, 0.2));
   }
-}
-
-/* Explicit theme override (data-theme wins over the media query). */
-[data-theme='light'] {
-  --md-surface: #ffffff;
-  --md-surface-2: #f1f5f9;
-  --md-surface-3: #e2e8f0;
-  --md-border: #e2e8f0;
-  --md-text: #0f172a;
-  --md-text-soft: #334155;
-  --md-text-muted: #64748b;
-  --md-accent: #2563eb;
-  --md-accent-soft: rgba(37, 99, 235, 0.2);
-}
-[data-theme='dark'] {
-  --md-surface: #0f172a;
-  --md-surface-2: #1e293b;
-  --md-surface-3: #334155;
-  --md-border: #334155;
-  --md-text: #e2e8f0;
-  --md-text-soft: #cbd5e1;
-  --md-text-muted: #94a3b8;
-  --md-accent: #60a5fa;
-  --md-accent-soft: rgba(96, 165, 250, 0.24);
 }
 
 /* Toolbar buttons */
