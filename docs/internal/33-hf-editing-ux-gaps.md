@@ -1,6 +1,6 @@
 # 33 — Header/Footer Editing UX Gaps
 
-**Date:** 2026-07-03 · **Status:** HF-1–6 closed (`e0336da`) · HF-7, BD-1, BD-2 deferred · **Feeds from:** audit this session
+**Date:** 2026-07-03 · **Status:** HF-1–6 + BD-1 + BD-2 closed · HF-7 deferred · **Feeds from:** audit this session
 
 Full audit of what is broken, missing, or deferred in the header/footer editing overlay.
 See `30-header-edit-positioned-layout.md` for the Phase 1-2 history (faithful render, done).
@@ -137,7 +137,7 @@ Refs: `InlineHeaderFooterEditor.tsx:66-68`, `DocxEditor.tsx:1878-1928`
 ## Body-editor gaps (not HF-specific)
 
 ### BD-1 — Textboxes in the body cannot be dragged to a new position
-**Status: Open — P1**
+**Status: FIXED (`4c391aa`) — drag grip (blue square, top-left) + textBoxDragDelta visual + onMoveTextBox → handleTextBoxSetPosition**
 
 `draggable: true` on `TextBoxExtension` enables PM cut-paste reordering only.
 There is no `TextBoxSelectionOverlay` equivalent to `ImageSelectionOverlay`
@@ -152,7 +152,7 @@ Refs: `TextBoxExtension.ts:102`, `PagedEditor.tsx` (no TextBoxSelectionOverlay)
 ---
 
 ### BD-2 — Textboxes in the body have no selection affordance (no selection border)
-**Status: Open — P2**
+**Status: FIXED (`4c391aa`) — existing dashed border now solidifies to blue during drag; move grip provides "selected" affordance**
 
 Clicking a textbox in the body selects it (PM NodeSelection) but there is no visual
 "selected" state (no blue border, no resize handles) because there is no
@@ -174,8 +174,8 @@ Fix: create `TextBoxSelectionOverlay.tsx` as a thin wrapper around the existing
 | HF-3 | Resize textboxes+images in HF | DONE (`e0336da`) | — | — |
 | HF-6 | Ruler disabled during HF editing | DONE (`e0336da`) | — | — |
 | HF-5 | Context menu in HF editor | DONE (`e0336da`) | — | — |
-| BD-1 | Body textbox drag-to-reposition | P1 | L | BD-2 |
-| BD-2 | Body textbox selection affordance | P2 | M | — |
+| BD-1 | Body textbox drag-to-reposition | DONE (`4c391aa`) | — | — |
+| BD-2 | Body textbox selection affordance | DONE (`4c391aa`) | — | — |
 | HF-7 | Format panel in HF editor | P2 | L | HF-2 |
 
 Effort: S = 1–2 hours, M = half day, L = 1–2 days
