@@ -10,6 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MD_FIXTURE = path.join(__dirname, '..', 'fixtures', 'casual-sample.md');
 const TXT_FIXTURE = path.join(__dirname, '..', 'fixtures', 'casual-sample.txt');
 const YML_FIXTURE = path.join(__dirname, '..', 'fixtures', 'casual-sample.yml');
+const NOTEBOOK_FIXTURE = path.join(__dirname, '..', 'fixtures', 'notebook-sample.md');
 
 /**
  * Markdown / text editor opened from the Home picker.
@@ -111,6 +112,40 @@ test('.yml opens as source-only with YAML syntax highlighting', async ({ page })
   await expect(source.locator('.cm-line span').first()).toBeVisible();
 
   await page.screenshot({ path: 'screenshots/yaml-source.png' });
+});
+
+test('Notebook mode renders markdown inline and reveals syntax on the caret', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('home-file-input').setInputFiles(NOTEBOOK_FIXTURE);
+  await page.waitForSelector('[data-testid="markdown-editor"]', { timeout: 30000 });
+
+  // Switch to the notebook (live-preview) mode.
+  await page.getByTestId('markdown-view-notebook').click();
+  const source = page.getByTestId('markdown-source');
+
+  // Single surface — no separate preview pane.
+  await expect(page.getByTestId('markdown-preview')).toHaveCount(0);
+
+  // Move the caret off the heading (last paragraph) so its markers hide.
+  await source.locator('.cm-line', { hasText: 'Plain paragraph' }).click();
+
+  // Headings render enlarged (line decoration) and inline emphasis is styled.
+  await expect(source.locator('.cm-md-h1').first()).toBeVisible();
+  await expect(source.locator('.cm-md-strong').first()).toBeVisible();
+  await expect(source.locator('.cm-md-em').first()).toBeVisible();
+  await expect(source.locator('.cm-md-code').first()).toBeVisible();
+
+  // With the caret elsewhere, the H1 line's '#' marker is hidden (clean render).
+  const h1 = source.locator('.cm-md-h1').first();
+  await expect(h1).toContainText('Casual Notebook');
+  await expect(h1).not.toContainText('#');
+
+  // Clicking into the heading reveals the raw '#' so it can be edited
+  // (Obsidian Live-Preview behavior).
+  await h1.click();
+  await expect(source.locator('.cm-line', { hasText: '# Casual Notebook' })).toBeVisible();
+
+  await page.screenshot({ path: 'screenshots/md-notebook-test.png' });
 });
 
 test('editing the source updates the preview live', async ({ page }) => {

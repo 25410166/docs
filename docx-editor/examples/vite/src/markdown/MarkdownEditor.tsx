@@ -4,20 +4,21 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
-import { EditorState, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { yaml } from '@codemirror/lang-yaml';
 import { StreamLanguage, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
 import { properties } from '@codemirror/legacy-modes/mode/properties';
 import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { yCollab } from 'y-codemirror.next';
+import { livePreviewPlugin } from './livePreview';
 import { markdownToHtml } from './markdownToHtml';
 import { seedYText } from './seedYText';
 import type { MarkdownCollab } from './useMarkdownCollab';
 import './markdown-preview.css';
 import './markdown-editor.css';
 
-export type MarkdownViewMode = 'source' | 'split' | 'preview';
+export type MarkdownViewMode = 'notebook' | 'source' | 'split' | 'preview';
 
 export interface MarkdownEditorProps {
   /** Raw file text to seed the editor (local open) or the shared doc (collab). */
@@ -47,6 +48,17 @@ const COLORS = {
 };
 
 const ICONS: Record<MarkdownViewMode, React.ReactNode> = {
+  notebook: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path d="M8 3v18M11 8h5M11 12h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  ),
   source: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
@@ -78,6 +90,7 @@ const ICONS: Record<MarkdownViewMode, React.ReactNode> = {
 };
 
 const MODE_LABEL: Record<MarkdownViewMode, string> = {
+  notebook: 'Notebook',
   source: 'Source',
   split: 'Split',
   preview: 'Preview',
@@ -435,6 +448,8 @@ export function MarkdownEditor({
   const editorHostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  // Toggles the notebook (live-preview) decorations without rebuilding the view.
+  const liveCompartmentRef = useRef(new Compartment());
 
   // Build CodeMirror once. Re-running on collab identity change is correct —
   // the binding is part of the extension set.
@@ -473,6 +488,10 @@ export function MarkdownEditor({
           // fallback doesn't reliably paint tokens on its own here.
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           ...langExtensions,
+          // Notebook mode (markdown only) — toggled via the compartment below.
+          liveCompartmentRef.current.of(
+            kind === 'markdown' && mode === 'notebook' ? livePreviewPlugin : []
+          ),
           ...collabExtensions,
           EditorView.lineWrapping,
           sync,
@@ -496,6 +515,18 @@ export function MarkdownEditor({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collab, kind]);
+
+  // Toggle the notebook (live-preview) decorations when the view mode changes,
+  // without tearing down the editor (preserves cursor, selection, undo).
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: liveCompartmentRef.current.reconfigure(
+        kind === 'markdown' && mode === 'notebook' ? livePreviewPlugin : []
+      ),
+    });
+  }, [mode, kind]);
 
   const previewHtml = useMemo(
     () => (supportsPreview ? markdownToHtml(docText) : ''),
@@ -619,7 +650,9 @@ export function MarkdownEditor({
     });
   }, [mode, supportsPreview]);
 
-  const showSource = mode === 'source' || mode === 'split';
+  // Notebook renders inline in the source pane itself, so it shows only that
+  // pane (no separate preview) — the live-preview decorations do the rendering.
+  const showSource = mode === 'notebook' || mode === 'source' || mode === 'split';
   const showPreview = supportsPreview && (mode === 'preview' || mode === 'split');
 
   return (
@@ -662,7 +695,7 @@ export function MarkdownEditor({
         <div style={styles.barRight}>
           {supportsPreview && (
             <div style={styles.toggle} role="group" aria-label="View mode">
-              {(['source', 'split', 'preview'] as MarkdownViewMode[]).map((m) => {
+              {(['notebook', 'source', 'split', 'preview'] as MarkdownViewMode[]).map((m) => {
                 const active = mode === m;
                 return (
                   <button

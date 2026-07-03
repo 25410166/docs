@@ -64,7 +64,18 @@ export default defineConfig(async () => {
       // and another for components that import React directly inside the
       // example, which crashed Radix Select with "Cannot read properties
       // of null (reading 'useMemo')" on the toolbar's ZoomControl.
-      dedupe: ['react', 'react-dom'],
+      // The @codemirror/* packages have the same single-instance requirement:
+      // syntaxTree() reads a facet that must be the exact module the active
+      // language (markdown) wrote to. Two @codemirror/language copies made
+      // syntaxTree return an empty tree, breaking the notebook live-preview
+      // decorations. Dedupe the CodeMirror core packages too.
+      dedupe: [
+        'react',
+        'react-dom',
+        '@codemirror/state',
+        '@codemirror/view',
+        '@codemirror/language',
+      ],
       alias: [
         // Resolve package imports to source for live development
         // Order matters: more-specific prefixes before less-specific ones
