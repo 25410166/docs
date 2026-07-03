@@ -136,5 +136,20 @@ export function formatFromFilename(name: string): Format | ViewerFormat | null {
   if (ext === 'markdown') return 'md';
   if (ext === 'rtf') return 'rtf';
   if (ext === 'eml') return 'eml';
+  // Structured-config / plain-source files open in the source editor (no
+  // markdown preview). They're highlighted per-extension by CodeMirror; here
+  // they just need to route like .txt rather than the DOCX zip parser.
+  if (
+    ext === 'yml' ||
+    ext === 'yaml' ||
+    ext === 'toml' ||
+    ext === 'conf' ||
+    ext === 'cfg' ||
+    ext === 'ini' ||
+    ext === 'env' ||
+    ext === 'properties'
+  ) {
+    return 'txt';
+  }
   return null;
 }

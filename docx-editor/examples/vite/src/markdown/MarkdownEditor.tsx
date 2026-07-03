@@ -4,8 +4,12 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
-import { EditorState } from '@codemirror/state';
+import { EditorState, type Extension } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
+import { yaml } from '@codemirror/lang-yaml';
+import { StreamLanguage, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
+import { properties } from '@codemirror/legacy-modes/mode/properties';
+import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { yCollab } from 'y-codemirror.next';
 import { markdownToHtml } from './markdownToHtml';
 import { seedYText } from './seedYText';
@@ -75,6 +79,34 @@ const MODE_LABEL: Record<MarkdownViewMode, string> = {
   split: 'Split',
   preview: 'Preview',
 };
+
+// ─── Source-language detection ────────────────────────────────────────────────
+
+/**
+ * Pick a CodeMirror language extension from the file extension. Markdown uses
+ * the full markdown package; structured-config files (.yml/.yaml, .conf/.ini/
+ * .env, .toml) get syntax highlighting via lang-yaml / legacy-modes so they
+ * open in the source editor as first-class text, not an unhighlighted blob.
+ */
+function languageExtensionForFile(fileName: string, kind: 'markdown' | 'text'): Extension[] {
+  if (kind === 'markdown') return [markdown()];
+  const ext = (/\.([a-z0-9]+)$/i.exec(fileName)?.[1] ?? '').toLowerCase();
+  switch (ext) {
+    case 'yml':
+    case 'yaml':
+      return [yaml()];
+    case 'toml':
+      return [StreamLanguage.define(toml)];
+    case 'conf':
+    case 'cfg':
+    case 'ini':
+    case 'env':
+    case 'properties':
+      return [StreamLanguage.define(properties)];
+    default:
+      return [];
+  }
+}
 
 // ─── Toolbar action helpers ───────────────────────────────────────────────────
 
@@ -407,7 +439,7 @@ export function MarkdownEditor({
     const host = editorHostRef.current;
     if (!host) return;
 
-    const langExtensions = kind === 'markdown' ? [markdown()] : [];
+    const langExtensions = languageExtensionForFile(fileName, kind);
 
     // Push every doc change into React state so the preview re-renders. In
     // collab mode this also fires for remote edits applied by yCollab.
@@ -433,6 +465,10 @@ export function MarkdownEditor({
         doc: startDoc,
         extensions: [
           basicSetup,
+          // Explicit highlight style so language tokens (YAML keys, markdown
+          // syntax, TOML, config keys) are actually colored — basicSetup's
+          // fallback doesn't reliably paint tokens on its own here.
+          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           ...langExtensions,
           ...collabExtensions,
           EditorView.lineWrapping,

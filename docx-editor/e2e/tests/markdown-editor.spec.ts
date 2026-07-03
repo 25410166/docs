@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MD_FIXTURE = path.join(__dirname, '..', 'fixtures', 'casual-sample.md');
 const TXT_FIXTURE = path.join(__dirname, '..', 'fixtures', 'casual-sample.txt');
+const YML_FIXTURE = path.join(__dirname, '..', 'fixtures', 'casual-sample.yml');
 
 /**
  * Markdown / text editor opened from the Home picker.
@@ -88,6 +89,28 @@ test('.txt opens as source-only — no preview pane or view toggle', async ({ pa
   await expect(page.getByTestId('markdown-source')).toContainText('No markdown preview here.');
   await expect(page.getByTestId('markdown-preview')).toHaveCount(0);
   await expect(page.getByTestId('markdown-view-split')).toHaveCount(0);
+});
+
+test('.yml opens as source-only with YAML syntax highlighting', async ({ page }) => {
+  await page.goto('/');
+  const fileInput = page.getByTestId('home-file-input');
+  // Picker accepts config source files.
+  await expect(fileInput).toHaveAttribute('accept', /\.yml/);
+  await fileInput.setInputFiles(YML_FIXTURE);
+  await page.waitForSelector('[data-testid="markdown-editor"]', { timeout: 30000 });
+
+  const source = page.getByTestId('markdown-source');
+
+  // Config files route to the source editor: source-only, no preview / toggle.
+  await expect(source).toContainText('backend: local');
+  await expect(page.getByTestId('markdown-preview')).toHaveCount(0);
+  await expect(page.getByTestId('markdown-view-split')).toHaveCount(0);
+
+  // CodeMirror applies YAML highlighting — highlighted tokens render as
+  // <span> elements inside the lines (an unhighlighted blob has none).
+  await expect(source.locator('.cm-line span').first()).toBeVisible();
+
+  await page.screenshot({ path: 'screenshots/yaml-source.png' });
 });
 
 test('editing the source updates the preview live', async ({ page }) => {
