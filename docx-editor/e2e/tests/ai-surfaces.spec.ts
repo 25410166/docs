@@ -25,7 +25,10 @@
 
 import { expect, Page, test } from '@playwright/test';
 
-const API_KEY_STORAGE = 'docops-api-key';
+// Key checked by DocxEditor to enable the SelectionAskAi pill (web path).
+const DOCX_EDITOR_AI_KEY = 'docops-api-key';
+// Key checked by DocOpsPanel to skip the key-setup screen.
+const DOCOPS_PANEL_KEY = 'casual_docops_api_key';
 const FAKE_KEY = 'sk-ant-test-fake-key';
 
 /** Navigate to the editor and wait for the layout canvas. */
@@ -40,7 +43,7 @@ test.describe('SelectionAskAi pill', () => {
   test('hidden when no text is selected — web transport', async ({ page }) => {
     await page.addInitScript(({ k, s }) => {
       try { localStorage.setItem(s, k); } catch { /* ignore */ }
-    }, { k: FAKE_KEY, s: API_KEY_STORAGE });
+    }, { k: FAKE_KEY, s: DOCX_EDITOR_AI_KEY });
     await loadEditor(page);
 
     const pill = page.locator('[data-testid="selection-ask-ai-pill"]');
@@ -50,7 +53,7 @@ test.describe('SelectionAskAi pill', () => {
   test('appears after selecting text — web transport with saved key', async ({ page }) => {
     await page.addInitScript(({ k, s }) => {
       try { localStorage.setItem(s, k); } catch { /* ignore */ }
-    }, { k: FAKE_KEY, s: API_KEY_STORAGE });
+    }, { k: FAKE_KEY, s: DOCX_EDITOR_AI_KEY });
     await loadEditor(page);
 
     await page.locator('.paged-editor__pages').click();
@@ -121,7 +124,7 @@ test.describe('SelectionAskAi pill', () => {
   test('pill closes on Escape', async ({ page }) => {
     await page.addInitScript(({ k, s }) => {
       try { localStorage.setItem(s, k); } catch { /* ignore */ }
-    }, { k: FAKE_KEY, s: API_KEY_STORAGE });
+    }, { k: FAKE_KEY, s: DOCX_EDITOR_AI_KEY });
     await loadEditor(page);
 
     await page.locator('.paged-editor__pages').click();
@@ -143,10 +146,10 @@ test.describe('SelectionAskAi pill', () => {
 test.describe('DocOpsPanel SSE streaming', () => {
   test('shows setup view when no API key is stored', async ({ page }) => {
     // Enable DocOps feature flag but leave no API key.
-    await page.addInitScript(() => {
+    await page.addInitScript((panelKey) => {
       (window as any).__casualFeatures__ = { docops: true };
-      try { localStorage.removeItem('docops-api-key'); } catch { /* ignore */ }
-    });
+      try { localStorage.removeItem(panelKey); } catch { /* ignore */ }
+    }, DOCOPS_PANEL_KEY);
     await loadEditor(page);
 
     const docopsBtn = page.locator('[data-testid="rail-docops"]');
@@ -160,10 +163,13 @@ test.describe('DocOpsPanel SSE streaming', () => {
   });
 
   test('in-flight streaming tokens commit to message on completion', async ({ page }) => {
-    await page.addInitScript(({ k, s }) => {
+    await page.addInitScript(({ k, editorKey, panelKey }) => {
       (window as any).__casualFeatures__ = { docops: true };
-      try { localStorage.setItem(s, k); } catch { /* ignore */ }
-    }, { k: FAKE_KEY, s: API_KEY_STORAGE });
+      // editorKey enables aiEnabled in DocxEditor (gates the pill + DocOps button).
+      // panelKey bypasses the key-setup screen inside DocOpsPanel itself.
+      try { localStorage.setItem(editorKey, k); } catch { /* ignore */ }
+      try { localStorage.setItem(panelKey, k); } catch { /* ignore */ }
+    }, { k: FAKE_KEY, editorKey: DOCX_EDITOR_AI_KEY, panelKey: DOCOPS_PANEL_KEY });
     await loadEditor(page);
 
     // Intercept Anthropic fetch — return a minimal SSE stream.
