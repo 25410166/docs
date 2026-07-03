@@ -273,6 +273,7 @@ export function DocOpsPanel({
   );
 
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([]);
+  const [streamingText, setStreamingText] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -375,6 +376,7 @@ export function DocOpsPanel({
         for (let round = 0; round < maxToolRounds; round++) {
           if (ctrl.signal.aborted) break;
 
+          let streamedText = '';
           const payload: LlmCallPayload = {
             model: MODEL,
             max_tokens: 2048,
@@ -384,9 +386,22 @@ export function DocOpsPanel({
             apiKey: apiKey || undefined,
             signal: ctrl.signal,
             maxToolRounds,
+            onText: (tok) => {
+              if (tok) {
+                streamedText += tok;
+                setStreamingText((prev) => prev + tok);
+              }
+            },
           };
 
           const { data, status } = await transport.call(payload);
+
+          // Flush any streamed tokens as a single committed message,
+          // then clear the in-flight indicator.
+          if (streamedText.trim()) {
+            appendDisplay({ kind: 'assistant', text: streamedText });
+          }
+          setStreamingText('');
 
           if (status !== 200) {
             const errMsg = (data as { error?: { message?: string } })?.error?.message;
@@ -397,9 +412,13 @@ export function DocOpsPanel({
 
           messages = [...messages, { role: 'assistant', content: response.content }];
 
-          for (const block of response.content) {
-            if (block.type === 'text' && block.text.trim()) {
-              appendDisplay({ kind: 'assistant', text: block.text });
+          // Emit text blocks only when nothing was streamed via onText
+          // (i.e. the transport returned a complete response at once).
+          if (!streamedText) {
+            for (const block of response.content) {
+              if (block.type === 'text' && block.text.trim()) {
+                appendDisplay({ kind: 'assistant', text: block.text });
+              }
             }
           }
 
@@ -677,6 +696,13 @@ export function DocOpsPanel({
               }
               return null;
             })}
+
+            {streamingText && (
+              <div style={{ ...msgAssistantStyle, opacity: 0.85 }}>
+                {streamingText}
+                <span style={spinnerStyle} aria-hidden="true" />
+              </div>
+            )}
 
             {!apiKey && displayMessages.length === 0 && (
               <div
