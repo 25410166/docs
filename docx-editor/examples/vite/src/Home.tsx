@@ -798,6 +798,72 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
         </p>
       </section>
 
+      <section
+        style={{
+          maxWidth: '1180px',
+          margin: '0 auto',
+          padding: isMobile ? '0 16px 4px' : '0 40px 4px',
+        }}
+        aria-label="AI features pre-release"
+      >
+        <div
+          style={{
+            background: COLORS.brandSoft,
+            border: `1px solid #bfdbfe`,
+            borderRadius: '12px',
+            padding: isMobile ? '14px 16px' : '16px 24px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: isMobile ? '10px' : '0',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span
+              style={{
+                display: 'inline-block',
+                fontSize: '11px',
+                fontWeight: 700,
+                color: COLORS.brand,
+                background: '#dbeafe',
+                border: `1px solid #93c5fd`,
+                padding: '3px 9px',
+                borderRadius: '999px',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                flexShrink: 0,
+              }}
+            >
+              Pre-release
+            </span>
+            <span style={{ fontSize: '14px', color: COLORS.inkMuted, lineHeight: 1.45 }}>
+              <strong style={{ color: COLORS.ink }}>AI features are on the way</strong> — inline
+              ask ({'⌘'}J / Ctrl+J), rewrite panel, and a DocOps chat panel for
+              document-level operations. Runs fully on-device in the desktop app or against the
+              Anthropic API on the web.
+            </span>
+          </div>
+          <a
+            href="https://github.com/CasualOffice/docs#ai-features-pre-release"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontSize: '13px',
+              fontWeight: 600,
+              color: COLORS.brand,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+          >
+            Learn more
+          </a>
+        </div>
+      </section>
+
       <section style={{ ...styles.controls, ...(isMobile && mobile.controls) }}>
         <label style={{ ...styles.searchWrap, ...(isMobile && mobile.searchWrap) }}>
           <span
@@ -974,7 +1040,7 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
       />
 
       <footer style={{ ...styles.footer, ...(isMobile && mobile.footer) }}>
-        <span>MIT fork of eigenpal/docx-editor · stateless real-time backend in Go</span>
+        <span>MIT fork of eigenpal/docx-editor · Node collab server (Hocuspocus + Yjs)</span>
         <a
           href="https://github.com/schnsrw/docx"
           target="_blank"
