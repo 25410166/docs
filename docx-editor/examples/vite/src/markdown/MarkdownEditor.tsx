@@ -196,7 +196,7 @@ interface ToolbarItem {
 
 function makeTbIcon(d: string) {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
         d={d}
         stroke="currentColor"
@@ -864,8 +864,8 @@ const styles: Record<string, React.CSSProperties> = {
   toolbar: {
     display: 'flex',
     alignItems: 'center',
-    gap: 1,
-    padding: '5px 14px',
+    gap: 2,
+    padding: '7px 16px',
     background: 'var(--md-surface-2, #f8fafc)',
     borderBottom: `1px solid ${COLORS.border}`,
     flex: '0 0 auto',
@@ -875,10 +875,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     border: 'none',
-    borderRadius: 6,
+    borderRadius: 7,
     background: 'transparent',
     color: COLORS.muted,
     cursor: 'pointer',
@@ -886,9 +886,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   toolbarDivider: {
     width: 1,
-    height: 18,
+    height: 20,
     background: COLORS.border,
-    margin: '0 6px',
+    margin: '0 8px',
     flex: '0 0 auto',
   },
   downloadButton: {
