@@ -26,7 +26,7 @@
  * parent's scale transform).
  */
 
-import React, { Fragment, useEffect, useState, useMemo, type CSSProperties } from 'react';
+import React, { Fragment, useEffect, useState, useMemo, type CSSProperties, type ReactNode } from 'react';
 import type { SelectionRect } from '@eigenpal/docx-core/layout-bridge';
 import type { SelectionFormatting, FormattingAction } from '../Toolbar';
 import { MaterialSymbol } from './MaterialSymbol';
@@ -133,15 +133,19 @@ const btnActive: CSSProperties = {
 };
 
 interface FormatButton {
-  cmd: 'bold' | 'italic' | 'underline' | 'strikethrough' | 'insertLink';
+  cmd: 'bold' | 'italic' | 'underline' | 'strikethrough' | 'superscript' | 'subscript' | 'insertLink';
   label: string;
   /** Text glyph (B/I/U/S). Mutually exclusive with `icon`. */
   glyph?: string;
+  /** Inline JSX element for buttons whose glyph can't be plain text (sub/super). */
+  glyphEl?: ReactNode;
   /** MaterialSymbol name — used for actions with no good text glyph (link). */
   icon?: string;
   active: (f: SelectionFormatting) => boolean;
   /** Render a thin separator before this button (groups marks vs actions). */
   divider?: boolean;
+  /** Hide on mobile (phone) — used for lower-priority buttons that clutter the compact bar. */
+  desktopOnly?: boolean;
 }
 
 const BUTTONS: FormatButton[] = [
@@ -155,6 +159,28 @@ const BUTTONS: FormatButton[] = [
     // SelectionFormatting calls it `strike` (matches PM mark name);
     // the FormattingAction uses `strikethrough` for the command.
     active: (f) => !!f.strike,
+  },
+  {
+    cmd: 'superscript',
+    label: 'Superscript',
+    glyphEl: (
+      <span style={{ fontWeight: 600, lineHeight: 1 }}>
+        x<sup style={{ fontSize: '0.65em' }}>2</sup>
+      </span>
+    ),
+    active: (f) => !!f.superscript,
+    desktopOnly: true,
+  },
+  {
+    cmd: 'subscript',
+    label: 'Subscript',
+    glyphEl: (
+      <span style={{ fontWeight: 600, lineHeight: 1 }}>
+        x<sub style={{ fontSize: '0.65em' }}>2</sub>
+      </span>
+    ),
+    active: (f) => !!f.subscript,
+    desktopOnly: true,
   },
   {
     cmd: 'insertLink',
@@ -230,6 +256,7 @@ function MobileFormatBarInner({
       onTouchStart={(e) => e.stopPropagation()}
     >
       {BUTTONS.map((b) => {
+        if (b.desktopOnly && variant === 'mobile') return null;
         const on = b.active(formatting);
         const cmd = b.cmd;
         const glyphStyle: CSSProperties = {
@@ -253,6 +280,8 @@ function MobileFormatBarInner({
             >
               {b.icon ? (
                 <MaterialSymbol name={b.icon} size={variant === 'mobile' ? 18 : 16} />
+              ) : b.glyphEl ? (
+                b.glyphEl
               ) : (
                 <span style={glyphStyle}>{b.glyph}</span>
               )}
@@ -295,7 +324,8 @@ function computePosition(
 ): Pick<CSSProperties, 'left' | 'top'> {
   const btnSize = variant === 'mobile' ? 36 : 28;
   const padding = variant === 'mobile' ? 6 : 4;
-  const APPROX_WIDTH = padding * 2 + BUTTONS.length * btnSize;
+  const visibleBtnCount = BUTTONS.filter((b) => !(b.desktopOnly && variant === 'mobile')).length;
+  const APPROX_WIDTH = padding * 2 + visibleBtnCount * btnSize;
   const barHeight = variant === 'mobile' ? BAR_HEIGHT_MOBILE : BAR_HEIGHT_DESKTOP;
   const vw = typeof window === 'undefined' ? 360 : window.innerWidth;
   const vh = typeof window === 'undefined' ? 640 : window.innerHeight;

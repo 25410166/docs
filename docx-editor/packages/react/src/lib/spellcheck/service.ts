@@ -49,9 +49,30 @@ let enabled = false;
 // this and rebuilds its DecorationSet when it shifts.
 let stateVersion = 0;
 
-// `ignored` is the cache of words the user told us to ignore for this
-// session. (We don't yet persist a personal dictionary — that's a v2 thing.)
-const ignored = new Set<string>();
+const USER_DICT_KEY = 'casual-editor-user-dict';
+
+// Load persisted user-dictionary entries into the ignored set so they
+// survive across sessions.  We do this synchronously at module-init so
+// the set is populated before the first `isMisspelled()` call.
+function loadPersistedDict(): Set<string> {
+  const set = new Set<string>();
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(USER_DICT_KEY) : null;
+    if (raw) {
+      const list = JSON.parse(raw) as unknown;
+      if (Array.isArray(list)) {
+        for (const w of list) if (typeof w === 'string' && w) set.add(w);
+      }
+    }
+  } catch {
+    // Corrupt storage — start fresh.
+  }
+  return set;
+}
+
+// `ignored` covers both the session-ignore list (transient) and the
+// persisted user dictionary (permanent).
+const ignored = loadPersistedDict();
 
 /**
  * True when the user has asked for spell-check (Tools → Spell check).
@@ -141,6 +162,33 @@ export function suggestionsFor(word: string, limit = 6): string[] {
 export function ignoreWord(word: string): void {
   ignored.add(word);
   stateVersion++;
+}
+
+/**
+ * Add a word to the persisted user dictionary so it is never flagged
+ * again across sessions. Also works as an ignore for the current session.
+ */
+export function addWordToDictionary(word: string): void {
+  if (!word) return;
+  ignored.add(word);
+  stateVersion++;
+  try {
+    const existing: string[] = [];
+    const raw =
+      typeof localStorage !== 'undefined' ? localStorage.getItem(USER_DICT_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        for (const w of parsed) if (typeof w === 'string' && w) existing.push(w);
+      }
+    }
+    if (!existing.includes(word)) {
+      existing.push(word);
+      localStorage.setItem(USER_DICT_KEY, JSON.stringify(existing));
+    }
+  } catch {
+    // Storage quota or private-browsing restriction — session-ignore still works.
+  }
 }
 
 /**

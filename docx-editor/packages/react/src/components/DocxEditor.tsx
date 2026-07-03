@@ -246,6 +246,7 @@ import {
   loadSpellChecker,
   suggestionsFor,
   ignoreWord,
+  addWordToDictionary,
 } from '../lib/spellcheck/service';
 import { getGrammarCheckerImpl, isGrammarEnabled, setGrammarEnabled } from '../lib/grammar/service';
 import { SpellSuggestionsMenu } from './SpellSuggestionsMenu';
@@ -5790,6 +5791,14 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     setSpellMenu(null);
   }, [getActiveEditorView, spellMenu]);
 
+  const handleAddToDictionarySpell = useCallback(() => {
+    if (!spellMenu) return;
+    addWordToDictionary(spellMenu.word);
+    const view = getActiveEditorView();
+    if (view) refreshSpellcheckDecorations(view);
+    setSpellMenu(null);
+  }, [getActiveEditorView, spellMenu]);
+
   // Pick a name from the @-mention popover: replace "@query" with "@Name "
   const handlePickMention = useCallback(
     (name: string) => {
@@ -10449,6 +10458,7 @@ body { background: white; }
                 suggestions={spellMenu.suggestions}
                 onPick={handlePickSpellSuggestion}
                 onIgnore={handleIgnoreSpell}
+                onAddToDictionary={handleAddToDictionarySpell}
                 onClose={() => setSpellMenu(null)}
               />
             )}

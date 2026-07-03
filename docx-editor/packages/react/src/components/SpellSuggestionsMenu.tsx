@@ -23,6 +23,7 @@ export interface SpellSuggestionsMenuProps {
   suggestions: string[];
   onPick: (suggestion: string) => void;
   onIgnore: () => void;
+  onAddToDictionary: () => void;
   onClose: () => void;
 }
 
@@ -78,19 +79,18 @@ export function SpellSuggestionsMenu({
   suggestions,
   onPick,
   onIgnore,
+  onAddToDictionary,
   onClose,
 }: SpellSuggestionsMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState(0);
 
   // `items` is the list of focusable rows in render order — suggestions
-  // first, then "Ignore". Used by keyboard navigation.
+  // first, then "Ignore", then "Add to dictionary".
   const items = [
     ...suggestions.map((s) => ({ kind: 'suggest' as const, value: s })),
-    {
-      kind: 'ignore' as const,
-      value: word,
-    },
+    { kind: 'ignore' as const, value: word },
+    { kind: 'addDict' as const, value: word },
   ];
 
   useEffect(() => {
@@ -126,7 +126,8 @@ export function SpellSuggestionsMenu({
         const it = items[hover];
         if (!it) return;
         if (it.kind === 'suggest') onPick(it.value);
-        else onIgnore();
+        else if (it.kind === 'ignore') onIgnore();
+        else onAddToDictionary();
         close();
       }
     };
@@ -202,6 +203,19 @@ export function SpellSuggestionsMenu({
         data-testid="spell-ignore"
       >
         Ignore
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        style={hover === suggestions.length + 1 ? itemHoverStyle : itemStyle}
+        onMouseEnter={() => setHover(suggestions.length + 1)}
+        onClick={() => {
+          onAddToDictionary();
+          close();
+        }}
+        data-testid="spell-add-to-dictionary"
+      >
+        Add to dictionary
       </button>
     </div>
   );

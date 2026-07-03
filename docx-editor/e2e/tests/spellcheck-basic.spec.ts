@@ -82,5 +82,33 @@ test.describe('Spell check', () => {
     const menu = page.getByTestId('spell-suggestions-menu');
     await expect(menu).toBeVisible();
     await expect(page.getByTestId('spell-ignore')).toBeVisible();
+    await expect(page.getByTestId('spell-add-to-dictionary')).toBeVisible();
+  });
+
+  test('"Add to dictionary" removes the squiggle immediately', async ({ page }) => {
+    const editor = new EditorPage(page);
+    await editor.goto();
+    await editor.waitForReady();
+    await editor.newDocument();
+
+    await page.getByRole('button', { name: 'Tools', exact: true }).click();
+    await page.getByRole('menuitem', { name: /Spell check/i }).click();
+    await expect(page.getByText(/Loading spell-check/i)).toHaveCount(0, { timeout: 15_000 });
+
+    // Type a unique-looking word that will always be flagged
+    await editor.typeText('Zxqvwtest ');
+    const squiggle = page.locator('.spellcheck-error').first();
+    await expect(squiggle).toBeVisible({ timeout: 5_000 });
+
+    const box = await squiggle.boundingBox();
+    if (!box) throw new Error('no bbox for .spellcheck-error');
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+
+    const menu = page.getByTestId('spell-suggestions-menu');
+    await expect(menu).toBeVisible();
+    await page.getByTestId('spell-add-to-dictionary').click();
+
+    // The squiggle should be gone — word is no longer flagged
+    await expect(page.locator('.spellcheck-error')).toHaveCount(0, { timeout: 3_000 });
   });
 });
