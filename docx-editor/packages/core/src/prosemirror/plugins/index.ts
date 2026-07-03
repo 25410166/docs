@@ -25,3 +25,10 @@ export {
   setSuggestionMode,
   isSuggestionModeActive,
 } from './suggestionMode';
+
+export {
+  createMentionPlugin,
+  MENTION_PLUGIN_KEY,
+} from './mentionPlugin';
+
+export type { MentionPluginState } from './mentionPlugin';
