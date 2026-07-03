@@ -1,6 +1,6 @@
 # 33 — Header/Footer Editing UX Gaps
 
-**Date:** 2026-07-03 · **Status:** Active tracker · **Feeds from:** audit this session
+**Date:** 2026-07-03 · **Status:** HF-1–6 closed (`e0336da`) · HF-7, BD-1, BD-2 deferred · **Feeds from:** audit this session
 
 Full audit of what is broken, missing, or deferred in the header/footer editing overlay.
 See `30-header-edit-positioned-layout.md` for the Phase 1-2 history (faithful render, done).
@@ -35,7 +35,7 @@ File: `InlineHeaderFooterEditor.tsx:456`
 ---
 
 ### HF-2 — Cannot drag/move textboxes or images in the HF editor
-**Status: Open — P1**
+**Status: FIXED (`e0336da`) — drag grip + dragOverridesRef + setNodeMarkup on drop**
 
 Root cause: `syncBoxPositions()` positions boxes via a `<style>` element with `!important`
 rules copied from the hidden painted header. There are no drag handles, grab cursors, or
@@ -59,7 +59,7 @@ Refs: `InlineHeaderFooterEditor.tsx:263-321`, `TextBoxExtension.ts:74,120`
 ---
 
 ### HF-3 — Cannot resize images or textboxes in the HF editor
-**Status: Open — P1**
+**Status: FIXED (`e0336da`) — 4-corner resize handles, live dragStyleRef feedback, setNodeMarkup on drop**
 
 Root cause: The body editor has `ImageSelectionOverlay.tsx` (622 lines) with 4-corner resize
 handles, aspect-ratio locking, and drag-to-resize. This component is wired to the body PM
@@ -77,7 +77,7 @@ Refs: `InlineHeaderFooterEditor.tsx`, `ImageSelectionOverlay.tsx:57-80`, `TextBo
 ---
 
 ### HF-4 — No visual hover/selection affordance for positioned elements
-**Status: Open — P2 (prerequisite for HF-2)**
+**Status: FIXED (`e0336da`) — blue selection border + grab cursor on hover via boxRects overlay**
 
 Hovering over a textbox or image in the HF editor shows no cursor change (`cursor: grab`),
 no selection border, no affordance that it is interactive.
@@ -88,7 +88,7 @@ on selection, as part of the drag-handle overlay in HF-2.
 ---
 
 ### HF-5 — No right-click context menu in the HF editor
-**Status: Open — P2**
+**Status: FIXED (`e0336da`) — ContextMenuPanel: Copy / Paste / Select All / Insert page number / total pages**
 
 The body editor's `TextContextMenu` and `ImageContextMenu` are only wired to body pages
 (DocxEditor.tsx:10361-10399). The HF editor has no `onContextMenu` handler.
@@ -103,7 +103,7 @@ Refs: `InlineHeaderFooterEditor.tsx:495`, `DocxEditor.tsx:10361`
 ---
 
 ### HF-6 — Ruler indentation applied to body PM while HF editor is open causes position drift
-**Status: Open — P2**
+**Status: FIXED (`e0336da`) — pointerEvents:none + opacity:0.5 on ruler wrapper; editable=false on HorizontalRuler while hfEditPosition is set**
 
 `syncBoxPositions()` reads BCR from the hidden painted header (`targetElement`). While the
 HF editor is open the page painter is not re-invoked (frozen to avoid chaos), so
@@ -168,12 +168,12 @@ Fix: create `TextBoxSelectionOverlay.tsx` as a thin wrapper around the existing
 
 | ID | Description | Priority | Effort | Blocks |
 |----|-------------|----------|--------|--------|
-| HF-1 | Options dropdown close | DONE | — | — |
-| HF-4 | Hover/selection affordance | P2 | S | HF-2 |
-| HF-2 | Drag/move textboxes+images in HF | P1 | L | HF-3 |
-| HF-3 | Resize textboxes+images in HF | P1 | L | — |
-| HF-6 | Ruler disabled during HF editing | P2 | S | — |
-| HF-5 | Context menu in HF editor | P2 | M | — |
+| HF-1 | Options dropdown close | DONE (`72ec2cf`) | — | — |
+| HF-4 | Hover/selection affordance | DONE (`e0336da`) | — | — |
+| HF-2 | Drag/move textboxes+images in HF | DONE (`e0336da`) | — | — |
+| HF-3 | Resize textboxes+images in HF | DONE (`e0336da`) | — | — |
+| HF-6 | Ruler disabled during HF editing | DONE (`e0336da`) | — | — |
+| HF-5 | Context menu in HF editor | DONE (`e0336da`) | — | — |
 | BD-1 | Body textbox drag-to-reposition | P1 | L | BD-2 |
 | BD-2 | Body textbox selection affordance | P2 | M | — |
 | HF-7 | Format panel in HF editor | P2 | L | HF-2 |
