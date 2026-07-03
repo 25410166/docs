@@ -9413,6 +9413,12 @@ body { background: white; }
                             // (Z_INDEX.hfInlineEditor) so the ruler stays readable
                             // when the HF editor is active near the viewport top.
                             zIndex: Z_INDEX.ruler,
+                            // Disable ruler interaction while the HF editor is
+                            // open — dragging indent/margin markers would update
+                            // the body PM but not the frozen painted header that
+                            // syncBoxPositions() reads, causing position drift.
+                            pointerEvents: hfEditPosition ? 'none' : undefined,
+                            opacity: hfEditPosition ? 0.5 : 1,
                             // paddingRight biases the centered ruler so it tracks
                             // the page when the comments sidebar (translateX)
                             // shifts the page left. Outline doesn't bias here —
@@ -9428,7 +9434,7 @@ body { background: white; }
                             sectionProps={history.state?.package.document?.finalSectionProperties}
                             zoom={state.zoom}
                             unit={rulerUnit}
-                            editable={!readOnly}
+                            editable={!readOnly && !hfEditPosition}
                             onLeftMarginChange={handleLeftMarginChange}
                             onRightMarginChange={handleRightMarginChange}
                             indentLeft={state.paragraphIndentLeft}

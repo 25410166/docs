@@ -8,6 +8,17 @@
  * Renders a ProseMirror EditorView positioned over the header/footer area
  * on the page, Google Docs style. The main body is dimmed and the toolbar
  * routes formatting commands to this editor while it's active.
+ *
+ * Interaction model (Phase 2b / Phase 3):
+ *  - Text in positioned boxes is editable directly.
+ *  - Positioned boxes and floating images show grab handles on hover.
+ *  - Drag the grip (top-left blue square) to move a box; PM posOffsetH/V attrs
+ *    are updated on drop so the new position survives save.
+ *  - 4-corner resize handles let the user change width/height; attrs are updated
+ *    the same way.
+ *  - Right-click in the editor shows a slim context menu.
+ *  - Options dropdown now uses a capture-phase click-outside listener so it
+ *    closes even when hf-inline-editor's stopPropagation is active.
  */
 
 import React, {
@@ -88,6 +99,25 @@ export interface InlineHeaderFooterEditorRef {
   redo(): boolean;
 }
 
+/** A positioned box (textbox or floating image) tracked for drag/resize handles. */
+interface BoxRect {
+  /** data-textbox-id for textboxes; '__img_0__' for the single-image case */
+  id: string;
+  kind: 'textbox' | 'image';
+  /** Pixel position relative to editorContainerRef (the hf-editor-pm div) */
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+}
+
 // ============================================================================
 // STYLES
 // ============================================================================
@@ -143,6 +173,20 @@ const dropdownItemStyle: CSSProperties = {
 };
 
 // ============================================================================
+// DRAG-MOVE ICON
+// ============================================================================
+
+const MoveIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="white" aria-hidden="true">
+    <path d="M13 6v5h5l-6-6-6 6h5v-5z" transform="translate(0,-2)"/>
+    <path d="M11 18v-5H6l6 6 6-6h-5v5z" transform="translate(0,2)"/>
+    <path d="M6 13h-5l6-6 6 6h-5z" transform="translate(-2,0) rotate(90,12,12)"/>
+    <path d="M18 11h5l-6 6-6-6h5z" transform="translate(2,0) rotate(90,12,12)"/>
+    <circle cx="12" cy="12" r="1.5"/>
+  </svg>
+);
+
+// ============================================================================
 // COMPONENT
 // ============================================================================
 
@@ -168,6 +212,7 @@ export const InlineHeaderFooterEditor = forwardRef<
   ref
 ) {
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const hfOuterRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [isDirty, setIsDirty] = useState(false);
 
@@ -175,14 +220,23 @@ export const InlineHeaderFooterEditor = forwardRef<
   // boxes (see syncBoxPositions). Kept in <head> — appending it inside the PM
   // contentDOM would make ProseMirror revert it.
   const posStyleRef = useRef<HTMLStyleElement | null>(null);
+  // Second stylesheet for in-progress drag/resize visual feedback — appended
+  // after posStyleRef so its !important rules win in cascade during interaction.
+  const dragStyleRef = useRef<HTMLStyleElement | null>(null);
   useEffect(() => {
-    const el = document.createElement('style');
-    el.setAttribute('data-hf-pos', '');
-    document.head.appendChild(el);
-    posStyleRef.current = el;
+    const pos = document.createElement('style');
+    pos.setAttribute('data-hf-pos', '');
+    document.head.appendChild(pos);
+    posStyleRef.current = pos;
+    const drag = document.createElement('style');
+    drag.setAttribute('data-hf-drag', '');
+    document.head.appendChild(drag);
+    dragStyleRef.current = drag;
     return () => {
-      el.remove();
+      pos.remove();
       posStyleRef.current = null;
+      drag.remove();
+      dragStyleRef.current = null;
     };
   }, []);
 
@@ -206,6 +260,22 @@ export const InlineHeaderFooterEditor = forwardRef<
   }, [styles]);
   const [showOptions, setShowOptions] = useState(false);
   const optionsRef = useRef<HTMLDivElement>(null);
+
+  // --- Drag / resize / hover state -----------------------------------------
+  /** Rects of all positioned boxes (textboxes + floating image) in the overlay */
+  const [boxRects, setBoxRects] = useState<BoxRect[]>([]);
+  /** Offset of hf-editor-pm inside hf-inline-editor (updated by syncBoxPositions) */
+  const [pmEditorOffset, setPmEditorOffset] = useState({ top: 0, left: 0 });
+  /** User-dragged positions — override painted rects so syncBoxPositions won't revert */
+  const dragOverridesRef = useRef(new Map<string, { left: number; top: number }>());
+  /** Which box ID is currently hovered (shows border + handles) */
+  const [hoveredBoxId, setHoveredBoxId] = useState<string | null>(null);
+  /** Handle DOM elements keyed by box ID — updated during drag via style.transform */
+  const handleElsRef = useRef(new Map<string, HTMLDivElement>());
+
+  // --- Context menu ---------------------------------------------------------
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Compute overlay position relative to the parent element
   const [overlayPos, setOverlayPos] = useState<{
@@ -253,13 +323,9 @@ export const InlineHeaderFooterEditor = forwardRef<
   }, [targetElement]);
 
   // Phase 2b (docs/internal/30): place positioned text boxes faithfully in the
-  // edit overlay. Rather than re-derive the page→header coordinate mapping, we
-  // copy the positions the layout-painter already computed: the view header
-  // (`targetElement`) is still laid out under the overlay (only
-  // `visibility:hidden`), so its `.layout-textbox` rects are the ground truth.
-  // The two paths emit boxes in the same order, so we map them 1:1 by index and
-  // only reposition when the counts agree — otherwise we leave the boxes in
-  // flow rather than risk a mismatched placement.
+  // edit overlay. Also populates boxRects for the drag/resize handle overlay.
+  // dragOverridesRef entries override the painted rect so user moves persist
+  // across PM transactions without reverting to the pre-edit painted position.
   const syncBoxPositions = useCallback(() => {
     const container = editorContainerRef.current;
     const styleEl = posStyleRef.current;
@@ -270,45 +336,49 @@ export const InlineHeaderFooterEditor = forwardRef<
       left: Math.round(r.left - containerRect.left),
       top: Math.round(r.top - containerRect.top),
       width: Math.round(r.width),
+      height: Math.round(r.height),
     });
-    // Drive the positions through a STYLESHEET (keyed on each box's stable
-    // data-textbox-id), NOT inline styles: ProseMirror runs its own
-    // MutationObserver and reverts foreign inline-style writes on its nodes, but
-    // it leaves a document stylesheet alone. `!important` is required because
-    // the node's toDOM writes `position: relative` inline, which outranks a
-    // normal rule. The `.hf-editor-pm` scope keeps these rules off the
-    // off-screen body PM (which renders the same node types).
     const rules: string[] = [];
+    const newRects: BoxRect[] = [];
 
-    // Text boxes — matched 1:1 by order to the faithful (hidden) view boxes.
-    // Only when the counts agree, else leave them in flow rather than mis-place.
+    // Text boxes — matched 1:1 by order. dragOverrides take precedence over the
+    // hidden painted position so a user-moved box stays put after PM transactions.
     const viewBoxes = Array.from(targetElement.querySelectorAll<HTMLElement>('.layout-textbox'));
     const overlayBoxes = Array.from(container.querySelectorAll<HTMLElement>('.docx-textbox'));
     if (viewBoxes.length > 0 && viewBoxes.length === overlayBoxes.length) {
       viewBoxes.forEach((vb, i) => {
         const id = overlayBoxes[i].dataset.textboxId;
         if (!id) return;
-        const p = rel(vb.getBoundingClientRect());
+        const painted = rel(vb.getBoundingClientRect());
+        const override = dragOverridesRef.current.get(id);
+        const p = override
+          ? { left: override.left, top: override.top, width: painted.width, height: painted.height }
+          : painted;
         rules.push(
           `.hf-editor-pm .docx-textbox[data-textbox-id="${CSS.escape(id)}"]` +
             `{position:absolute!important;left:${p.left}px!important;top:${p.top}px!important;` +
             `width:${p.width}px!important;margin:0!important;}`
         );
+        newRects.push({ id, kind: 'textbox', left: p.left, top: p.top, width: p.width, height: p.height });
       });
     }
 
-    // Floating image (header logo) — handle the common single-image case
-    // robustly; multiple images would need stable per-image keys, so skip those.
+    // Floating image (header logo) — single-image case.
     const viewImgs = Array.from(targetElement.querySelectorAll<HTMLImageElement>('img')).filter(
       (i) => i.getBoundingClientRect().width > 0
     );
     const ovImgs = Array.from(container.querySelectorAll<HTMLImageElement>('img.docx-image'));
     if (viewImgs.length === 1 && ovImgs.length === 1) {
-      const p = rel(viewImgs[0].getBoundingClientRect());
+      const painted = rel(viewImgs[0].getBoundingClientRect());
+      const override = dragOverridesRef.current.get('__img_0__');
+      const p = override
+        ? { left: override.left, top: override.top, width: painted.width, height: painted.height }
+        : painted;
       rules.push(
         `.hf-editor-pm img.docx-image{position:absolute!important;` +
           `left:${p.left}px!important;top:${p.top}px!important;margin:0!important;}`
       );
+      newRects.push({ id: '__img_0__', kind: 'image', left: p.left, top: p.top, width: p.width, height: p.height });
     }
 
     // Positioned content is out of flow, so the editable in-flow text collapses;
@@ -318,7 +388,177 @@ export const InlineHeaderFooterEditor = forwardRef<
       container.style.minHeight = `${targetRect.height}px`;
     }
     styleEl.textContent = rules.join('\n');
+    setBoxRects(newRects);
+    // Track hf-editor-pm offset within hf-inline-editor for handle positioning
+    setPmEditorOffset({ top: container.offsetTop, left: container.offsetLeft });
   }, [targetElement]);
+
+  // ── Drag to move ──────────────────────────────────────────────────────────
+  const startDrag = useCallback(
+    (e: React.MouseEvent, rect: BoxRect) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      const handleEl = handleElsRef.current.get(rect.id);
+
+      const onMove = (me: MouseEvent) => {
+        const dx = me.clientX - startClientX;
+        const dy = me.clientY - startClientY;
+        // Move the handle overlay visually without React re-renders
+        if (handleEl) handleEl.style.transform = `translate(${dx}px, ${dy}px)`;
+        // Also move the actual box via the drag-override stylesheet
+        const sl = dragStyleRef.current;
+        if (!sl) return;
+        const nl = rect.left + dx;
+        const nt = rect.top + dy;
+        if (rect.kind === 'textbox') {
+          sl.textContent =
+            `.hf-editor-pm .docx-textbox[data-textbox-id="${CSS.escape(rect.id)}"]` +
+            `{position:absolute!important;left:${nl}px!important;top:${nt}px!important;` +
+            `width:${rect.width}px!important;margin:0!important;}`;
+        } else {
+          sl.textContent =
+            `.hf-editor-pm img.docx-image{position:absolute!important;` +
+            `left:${nl}px!important;top:${nt}px!important;margin:0!important;}`;
+        }
+      };
+
+      const onUp = (me: MouseEvent) => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (handleEl) handleEl.style.transform = '';
+        if (dragStyleRef.current) dragStyleRef.current.textContent = '';
+
+        const dx = me.clientX - startClientX;
+        const dy = me.clientY - startClientY;
+        if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return; // click, not drag
+
+        const newLeft = rect.left + dx;
+        const newTop = rect.top + dy;
+        // Persist override so syncBoxPositions() keeps the new position
+        dragOverridesRef.current.set(rect.id, { left: newLeft, top: newTop });
+
+        // Dispatch PM transaction for textboxes to update posOffsetH/V
+        const view = viewRef.current;
+        if (view && rect.kind === 'textbox') {
+          let foundPos = -1;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let foundNode: any = null;
+          view.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'textBox' && node.attrs.textBoxId === rect.id && !foundNode) {
+              foundPos = pos;
+              foundNode = node;
+              return false;
+            }
+          });
+          if (foundNode && foundPos >= 0) {
+            const tr = view.state.tr.setNodeMarkup(foundPos, null, {
+              ...foundNode.attrs,
+              posOffsetH: (foundNode.attrs.posOffsetH ?? 0) + dx,
+              posOffsetV: (foundNode.attrs.posOffsetV ?? 0) + dy,
+              displayMode: 'float',
+            });
+            view.dispatch(tr);
+          }
+        }
+        syncBoxPositions();
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    },
+    [syncBoxPositions]
+  );
+
+  // ── Resize ────────────────────────────────────────────────────────────────
+  const startResize = useCallback(
+    (e: React.MouseEvent, rect: BoxRect, corner: ResizeCorner) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      const handleEl = handleElsRef.current.get(rect.id);
+
+      const compute = (dx: number, dy: number) => {
+        let nl = rect.left, nt = rect.top, nw = rect.width, nh = rect.height;
+        if (corner.includes('e')) nw = Math.max(50, rect.width + dx);
+        if (corner.includes('s')) nh = Math.max(20, rect.height + dy);
+        if (corner.includes('w')) { nl = rect.left + dx; nw = Math.max(50, rect.width - dx); }
+        if (corner.includes('n')) { nt = rect.top + dy; nh = Math.max(20, rect.height - dy); }
+        return { nl, nt, nw, nh };
+      };
+
+      const onMove = (me: MouseEvent) => {
+        const dx = me.clientX - startClientX;
+        const dy = me.clientY - startClientY;
+        const { nl, nt, nw, nh } = compute(dx, dy);
+        const sl = dragStyleRef.current;
+        if (sl && rect.kind === 'textbox') {
+          sl.textContent =
+            `.hf-editor-pm .docx-textbox[data-textbox-id="${CSS.escape(rect.id)}"]` +
+            `{position:absolute!important;left:${nl}px!important;top:${nt}px!important;` +
+            `width:${nw}px!important;height:${nh}px!important;margin:0!important;}`;
+        } else if (sl && rect.kind === 'image') {
+          sl.textContent =
+            `.hf-editor-pm img.docx-image{position:absolute!important;` +
+            `left:${nl}px!important;top:${nt}px!important;` +
+            `width:${nw}px!important;height:${nh}px!important;margin:0!important;}`;
+        }
+        if (handleEl) {
+          handleEl.style.width = `${nw}px`;
+          handleEl.style.height = `${nh}px`;
+          if (corner.includes('w')) handleEl.style.left = `${nl + (pmEditorOffset?.left ?? 0)}px`;
+          if (corner.includes('n')) handleEl.style.top = `${nt + (pmEditorOffset?.top ?? 0)}px`;
+        }
+      };
+
+      const onUp = (me: MouseEvent) => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (dragStyleRef.current) dragStyleRef.current.textContent = '';
+
+        const dx = me.clientX - startClientX;
+        const dy = me.clientY - startClientY;
+        if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+
+        const { nl, nt, nw, nh } = compute(dx, dy);
+        dragOverridesRef.current.set(rect.id, { left: nl, top: nt });
+
+        const view = viewRef.current;
+        if (view && rect.kind === 'textbox') {
+          let foundPos = -1;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let foundNode: any = null;
+          view.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'textBox' && node.attrs.textBoxId === rect.id && !foundNode) {
+              foundPos = pos;
+              foundNode = node;
+              return false;
+            }
+          });
+          if (foundNode && foundPos >= 0) {
+            const tr = view.state.tr.setNodeMarkup(foundPos, null, {
+              ...foundNode.attrs,
+              width: nw,
+              height: nh,
+              posOffsetH: (foundNode.attrs.posOffsetH ?? 0) + (nl - rect.left),
+              posOffsetV: (foundNode.attrs.posOffsetV ?? 0) + (nt - rect.top),
+              displayMode: 'float',
+            });
+            view.dispatch(tr);
+          }
+        }
+        syncBoxPositions();
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    },
+    [syncBoxPositions, pmEditorOffset]
+  );
 
   // Create ProseMirror editor when the container is available
   // (overlayPos starts null → first render returns null → container ref not set)
@@ -459,6 +699,18 @@ export const InlineHeaderFooterEditor = forwardRef<
     return () => document.removeEventListener('mousedown', handleClick, true);
   }, [showOptions]);
 
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClick, true);
+    return () => document.removeEventListener('mousedown', handleClick, true);
+  }, [contextMenu]);
+
   // Expose ref
   useImperativeHandle(ref, () => ({
     getView: () => viewRef.current,
@@ -488,16 +740,39 @@ export const InlineHeaderFooterEditor = forwardRef<
     zIndex: Z_INDEX.hfInlineEditor,
   };
 
+  const insertField = (fieldType: 'PAGE' | 'NUMPAGES') => {
+    const view = viewRef.current;
+    if (!view) return;
+    const { $from, from } = view.state.selection;
+    const marks = view.state.storedMarks || $from.marks();
+    const node = schema.nodes.field.create({
+      fieldType,
+      instruction: ` ${fieldType} \\* MERGEFORMAT `,
+      fieldKind: 'simple',
+      dirty: true,
+    });
+    const tr = view.state.tr.insert(from, node.mark(marks));
+    view.dispatch(tr);
+    view.focus();
+    setContextMenu(null);
+  };
+
   return (
     <div
+      ref={hfOuterRef}
       className="hf-inline-editor"
       style={containerStyle}
       onMouseDown={(e) => {
         // Prevent clicks from bubbling to pages container / body click handler
         e.stopPropagation();
       }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenu({ x: e.clientX, y: e.clientY });
+      }}
     >
-      {/* Separator bar — shown below for header, above for footer */}
+      {/* Separator bar — shown above for footer */}
       {position === 'footer' && (
         <div className="hf-separator-bar" style={separatorBarStyle}>
           <span style={labelStyle}>{label}</span>
@@ -537,6 +812,114 @@ export const InlineHeaderFooterEditor = forwardRef<
         }}
       />
 
+      {/* ── Drag / resize handle overlay ─────────────────────────────────── */}
+      {boxRects.map((rect) => {
+        const isHovered = hoveredBoxId === rect.id;
+        return (
+          <div
+            key={rect.id}
+            ref={(el) => {
+              if (el) handleElsRef.current.set(rect.id, el);
+              else handleElsRef.current.delete(rect.id);
+            }}
+            onMouseEnter={() => setHoveredBoxId(rect.id)}
+            onMouseLeave={() => setHoveredBoxId(null)}
+            style={{
+              position: 'absolute',
+              left: rect.left + pmEditorOffset.left,
+              top: rect.top + pmEditorOffset.top,
+              width: rect.width,
+              height: rect.height,
+              zIndex: Z_INDEX.hfInlineEditor + 1,
+              boxSizing: 'border-box',
+              border: isHovered ? '2px solid #2563eb' : '2px solid transparent',
+              pointerEvents: 'none',
+              // Don't block click-through to the PM editor
+              borderRadius: 1,
+            }}
+          >
+            {/* Drag grip — top-left blue square, only when hovered */}
+            {isHovered && (
+              <div
+                title="Drag to move"
+                onMouseDown={(e) => startDrag(e, rect)}
+                style={{
+                  position: 'absolute',
+                  top: -2,
+                  left: -2,
+                  width: 20,
+                  height: 20,
+                  background: '#2563eb',
+                  cursor: 'move',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'all',
+                  borderRadius: '0 0 4px 0',
+                  zIndex: 2,
+                }}
+              >
+                <MoveIcon />
+              </div>
+            )}
+            {/* 4-corner resize handles */}
+            {isHovered &&
+              (['nw', 'ne', 'sw', 'se'] as ResizeCorner[]).map((corner) => {
+                const isNorth = corner[0] === 'n';
+                const isWest = corner[1] === 'w';
+                return (
+                  <div
+                    key={corner}
+                    onMouseDown={(e) => startResize(e, rect, corner)}
+                    style={{
+                      position: 'absolute',
+                      width: 8,
+                      height: 8,
+                      background: '#2563eb',
+                      border: '1.5px solid #ffffff',
+                      borderRadius: 1,
+                      cursor: `${corner}-resize`,
+                      pointerEvents: 'all',
+                      zIndex: 2,
+                      ...(isNorth ? { top: -4 } : { bottom: -4 }),
+                      ...(isWest ? { left: -4 } : { right: -4 }),
+                    }}
+                  />
+                );
+              })}
+          </div>
+        );
+      })}
+
+      {/* ── Context menu ─────────────────────────────────────────────────── */}
+      {contextMenu && (
+        <ContextMenuPanel
+          x={contextMenu.x}
+          y={contextMenu.y}
+          menuRef={contextMenuRef}
+          onClose={() => setContextMenu(null)}
+          onCopy={() => {
+            document.execCommand('copy');
+            setContextMenu(null);
+          }}
+          onPaste={() => {
+            document.execCommand('paste');
+            setContextMenu(null);
+          }}
+          onSelectAll={() => {
+            const view = viewRef.current;
+            if (!view) return;
+            const tr = view.state.tr.setSelection(
+              TextSelection.create(view.state.doc, 0, view.state.doc.content.size)
+            );
+            view.dispatch(tr);
+            setContextMenu(null);
+          }}
+          onInsertPageNumber={() => insertField('PAGE')}
+          onInsertTotalPages={() => insertField('NUMPAGES')}
+        />
+      )}
+
       {/* Separator bar — shown below for header */}
       {position === 'header' && (
         <div className="hf-separator-bar" style={separatorBarStyle}>
@@ -559,6 +942,82 @@ export const InlineHeaderFooterEditor = forwardRef<
     </div>
   );
 });
+
+// ============================================================================
+// CONTEXT MENU SUB-COMPONENT
+// ============================================================================
+
+interface ContextMenuPanelProps {
+  x: number;
+  y: number;
+  menuRef: React.RefObject<HTMLDivElement | null>;
+  onClose: () => void;
+  onCopy: () => void;
+  onPaste: () => void;
+  onSelectAll: () => void;
+  onInsertPageNumber: () => void;
+  onInsertTotalPages: () => void;
+}
+
+function ContextMenuPanel({
+  x,
+  y,
+  menuRef,
+  onClose,
+  onCopy,
+  onPaste,
+  onSelectAll,
+  onInsertPageNumber,
+  onInsertTotalPages,
+}: ContextMenuPanelProps) {
+  const menuWidth = 190;
+  const menuHeight = 190;
+  const cx = x + menuWidth > window.innerWidth - 8 ? x - menuWidth : x;
+  const cy = y + menuHeight > window.innerHeight - 8 ? y - menuHeight : y;
+
+  const itemStyle: CSSProperties = {
+    display: 'block',
+    width: '100%',
+    padding: '6px 14px',
+    border: 'none',
+    background: 'transparent',
+    textAlign: 'left',
+    cursor: 'pointer',
+    fontSize: 12,
+    color: 'var(--doc-text-on-surface)',
+    font: 'inherit',
+  };
+  const divStyle: CSSProperties = { height: 1, background: 'var(--doc-border, #e2e8f0)', margin: '3px 0' };
+
+  return (
+    <div
+      ref={menuRef}
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{
+        position: 'fixed',
+        left: cx,
+        top: cy,
+        background: 'var(--doc-surface, #fff)',
+        border: '1px solid var(--doc-border, #e2e8f0)',
+        borderRadius: 6,
+        boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+        zIndex: Z_INDEX.contextMenu,
+        minWidth: menuWidth,
+        padding: '4px 0',
+        userSelect: 'none',
+      }}
+    >
+      <button type="button" style={itemStyle} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onCopy}>Copy</button>
+      <button type="button" style={itemStyle} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onPaste}>Paste</button>
+      <button type="button" style={itemStyle} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onSelectAll}>Select all</button>
+      <div style={divStyle} />
+      <button type="button" style={itemStyle} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onInsertPageNumber}>Insert page number</button>
+      <button type="button" style={itemStyle} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onInsertTotalPages}>Insert total pages</button>
+      <div style={divStyle} />
+      <button type="button" style={{ ...itemStyle, color: 'var(--doc-text-muted, #888)' }} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onClose}>Close menu</button>
+    </div>
+  );
+}
 
 // ============================================================================
 // OPTIONS MENU SUB-COMPONENT
