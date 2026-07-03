@@ -14,6 +14,7 @@ import { useTranslation } from '../i18n';
 import type { TranslationKey } from '../i18n';
 import defaultLocale from '../../i18n/en.json';
 import { Z_INDEX } from '../styles/zIndex';
+import { usableRightEdge } from '../lib/anchorViewport';
 
 // ============================================================================
 // TYPES
@@ -638,7 +639,7 @@ export const TextContextMenu: React.FC<TextContextMenuProps> = ({
   // window — a too-tall menu caps to the available height and scrolls internally
   // instead of spilling below the window edge.
   const getMenuStyle = useCallback((): React.CSSProperties => {
-    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const vw = usableRightEdge(0);
     const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
     const MARGIN = 10;
     const maxH = Math.max(120, vh - 2 * MARGIN);
@@ -647,7 +648,7 @@ export const TextContextMenu: React.FC<TextContextMenuProps> = ({
 
     let x = position.x;
     let y = position.y;
-    if (x + menuWidth > vw) x = vw - menuWidth - MARGIN;
+    if (x + menuWidth > vw - MARGIN) x = vw - menuWidth - MARGIN;
     if (y + menuHeight > vh) y = vh - menuHeight - MARGIN;
     if (x < MARGIN) x = MARGIN;
     if (y < MARGIN) y = MARGIN;
