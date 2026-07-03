@@ -6097,6 +6097,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     setAiSuggestion(null);
   }, []);
 
+  const handleAiCancel = useCallback(() => {
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = null;
+    setAiSuggestion((prev) => (prev ? { ...prev, busy: false } : prev));
+  }, []);
+
   const handleAiRetry = useCallback(() => {
     if (!aiSuggestion) return;
     void runAiSuggestion(aiSuggestion.mode, aiSuggestion.tone, {
@@ -10183,6 +10189,7 @@ body { background: white; }
                       inferenceMs={aiSuggestion.inferenceMs}
                       onAccept={handleAiAccept}
                       onReject={handleAiReject}
+                      onCancel={handleAiCancel}
                       onRetry={handleAiRetry}
                       tones={
                         aiSuggestion.mode === 'rewrite'
