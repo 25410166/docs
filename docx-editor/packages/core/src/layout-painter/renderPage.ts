@@ -964,6 +964,8 @@ function renderHeaderFooterContent(
     width: number;
     height: number;
     alt?: string;
+    /** CSS transform string (rotation, flip) — round-trips from ImageRun.transform */
+    transform?: string;
     paragraphY: number; // Y position of the containing paragraph
     position: {
       horizontal?: {
@@ -1006,6 +1008,7 @@ function renderHeaderFooterContent(
             width: number;
             height: number;
             alt?: string;
+            transform?: string;
             position: {
               horizontal?: {
                 relativeTo?: string;
@@ -1026,6 +1029,7 @@ function renderHeaderFooterContent(
             width: imgRun.width,
             height: imgRun.height,
             alt: imgRun.alt,
+            transform: imgRun.transform,
             paragraphY: paragraphStartY, // Store where this paragraph starts
             position: imgRun.position,
           });
@@ -1183,6 +1187,11 @@ function renderHeaderFooterContent(
     img.style.height = `${floatImg.height}px`;
     img.style.maxWidth = 'none';
     img.style.maxHeight = 'none';
+
+    if (floatImg.transform) {
+      img.style.transform = floatImg.transform;
+      img.style.transformOrigin = 'center center';
+    }
 
     applyHeaderFooterFloatHorizontalPosition(img, floatImg, layout);
     img.style.top = `${resolveHeaderFooterFloatTop(floatImg, layout)}px`;

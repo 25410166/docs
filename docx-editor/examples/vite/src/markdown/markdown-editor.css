@@ -1,0 +1,72 @@
+/*
+ * Interactive states for the Markdown editor chrome.
+ * Hover / active / focus cannot be expressed as React inline styles,
+ * so they live here and are applied via className.
+ */
+
+/* Toolbar buttons */
+.md-tb {
+  transition: background 0.1s, color 0.1s;
+}
+.md-tb:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+.md-tb:active {
+  background: #e2e8f0 !important;
+}
+.md-tb:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+/* Editable filename input — show affordance on hover/focus */
+.md-filename {
+  transition: background 0.1s;
+}
+.md-filename:hover {
+  background: #f1f5f9 !important;
+}
+.md-filename:focus {
+  background: #f1f5f9 !important;
+  box-shadow: 0 0 0 2px #2563eb33;
+}
+
+/* Back / icon buttons in the title bar */
+.md-icon-btn:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+.md-icon-btn:active {
+  background: #e2e8f0 !important;
+}
+
+/* ── Print / Export PDF ───────────────────────────────────────────────────── */
+@media print {
+  /* Hide all editor chrome — only the rendered preview prints. */
+  [data-testid='markdown-editor'] header,
+  [data-testid='markdown-editor'] [role='toolbar'],
+  [data-testid='markdown-editor'] [data-testid='markdown-source'] {
+    display: none !important;
+  }
+
+  /* Let the preview fill the page. */
+  [data-testid='markdown-editor'] {
+    height: auto !important;
+    background: white !important;
+  }
+
+  [data-testid='markdown-editor'] > div:last-child {
+    display: block !important;
+    height: auto !important;
+  }
+
+  [data-testid='markdown-preview'] {
+    flex: none !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+}

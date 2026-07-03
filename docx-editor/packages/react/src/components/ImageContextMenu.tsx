@@ -24,6 +24,7 @@ import {
   type ImageLayoutOptionDef,
 } from '@eigenpal/docx-core/layout-painter';
 import { Z_INDEX } from '../styles/zIndex';
+import { usableRightEdge } from '../lib/anchorViewport';
 import { useTranslation } from '../i18n';
 import { MaterialSymbol } from './ui/Icons';
 import { Tooltip } from './ui/Tooltip';
@@ -177,7 +178,8 @@ export const ImageContextMenu: React.FC<ImageContextMenuProps> = ({
     let x = position.x;
     let y = position.y;
     if (typeof window !== 'undefined') {
-      if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
+      const vw = usableRightEdge(0);
+      if (x + menuWidth > vw - 10) x = vw - menuWidth - 10;
       if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
       if (x < 10) x = 10;
       if (y < 10) y = 10;

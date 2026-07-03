@@ -11,6 +11,7 @@ import { markdownToHtml } from './markdownToHtml';
 import { seedYText } from './seedYText';
 import type { MarkdownCollab } from './useMarkdownCollab';
 import './markdown-preview.css';
+import './markdown-editor.css';
 
 export type MarkdownViewMode = 'source' | 'split' | 'preview';
 
@@ -176,20 +177,46 @@ const TOOLBAR_ITEMS: ToolbarItem[] = [
   {
     label: 'H',
     title: 'Heading (## )',
-    icon: <span style={{ fontWeight: 700, fontSize: 13, fontFamily: 'serif' }}>H</span>,
+    icon: makeTbIcon('M4 6v12M20 6v12M4 12h16'),
     action: (v) => prefixLines(v, '## '),
   },
   {
     label: 'B',
     title: 'Bold',
-    icon: <span style={{ fontWeight: 700, fontSize: 13 }}>B</span>,
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M6 4h8a4 4 0 010 8H6zM6 12h9a4 4 0 010 8H6z" />
+      </svg>
+    ),
     action: (v) => wrapSelection(v, '**', '**', 'bold text'),
   },
   {
     label: 'I',
     title: 'Italic',
-    icon: <span style={{ fontStyle: 'italic', fontSize: 13 }}>I</span>,
+    icon: makeTbIcon('M11 4h4M9 20h6M14 4l-4 16'),
     action: (v) => wrapSelection(v, '_', '_', 'italic text'),
+  },
+  {
+    label: 'S',
+    title: 'Strikethrough',
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M16 4H9C7.3 4 6 5.3 6 7c0 1.5 1 2.6 2.5 3H16"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <path d="M4 12h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path
+          d="M8 12c-1.5.4-2.5 1.5-2.5 3 0 1.7 1.3 3 3 3h7c1.7 0 3-1.3 3-3"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+    action: (v) => wrapSelection(v, '~~', '~~', 'strikethrough'),
   },
   {
     label: 'Link',
@@ -496,6 +523,21 @@ export function MarkdownEditor({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [handleSave]);
 
+  // Export PDF — switch to preview so the rendered HTML is in the DOM,
+  // then invoke the browser's native print dialog. @media print CSS
+  // (markdown-editor.css) hides the toolbar/bar and shows only the
+  // preview pane. The user picks "Save as PDF" in the print dialog.
+  const handleExportPdf = useCallback(() => {
+    if (!supportsPreview) return;
+    const prev = mode;
+    setMode('preview');
+    // Yield so React can paint the preview pane before the dialog blocks.
+    requestAnimationFrame(() => {
+      window.print();
+      setMode(prev);
+    });
+  }, [mode, supportsPreview]);
+
   const showSource = mode === 'source' || mode === 'split';
   const showPreview = supportsPreview && (mode === 'preview' || mode === 'split');
 
@@ -508,6 +550,7 @@ export function MarkdownEditor({
             <button
               type="button"
               onClick={onBack}
+              className="md-icon-btn"
               style={styles.iconButton}
               title="Return to home"
               aria-label="Return to home"
@@ -527,6 +570,7 @@ export function MarkdownEditor({
           <input
             value={fileName}
             onChange={handleRename}
+            className="md-filename"
             style={styles.title}
             spellCheck={false}
             aria-label="Document name"
@@ -556,6 +600,34 @@ export function MarkdownEditor({
               })}
             </div>
           )}
+          {/* PDF export — always shown for markdown (works in browser + Tauri webview). */}
+          {supportsPreview && (
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              style={styles.downloadButton}
+              title="Export as PDF"
+              data-testid="markdown-export-pdf"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M14 2v6h6M9 13h1a1 1 0 010 2H9v-2zm0 0v4m5-4h.5a1.5 1.5 0 010 3H14v-3zm4 0v4"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span>Export PDF</span>
+            </button>
+          )}
           {/* Hide the download button on desktop — the native bridge handles saves.
               On web it triggers a blob download. */}
           {!isDesktop && (
@@ -584,15 +656,73 @@ export function MarkdownEditor({
       {/* ── Formatting toolbar (markdown only, hidden in preview-only mode) ── */}
       {kind === 'markdown' && mode !== 'preview' && (
         <div style={styles.toolbar} role="toolbar" aria-label="Formatting">
-          {TOOLBAR_ITEMS.map((item) => (
+          {/* Group 1: text formatting */}
+          {TOOLBAR_ITEMS.slice(0, 4).map((item) => (
             <button
               key={item.label}
               type="button"
               title={item.title}
               aria-label={item.title}
+              className="md-tb"
               style={styles.toolbarButton}
               onMouseDown={(e) => {
-                // Prevent CM from losing focus on mousedown.
+                e.preventDefault();
+                const view = viewRef.current;
+                if (view) item.action(view);
+              }}
+            >
+              {item.icon}
+            </button>
+          ))}
+          <div style={styles.toolbarDivider} aria-hidden="true" />
+          {/* Group 2: link + code */}
+          {TOOLBAR_ITEMS.slice(4, 7).map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              title={item.title}
+              aria-label={item.title}
+              className="md-tb"
+              style={styles.toolbarButton}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const view = viewRef.current;
+                if (view) item.action(view);
+              }}
+            >
+              {item.icon}
+            </button>
+          ))}
+          <div style={styles.toolbarDivider} aria-hidden="true" />
+          {/* Group 3: block structure */}
+          {TOOLBAR_ITEMS.slice(7, 10).map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              title={item.title}
+              aria-label={item.title}
+              className="md-tb"
+              style={styles.toolbarButton}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const view = viewRef.current;
+                if (view) item.action(view);
+              }}
+            >
+              {item.icon}
+            </button>
+          ))}
+          <div style={styles.toolbarDivider} aria-hidden="true" />
+          {/* Group 4: insert */}
+          {TOOLBAR_ITEMS.slice(10).map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              title={item.title}
+              aria-label={item.title}
+              className="md-tb"
+              style={styles.toolbarButton}
+              onMouseDown={(e) => {
                 e.preventDefault();
                 const view = viewRef.current;
                 if (view) item.action(view);
@@ -653,9 +783,9 @@ const styles: Record<string, React.CSSProperties> = {
   toolbar: {
     display: 'flex',
     alignItems: 'center',
-    gap: 2,
-    padding: '4px 12px',
-    background: COLORS.bar,
+    gap: 1,
+    padding: '5px 14px',
+    background: '#f8fafc',
     borderBottom: `1px solid ${COLORS.border}`,
     flex: '0 0 auto',
     flexWrap: 'wrap',
@@ -664,14 +794,21 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 28,
-    height: 28,
+    width: 30,
+    height: 30,
     border: 'none',
     borderRadius: 6,
     background: 'transparent',
     color: COLORS.muted,
     cursor: 'pointer',
     padding: 0,
+  },
+  toolbarDivider: {
+    width: 1,
+    height: 18,
+    background: COLORS.border,
+    margin: '0 6px',
+    flex: '0 0 auto',
   },
   downloadButton: {
     display: 'inline-flex',

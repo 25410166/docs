@@ -230,9 +230,16 @@ export const InlineHeaderFooterEditor = forwardRef<
     const scrollParent = parentElement.closest('[style*="overflow"]') || parentElement;
     scrollParent.addEventListener('scroll', computePosition);
     window.addEventListener('resize', computePosition);
+
+    // Recompute when the parent element resizes — covers flex reflow when a
+    // right-dock panel opens or closes (no scroll/resize event fires for that).
+    const ro = new ResizeObserver(computePosition);
+    ro.observe(parentElement);
+
     return () => {
       scrollParent.removeEventListener('scroll', computePosition);
       window.removeEventListener('resize', computePosition);
+      ro.disconnect();
     };
   }, [targetElement, parentElement]);
 
