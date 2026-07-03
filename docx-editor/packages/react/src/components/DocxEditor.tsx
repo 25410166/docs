@@ -2893,7 +2893,9 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     type TauriWindow = {
       __TAURI__?: {
         core?: { invoke?: (cmd: string, args?: unknown) => Promise<unknown> };
-        event?: { listen?: (event: string, cb: (e: { payload: unknown }) => void) => Promise<() => void> };
+        event?: {
+          listen?: (event: string, cb: (e: { payload: unknown }) => void) => Promise<() => void>;
+        };
       };
     };
     const tw = window as TauriWindow;
@@ -2902,14 +2904,18 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       // Desktop: enabled only when a local model is loaded.
       const invoke = tw.__TAURI__?.core?.invoke;
       if (invoke) {
-        void invoke('ai_get_active_model').then((m) => setAiEnabled(!!m)).catch(() => {});
+        void invoke('ai_get_active_model')
+          .then((m) => setAiEnabled(!!m))
+          .catch(() => {});
       }
       const listen = tw.__TAURI__?.event?.listen;
       if (listen) {
         const cleanup = listen('ai:model-changed', (e) => {
           setAiEnabled(!!(e.payload as { modelId?: string | null })?.modelId);
         });
-        return () => { void cleanup.then((fn) => fn()); };
+        return () => {
+          void cleanup.then((fn) => fn());
+        };
       }
       return;
     }
@@ -3891,6 +3897,21 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [disableFindReplaceShortcuts, findReplace, hyperlinkDialog, tableSelection, focusMode]);
+
+  // Mod+J → open the AI inline-ask pill (Notion convention; Cmd+I is
+  // taken by italic). Only fires when AI is available.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const cmdOrCtrl = e.metaKey || e.ctrlKey;
+      if (cmdOrCtrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'j') {
+        if (!aiEnabled) return;
+        e.preventDefault();
+        setHasTextSelection(true);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [aiEnabled, setHasTextSelection]);
 
   // Ref holds the latest file-op handlers so the global keydown listener
   // (registered once above) can call them without depending on their
@@ -10166,12 +10187,36 @@ body { background: white; }
                       tones={
                         aiSuggestion.mode === 'rewrite'
                           ? [
-                              { id: 'polish', label: 'Polish', active: aiSuggestion.tone === 'polish' },
-                              { id: 'concise', label: 'Concise', active: aiSuggestion.tone === 'concise' },
-                              { id: 'formal', label: 'Formal', active: aiSuggestion.tone === 'formal' },
-                              { id: 'casual', label: 'Casual', active: aiSuggestion.tone === 'casual' },
-                              { id: 'shorter', label: 'Shorter', active: aiSuggestion.tone === 'shorter' },
-                              { id: 'longer', label: 'Longer', active: aiSuggestion.tone === 'longer' },
+                              {
+                                id: 'polish',
+                                label: 'Polish',
+                                active: aiSuggestion.tone === 'polish',
+                              },
+                              {
+                                id: 'concise',
+                                label: 'Concise',
+                                active: aiSuggestion.tone === 'concise',
+                              },
+                              {
+                                id: 'formal',
+                                label: 'Formal',
+                                active: aiSuggestion.tone === 'formal',
+                              },
+                              {
+                                id: 'casual',
+                                label: 'Casual',
+                                active: aiSuggestion.tone === 'casual',
+                              },
+                              {
+                                id: 'shorter',
+                                label: 'Shorter',
+                                active: aiSuggestion.tone === 'shorter',
+                              },
+                              {
+                                id: 'longer',
+                                label: 'Longer',
+                                active: aiSuggestion.tone === 'longer',
+                              },
                             ]
                           : undefined
                       }

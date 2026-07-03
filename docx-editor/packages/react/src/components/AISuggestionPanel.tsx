@@ -287,7 +287,9 @@ export function AISuggestionPanel({
             {busy && <span style={spinnerStyle} aria-hidden="true" />}
             <span>
               {busy
-                ? 'Running on-device…'
+                ? mode === 'rewrite'
+                  ? 'Rewriting…'
+                  : 'Summarizing…'
                 : inferenceMs !== null
                   ? `${inferenceMs} ms · on-device`
                   : 'On-device'}
