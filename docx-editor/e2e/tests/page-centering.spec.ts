@@ -14,7 +14,8 @@ import { EditorPage } from '../helpers/editor-page';
 
 async function pageLeftAt(page: import('@playwright/test').Page, vw: number) {
   await page.setViewportSize({ width: vw, height: 900 });
-  await page.waitForTimeout(500);
+  // Wait for layout to settle after resize rather than a fixed timeout.
+  await page.waitForSelector('.layout-page', { timeout: 5000 });
   return page.evaluate(() => {
     const pg = document.querySelector('.layout-page') as HTMLElement | null;
     if (!pg) return null;
@@ -28,7 +29,8 @@ test('the page centers in the window at medium widths (no left-corner lane)', as
   await editor.goto();
   await editor.waitForReady();
   await editor.loadDocxFile('fixtures/demo.docx');
-  await page.waitForTimeout(800);
+  // Wait for at least one page to paint — WASM parse + layout can be slow in CI.
+  await page.waitForSelector('.layout-page', { timeout: 15000 });
 
   // At a medium width where the page still fits, it must be centered — not held
   // in a left lane. Tolerance covers the ~20px ruler gutter + rounding.
