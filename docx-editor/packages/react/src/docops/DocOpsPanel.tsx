@@ -582,7 +582,7 @@ export function DocOpsPanel({
         }
       >
         {showKeySetup ? (
-          <div style={keySetupStyle}>
+          <div style={keySetupStyle} data-testid="docops-key-setup">
             <p style={{ margin: 0, fontSize: 13, color: 'var(--doc-text)', lineHeight: 1.5 }}>
               DocOps uses the Anthropic API. Bring your own key — it&apos;s stored only in this
               browser&apos;s localStorage.
@@ -628,7 +628,7 @@ export function DocOpsPanel({
             )}
           </div>
         ) : (
-          <div style={messagesStyle}>
+          <div style={messagesStyle} data-testid="docops-messages">
             {displayMessages.length === 0 && (
               <div
                 style={{
