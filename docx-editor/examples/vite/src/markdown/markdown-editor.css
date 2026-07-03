@@ -2,21 +2,74 @@
  * Interactive states for the Markdown editor chrome.
  * Hover / active / focus cannot be expressed as React inline styles,
  * so they live here and are applied via className.
+ *
+ * The whole surface is themed from one token set (light + dark). Inline
+ * styles reference these via var(--md-*); the classes below use them too.
  */
+
+:root {
+  --md-surface: #ffffff;
+  --md-surface-2: #f1f5f9;
+  --md-surface-3: #e2e8f0;
+  --md-border: #e2e8f0;
+  --md-text: #0f172a;
+  --md-text-soft: #334155;
+  --md-text-muted: #64748b;
+  --md-accent: #2563eb;
+  --md-accent-soft: rgba(37, 99, 235, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-surface: #0f172a;
+    --md-surface-2: #1e293b;
+    --md-surface-3: #334155;
+    --md-border: #334155;
+    --md-text: #e2e8f0;
+    --md-text-soft: #cbd5e1;
+    --md-text-muted: #94a3b8;
+    --md-accent: #60a5fa;
+    --md-accent-soft: rgba(96, 165, 250, 0.24);
+  }
+}
+
+/* Explicit theme override (data-theme wins over the media query). */
+[data-theme='light'] {
+  --md-surface: #ffffff;
+  --md-surface-2: #f1f5f9;
+  --md-surface-3: #e2e8f0;
+  --md-border: #e2e8f0;
+  --md-text: #0f172a;
+  --md-text-soft: #334155;
+  --md-text-muted: #64748b;
+  --md-accent: #2563eb;
+  --md-accent-soft: rgba(37, 99, 235, 0.2);
+}
+[data-theme='dark'] {
+  --md-surface: #0f172a;
+  --md-surface-2: #1e293b;
+  --md-surface-3: #334155;
+  --md-border: #334155;
+  --md-text: #e2e8f0;
+  --md-text-soft: #cbd5e1;
+  --md-text-muted: #94a3b8;
+  --md-accent: #60a5fa;
+  --md-accent-soft: rgba(96, 165, 250, 0.24);
+}
 
 /* Toolbar buttons */
 .md-tb {
   transition: background 0.1s, color 0.1s;
 }
 .md-tb:hover {
-  background: #f1f5f9 !important;
-  color: #0f172a !important;
+  background: var(--md-surface-2) !important;
+  color: var(--md-text) !important;
 }
 .md-tb:active {
-  background: #e2e8f0 !important;
+  background: var(--md-surface-3) !important;
 }
 .md-tb:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--md-accent);
   outline-offset: 1px;
 }
 
@@ -25,20 +78,45 @@
   transition: background 0.1s;
 }
 .md-filename:hover {
-  background: #f1f5f9 !important;
+  background: var(--md-surface-2) !important;
 }
 .md-filename:focus {
-  background: #f1f5f9 !important;
-  box-shadow: 0 0 0 2px #2563eb33;
+  background: var(--md-surface-2) !important;
+  box-shadow: 0 0 0 2px var(--md-accent-soft);
 }
 
 /* Back / icon buttons in the title bar */
 .md-icon-btn:hover {
-  background: #f1f5f9 !important;
-  color: #0f172a !important;
+  background: var(--md-surface-2) !important;
+  color: var(--md-text) !important;
 }
 .md-icon-btn:active {
-  background: #e2e8f0 !important;
+  background: var(--md-surface-3) !important;
+}
+
+/* ── CodeMirror source pane theming (light default; dark via tokens) ──────── */
+[data-testid='markdown-source'] .cm-editor {
+  background: var(--md-surface);
+  color: var(--md-text);
+}
+[data-testid='markdown-source'] .cm-gutters {
+  background: var(--md-surface-2);
+  color: var(--md-text-muted);
+  border-right: 1px solid var(--md-border);
+}
+[data-testid='markdown-source'] .cm-activeLineGutter {
+  background: var(--md-surface-3);
+  color: var(--md-text);
+}
+[data-testid='markdown-source'] .cm-activeLine {
+  background: color-mix(in srgb, var(--md-accent) 7%, transparent);
+}
+[data-testid='markdown-source'] .cm-cursor {
+  border-left-color: var(--md-text);
+}
+[data-testid='markdown-source'] .cm-selectionBackground,
+[data-testid='markdown-source'] .cm-content ::selection {
+  background: var(--md-accent-soft) !important;
 }
 
 /* ── Print / Export PDF ───────────────────────────────────────────────────── */

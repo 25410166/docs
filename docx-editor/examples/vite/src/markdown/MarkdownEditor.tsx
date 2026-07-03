@@ -32,15 +32,18 @@ export interface MarkdownEditorProps {
   renderLogo?: () => React.ReactNode;
 }
 
+// Colors are driven by CSS custom properties (defined in markdown-editor.css)
+// so the whole surface themes for light + dark from one place. Inline styles
+// reference the vars directly; the fallbacks keep SSR / no-CSS sane.
 const COLORS = {
-  border: '#e2e8f0',
-  bar: '#ffffff',
-  toggleBg: '#f1f5f9',
-  toggleActive: '#ffffff',
-  text: '#0f172a',
-  muted: '#64748b',
-  accent: '#2563eb',
-  previewBg: '#ffffff',
+  border: 'var(--md-border, #e2e8f0)',
+  bar: 'var(--md-surface, #ffffff)',
+  toggleBg: 'var(--md-surface-2, #f1f5f9)',
+  toggleActive: 'var(--md-surface, #ffffff)',
+  text: 'var(--md-text, #0f172a)',
+  muted: 'var(--md-text-muted, #64748b)',
+  accent: 'var(--md-accent, #2563eb)',
+  previewBg: 'var(--md-surface, #ffffff)',
 };
 
 const ICONS: Record<MarkdownViewMode, React.ReactNode> = {
@@ -499,6 +502,48 @@ export function MarkdownEditor({
     [docText, supportsPreview]
   );
 
+  // Obsidian-style synced scrolling in split mode: dragging one pane scrolls
+  // the other proportionally. A guard flag suppresses the feedback loop so the
+  // programmatic scroll we trigger doesn't echo back and fight the user.
+  useEffect(() => {
+    if (mode !== 'split') return;
+    const cm = viewRef.current?.scrollDOM;
+    const preview = previewRef.current;
+    if (!cm || !preview) return;
+
+    let lock: 'cm' | 'preview' | null = null;
+    let raf = 0;
+    const ratio = (el: HTMLElement) => {
+      const range = el.scrollHeight - el.clientHeight;
+      return range > 0 ? el.scrollTop / range : 0;
+    };
+    const apply = (target: HTMLElement, r: number) => {
+      const range = target.scrollHeight - target.clientHeight;
+      target.scrollTop = r * range;
+    };
+    const sync = (from: HTMLElement, to: HTMLElement, tag: 'cm' | 'preview') => () => {
+      if (lock && lock !== tag) return;
+      lock = tag;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        apply(to, ratio(from));
+        // Release the lock on the next frame so the echoed scroll is ignored.
+        requestAnimationFrame(() => {
+          lock = null;
+        });
+      });
+    };
+    const onCm = sync(cm, preview, 'cm');
+    const onPreview = sync(preview, cm, 'preview');
+    cm.addEventListener('scroll', onCm, { passive: true });
+    preview.addEventListener('scroll', onPreview, { passive: true });
+    return () => {
+      cancelAnimationFrame(raf);
+      cm.removeEventListener('scroll', onCm);
+      preview.removeEventListener('scroll', onPreview);
+    };
+  }, [mode, previewHtml]);
+
   // Run mermaid on the preview pane after each HTML update.
   useEffect(() => {
     if (!supportsPreview || mode === 'source' || !previewRef.current) return;
@@ -801,7 +846,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     height: '100vh',
-    background: '#f8fafc',
+    background: 'var(--md-surface-2, #f8fafc)',
     color: COLORS.text,
   },
   bar: {
@@ -821,7 +866,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 1,
     padding: '5px 14px',
-    background: '#f8fafc',
+    background: 'var(--md-surface-2, #f8fafc)',
     borderBottom: `1px solid ${COLORS.border}`,
     flex: '0 0 auto',
     flexWrap: 'wrap',
@@ -850,13 +895,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 6,
-    border: '1px solid #e2e8f0',
+    border: `1px solid ${COLORS.border}`,
     borderRadius: 8,
     padding: '6px 12px',
     fontSize: 13,
     fontWeight: 500,
-    color: '#334155',
-    background: '#ffffff',
+    color: 'var(--md-text-soft, #334155)',
+    background: COLORS.bar,
     cursor: 'pointer',
   },
   iconButton: {
