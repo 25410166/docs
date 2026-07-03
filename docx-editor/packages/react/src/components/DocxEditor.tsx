@@ -3441,7 +3441,8 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         if (ms?.active) {
           // The visible caret DIV ([data-testid="caret"]) is positioned by the
           // layout painter at the real on-screen cursor location.
-          const caretEl = view.dom.ownerDocument.querySelector<HTMLElement>('[data-testid="caret"]');
+          const caretEl =
+            view.dom.ownerDocument.querySelector<HTMLElement>('[data-testid="caret"]');
           if (caretEl) {
             const r = caretEl.getBoundingClientRect();
             setMentionPopover({
@@ -5800,21 +5801,18 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   }, [getActiveEditorView, spellMenu]);
 
   // Pick a name from the @-mention popover: replace "@query" with "@Name "
-  const handlePickMention = useCallback(
-    (name: string) => {
-      const view = pagedEditorRef.current?.getView();
-      if (!view) return;
-      const ms = MENTION_PLUGIN_KEY.getState(view.state);
-      if (!ms?.active) return;
-      const { from } = ms;
-      const to = view.state.selection.from; // cursor is right after the query
-      const text = `@${name} `;
-      view.dispatch(view.state.tr.insertText(text, from, to));
-      view.focus();
-      setMentionPopover({ visible: false, anchor: null, query: '' });
-    },
-    []
-  );
+  const handlePickMention = useCallback((name: string) => {
+    const view = pagedEditorRef.current?.getView();
+    if (!view) return;
+    const ms = MENTION_PLUGIN_KEY.getState(view.state);
+    if (!ms?.active) return;
+    const { from } = ms;
+    const to = view.state.selection.from; // cursor is right after the query
+    const text = `@${name} `;
+    view.dispatch(view.state.tr.insertText(text, from, to));
+    view.focus();
+    setMentionPopover({ visible: false, anchor: null, query: '' });
+  }, []);
 
   // Apply a grammar fix: replace the flagged span with the suggestion,
   // preserving the marks at the start so formatting survives.
@@ -9084,7 +9082,12 @@ body { background: white; }
   const mentionSuggestions = useMemo(() => {
     const seen = new Set<string>();
     const result: string[] = [];
-    const push = (n: string) => { if (n && !seen.has(n)) { seen.add(n); result.push(n); } };
+    const push = (n: string) => {
+      if (n && !seen.has(n)) {
+        seen.add(n);
+        result.push(n);
+      }
+    };
     if (mentionableUsers) for (const n of mentionableUsers) push(n);
     if (author) push(author);
     return result;

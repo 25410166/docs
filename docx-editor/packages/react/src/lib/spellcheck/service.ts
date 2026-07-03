@@ -174,8 +174,7 @@ export function addWordToDictionary(word: string): void {
   stateVersion++;
   try {
     const existing: string[] = [];
-    const raw =
-      typeof localStorage !== 'undefined' ? localStorage.getItem(USER_DICT_KEY) : null;
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(USER_DICT_KEY) : null;
     if (raw) {
       const parsed = JSON.parse(raw) as unknown;
       if (Array.isArray(parsed)) {

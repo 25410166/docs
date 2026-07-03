@@ -26,7 +26,14 @@
  * parent's scale transform).
  */
 
-import React, { Fragment, useEffect, useState, useMemo, type CSSProperties, type ReactNode } from 'react';
+import React, {
+  Fragment,
+  useEffect,
+  useState,
+  useMemo,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import type { SelectionRect } from '@eigenpal/docx-core/layout-bridge';
 import type { SelectionFormatting, FormattingAction } from '../Toolbar';
 import { MaterialSymbol } from './MaterialSymbol';
@@ -133,7 +140,14 @@ const btnActive: CSSProperties = {
 };
 
 interface FormatButton {
-  cmd: 'bold' | 'italic' | 'underline' | 'strikethrough' | 'superscript' | 'subscript' | 'insertLink';
+  cmd:
+    | 'bold'
+    | 'italic'
+    | 'underline'
+    | 'strikethrough'
+    | 'superscript'
+    | 'subscript'
+    | 'insertLink';
   label: string;
   /** Text glyph (B/I/U/S). Mutually exclusive with `icon`. */
   glyph?: string;

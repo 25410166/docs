@@ -178,11 +178,11 @@ const dropdownItemStyle: CSSProperties = {
 
 const MoveIcon = () => (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="white" aria-hidden="true">
-    <path d="M13 6v5h5l-6-6-6 6h5v-5z" transform="translate(0,-2)"/>
-    <path d="M11 18v-5H6l6 6 6-6h-5v5z" transform="translate(0,2)"/>
-    <path d="M6 13h-5l6-6 6 6h-5z" transform="translate(-2,0) rotate(90,12,12)"/>
-    <path d="M18 11h5l-6 6-6-6h5z" transform="translate(2,0) rotate(90,12,12)"/>
-    <circle cx="12" cy="12" r="1.5"/>
+    <path d="M13 6v5h5l-6-6-6 6h5v-5z" transform="translate(0,-2)" />
+    <path d="M11 18v-5H6l6 6 6-6h-5v5z" transform="translate(0,2)" />
+    <path d="M6 13h-5l6-6 6 6h-5z" transform="translate(-2,0) rotate(90,12,12)" />
+    <path d="M18 11h5l-6 6-6-6h5z" transform="translate(2,0) rotate(90,12,12)" />
+    <circle cx="12" cy="12" r="1.5" />
   </svg>
 );
 
@@ -359,7 +359,14 @@ export const InlineHeaderFooterEditor = forwardRef<
             `{position:absolute!important;left:${p.left}px!important;top:${p.top}px!important;` +
             `width:${p.width}px!important;margin:0!important;}`
         );
-        newRects.push({ id, kind: 'textbox', left: p.left, top: p.top, width: p.width, height: p.height });
+        newRects.push({
+          id,
+          kind: 'textbox',
+          left: p.left,
+          top: p.top,
+          width: p.width,
+          height: p.height,
+        });
       });
     }
 
@@ -378,7 +385,14 @@ export const InlineHeaderFooterEditor = forwardRef<
         `.hf-editor-pm img.docx-image{position:absolute!important;` +
           `left:${p.left}px!important;top:${p.top}px!important;margin:0!important;}`
       );
-      newRects.push({ id: '__img_0__', kind: 'image', left: p.left, top: p.top, width: p.width, height: p.height });
+      newRects.push({
+        id: '__img_0__',
+        kind: 'image',
+        left: p.left,
+        top: p.top,
+        width: p.width,
+        height: p.height,
+      });
     }
 
     // Positioned content is out of flow, so the editable in-flow text collapses;
@@ -483,11 +497,20 @@ export const InlineHeaderFooterEditor = forwardRef<
       const handleEl = handleElsRef.current.get(rect.id);
 
       const compute = (dx: number, dy: number) => {
-        let nl = rect.left, nt = rect.top, nw = rect.width, nh = rect.height;
+        let nl = rect.left,
+          nt = rect.top,
+          nw = rect.width,
+          nh = rect.height;
         if (corner.includes('e')) nw = Math.max(50, rect.width + dx);
         if (corner.includes('s')) nh = Math.max(20, rect.height + dy);
-        if (corner.includes('w')) { nl = rect.left + dx; nw = Math.max(50, rect.width - dx); }
-        if (corner.includes('n')) { nt = rect.top + dy; nh = Math.max(20, rect.height - dy); }
+        if (corner.includes('w')) {
+          nl = rect.left + dx;
+          nw = Math.max(50, rect.width - dx);
+        }
+        if (corner.includes('n')) {
+          nt = rect.top + dy;
+          nh = Math.max(20, rect.height - dy);
+        }
         return { nl, nt, nw, nh };
       };
 
@@ -993,7 +1016,11 @@ function ContextMenuPanel({
     color: 'var(--doc-text-on-surface)',
     font: 'inherit',
   };
-  const divStyle: CSSProperties = { height: 1, background: 'var(--doc-border, #e2e8f0)', margin: '3px 0' };
+  const divStyle: CSSProperties = {
+    height: 1,
+    background: 'var(--doc-border, #e2e8f0)',
+    margin: '3px 0',
+  };
 
   return (
     <div
@@ -1013,14 +1040,62 @@ function ContextMenuPanel({
         userSelect: 'none',
       }}
     >
-      <button type="button" style={itemStyle} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onCopy}>Copy</button>
-      <button type="button" style={itemStyle} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onPaste}>Paste</button>
-      <button type="button" style={itemStyle} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onSelectAll}>Select all</button>
+      <button
+        type="button"
+        style={itemStyle}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--doc-bg-hover,#f1f5f9)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        onClick={onCopy}
+      >
+        Copy
+      </button>
+      <button
+        type="button"
+        style={itemStyle}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--doc-bg-hover,#f1f5f9)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        onClick={onPaste}
+      >
+        Paste
+      </button>
+      <button
+        type="button"
+        style={itemStyle}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--doc-bg-hover,#f1f5f9)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        onClick={onSelectAll}
+      >
+        Select all
+      </button>
       <div style={divStyle} />
-      <button type="button" style={itemStyle} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onInsertPageNumber}>Insert page number</button>
-      <button type="button" style={itemStyle} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onInsertTotalPages}>Insert total pages</button>
+      <button
+        type="button"
+        style={itemStyle}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--doc-bg-hover,#f1f5f9)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        onClick={onInsertPageNumber}
+      >
+        Insert page number
+      </button>
+      <button
+        type="button"
+        style={itemStyle}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--doc-bg-hover,#f1f5f9)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        onClick={onInsertTotalPages}
+      >
+        Insert total pages
+      </button>
       <div style={divStyle} />
-      <button type="button" style={{ ...itemStyle, color: 'var(--doc-text-muted, #888)' }} onMouseEnter={e => (e.currentTarget.style.background='var(--doc-bg-hover,#f1f5f9)')} onMouseLeave={e => (e.currentTarget.style.background='transparent')} onClick={onClose}>Close menu</button>
+      <button
+        type="button"
+        style={{ ...itemStyle, color: 'var(--doc-text-muted, #888)' }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--doc-bg-hover,#f1f5f9)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        onClick={onClose}
+      >
+        Close menu
+      </button>
     </div>
   );
 }
