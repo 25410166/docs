@@ -453,8 +453,10 @@ export const InlineHeaderFooterEditor = forwardRef<
         setShowOptions(false);
       }
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    // Use capture phase so e.stopPropagation() on hf-inline-editor doesn't
+    // swallow the event before our outside-click check can see it.
+    document.addEventListener('mousedown', handleClick, true);
+    return () => document.removeEventListener('mousedown', handleClick, true);
   }, [showOptions]);
 
   // Expose ref
