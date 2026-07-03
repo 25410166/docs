@@ -9,7 +9,7 @@
  * Extracted from FindReplaceDialog.tsx.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { FindMatch, FindOptions } from './findReplaceUtils';
 import { createDefaultFindOptions } from './findReplaceUtils';
 
@@ -101,6 +101,12 @@ export function useFindReplace(hookOptions?: FindReplaceOptions): UseFindReplace
     replaceMode: hookOptions?.initialReplaceMode ?? false,
   });
 
+  // Mirror the latest state so goToNext/goToPreviousMatch can compute and
+  // return the new index synchronously — the value returned by a functional
+  // setState updater is not reliably readable before the next render.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const openFind = useCallback((selectedText?: string) => {
     setState((prev) => ({
       ...prev,
@@ -177,22 +183,18 @@ export function useFindReplace(hookOptions?: FindReplaceOptions): UseFindReplace
   );
 
   const goToNextMatch = useCallback(() => {
-    let newIndex = 0;
-    setState((prev) => {
-      if (prev.matches.length === 0) return prev;
-      newIndex = (prev.currentIndex + 1) % prev.matches.length;
-      return { ...prev, currentIndex: newIndex };
-    });
+    const prev = stateRef.current;
+    if (prev.matches.length === 0) return prev.currentIndex;
+    const newIndex = (prev.currentIndex + 1) % prev.matches.length;
+    setState((s) => ({ ...s, currentIndex: newIndex }));
     return newIndex;
   }, []);
 
   const goToPreviousMatch = useCallback(() => {
-    let newIndex = 0;
-    setState((prev) => {
-      if (prev.matches.length === 0) return prev;
-      newIndex = prev.currentIndex === 0 ? prev.matches.length - 1 : prev.currentIndex - 1;
-      return { ...prev, currentIndex: newIndex };
-    });
+    const prev = stateRef.current;
+    if (prev.matches.length === 0) return prev.currentIndex;
+    const newIndex = prev.currentIndex === 0 ? prev.matches.length - 1 : prev.currentIndex - 1;
+    setState((s) => ({ ...s, currentIndex: newIndex }));
     return newIndex;
   }, []);
 

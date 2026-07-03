@@ -56,6 +56,30 @@ function marksToTextFormatting(marks: readonly Mark[]): TextFormatting {
       case 'subscript':
         formatting.vertAlign = 'subscript';
         break;
+      case 'smallCaps':
+        formatting.smallCaps = true;
+        break;
+      case 'allCaps':
+        formatting.allCaps = true;
+        break;
+      case 'hidden':
+        formatting.hidden = true;
+        break;
+      case 'emboss':
+        formatting.emboss = true;
+        break;
+      case 'imprint':
+        formatting.imprint = true;
+        break;
+      case 'textShadow':
+        formatting.shadow = true;
+        break;
+      case 'textOutline':
+        formatting.outline = true;
+        break;
+      case 'characterSpacing':
+        if (mark.attrs.spacing != null) formatting.spacing = mark.attrs.spacing as number;
+        break;
     }
   }
 
@@ -412,6 +436,33 @@ export function textFormattingToMarks(formatting: TextFormatting, schema: Schema
   }
   if (formatting.vertAlign === 'subscript') {
     marks.push(schema.marks.subscript.create());
+  }
+  // Keep in sync with marksToTextFormatting — these second-tier marks must
+  // also round-trip so StoredMarksRestoreExtension can rehydrate them after
+  // an empty-paragraph navigate-away-and-back.
+  if (formatting.smallCaps && schema.marks.smallCaps) {
+    marks.push(schema.marks.smallCaps.create());
+  }
+  if (formatting.allCaps && schema.marks.allCaps) {
+    marks.push(schema.marks.allCaps.create());
+  }
+  if (formatting.hidden && schema.marks.hidden) {
+    marks.push(schema.marks.hidden.create());
+  }
+  if (formatting.emboss && schema.marks.emboss) {
+    marks.push(schema.marks.emboss.create());
+  }
+  if (formatting.imprint && schema.marks.imprint) {
+    marks.push(schema.marks.imprint.create());
+  }
+  if (formatting.shadow && schema.marks.textShadow) {
+    marks.push(schema.marks.textShadow.create());
+  }
+  if (formatting.outline && schema.marks.textOutline) {
+    marks.push(schema.marks.textOutline.create());
+  }
+  if (formatting.spacing != null && schema.marks.characterSpacing) {
+    marks.push(schema.marks.characterSpacing.create({ spacing: formatting.spacing }));
   }
 
   return marks;

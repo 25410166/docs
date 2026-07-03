@@ -6,8 +6,8 @@
  * Subscript Mark Extension
  */
 
-import { toggleMark } from 'prosemirror-commands';
 import { createMarkExtension } from '../create';
+import { toggleMark } from './markUtils';
 import type { ExtensionContext, ExtensionRuntime } from '../types';
 
 export const SubscriptExtension = createMarkExtension({
