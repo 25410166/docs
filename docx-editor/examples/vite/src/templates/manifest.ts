@@ -23,7 +23,10 @@ export type TemplateSource =
   /** Built in code via createEmptyDocument(); no asset fetch. */
   | { kind: 'synthesized' }
   /** Fetched from `path` (relative to the dev/prod root) on selection. */
-  | { kind: 'docx'; path: string };
+  | { kind: 'docx'; path: string }
+  /** Empty plain-text / markdown file — opens the source/markdown editor,
+   *  not the DOCX pipeline. `textKind` picks preview vs source-only. */
+  | { kind: 'text'; textKind: 'markdown' | 'text' };
 
 export interface TemplateEntry {
   id: string;
@@ -47,13 +50,34 @@ export const TEMPLATES: TemplateEntry[] = [
   {
     id: 'blank',
     name: 'Blank document',
-    description: 'Start fresh with an empty page.',
+    description: 'Start fresh with an empty Word page.',
     category: 'Personal',
     icon: 'add',
     thumbnail: '/templates/thumbs/blank.svg',
     source: { kind: 'synthesized' },
     defaultFileName: 'Untitled.docx',
     featured: true,
+  },
+  {
+    id: 'blank-markdown',
+    name: 'Blank Markdown',
+    description: 'A .md file with live preview and notebook mode.',
+    category: 'Personal',
+    icon: 'article',
+    thumbnail: '/templates/thumbs/blank.svg',
+    source: { kind: 'text', textKind: 'markdown' },
+    defaultFileName: 'Untitled.md',
+    featured: true,
+  },
+  {
+    id: 'blank-text',
+    name: 'Blank Text',
+    description: 'A plain .txt file — source editor, no formatting.',
+    category: 'Personal',
+    icon: 'subject',
+    thumbnail: '/templates/thumbs/blank.svg',
+    source: { kind: 'text', textKind: 'text' },
+    defaultFileName: 'Untitled.txt',
   },
   {
     id: 'resume',

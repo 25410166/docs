@@ -114,6 +114,21 @@ test('.yml opens as source-only with YAML syntax highlighting', async ({ page })
   await page.screenshot({ path: 'screenshots/yaml-source.png' });
 });
 
+test('new-file picker offers Markdown and Text kinds', async ({ page }) => {
+  await page.goto('/');
+
+  // Creating a new file offers markdown / text, not only a Word doc.
+  await expect(page.getByTestId('template-card-blank-markdown').first()).toBeVisible();
+  await expect(page.getByTestId('template-card-blank-text').first()).toBeVisible();
+
+  // Blank Markdown opens an empty .md in the source/markdown editor.
+  await page.getByTestId('template-card-blank-markdown').first().click();
+  await page.waitForSelector('[data-testid="markdown-editor"]', { timeout: 30000 });
+  await expect(page.getByTestId('markdown-filename')).toHaveValue('Untitled.md');
+  // Markdown kind → the notebook view toggle is present.
+  await expect(page.getByTestId('markdown-view-notebook')).toBeVisible();
+});
+
 test('Notebook mode renders markdown inline and reveals syntax on the caret', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('home-file-input').setInputFiles(NOTEBOOK_FIXTURE);

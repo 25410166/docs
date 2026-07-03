@@ -23,6 +23,11 @@ export async function loadTemplate(entry: TemplateEntry): Promise<LoadedTemplate
       fileName: entry.defaultFileName,
     };
   }
+  if (entry.source.kind !== 'docx') {
+    // Text/markdown blanks are handled by the caller (App.handleSelectTemplate)
+    // via the source editor path and never reach loadTemplate.
+    throw new Error(`loadTemplate: unsupported source kind ${entry.source.kind}`);
+  }
   const res = await fetch(entry.source.path);
   if (!res.ok) {
     throw new Error(`Failed to fetch ${entry.source.path}: HTTP ${res.status}`);

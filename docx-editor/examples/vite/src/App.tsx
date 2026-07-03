@@ -808,6 +808,18 @@ export function App() {
   const handleSelectTemplate = useCallback(
     async (entry: TemplateEntry) => {
       try {
+        // Blank markdown / text files open the source editor, not the DOCX
+        // pipeline — start with an empty document.
+        if (entry.source.kind === 'text') {
+          suppressSeedDocumentRef.current = true;
+          setDocumentBuffer(null);
+          setCurrentDocument(null);
+          setTextDoc({ text: '', fileName: entry.defaultFileName, kind: entry.source.textKind });
+          setStatus('');
+          if (!legacyForcedEditor) navigate('/document/new');
+          setView('editor');
+          return;
+        }
         if (entry.source.kind === 'docx') setStatus('Loading template…');
         const loaded = await loadTemplate(entry);
         suppressSeedDocumentRef.current = true;
