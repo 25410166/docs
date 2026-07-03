@@ -590,10 +590,9 @@ function getTableContext(state: EditorState): TableContextInfo {
     }
   });
 
-  const canSplitCell =
-    !!cellNode &&
-    !hasMultiCellSelection &&
-    ((cellNode.attrs.colspan ?? 1) > 1 || (cellNode.attrs.rowspan ?? 1) > 1);
+  // A single active cell is splittable (this editor splits a 1×1 cell into
+  // 1×2, not only merged cells — see table-merge-split.spec.ts).
+  const canSplitCell = !!cellNode && !hasMultiCellSelection;
 
   // Extract border color and background color from current cell
   let cellBorderColor: TableContextInfo['cellBorderColor'];
