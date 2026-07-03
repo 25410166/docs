@@ -1313,6 +1313,7 @@ export const TablePluginExtension = createExtension({
         const newColWidthPercent = Math.floor(5000 / newColumnCount);
 
         const deleteOps: { start: number; end: number }[] = [];
+        const shrinkOps: { pos: number; attrs: Record<string, unknown> }[] = [];
         let rowPos = context.tablePos + 1;
 
         context.table.forEach((row) => {
@@ -1326,7 +1327,17 @@ export const TablePluginExtension = createExtension({
               const cellColspan = cell.attrs.colspan || 1;
 
               if (colIdx <= context.columnIndex! && context.columnIndex! < colIdx + cellColspan) {
-                deleteOps.push({ start: cellStart, end: cellEnd });
+                if (cellColspan > 1) {
+                  // The cell spans the deleted column — reduce its span instead
+                  // of removing it, or this row loses a cell the others keep
+                  // (a merged-cell table gets corrupted into ragged rows).
+                  shrinkOps.push({
+                    pos: cellStart,
+                    attrs: { ...cell.attrs, colspan: cellColspan - 1 },
+                  });
+                } else {
+                  deleteOps.push({ start: cellStart, end: cellEnd });
+                }
               }
 
               cellPos = cellEnd;
@@ -1336,6 +1347,13 @@ export const TablePluginExtension = createExtension({
           rowPos += row.nodeSize;
         });
 
+        // Span reductions first: setNodeMarkup preserves node size, so the
+        // delete positions computed from the original doc stay valid. Then
+        // delete the single-span cells in reverse so earlier deletes don't
+        // shift later positions.
+        shrinkOps.forEach(({ pos, attrs }) => {
+          tr = tr.setNodeMarkup(pos, undefined, attrs);
+        });
         deleteOps.reverse().forEach(({ start, end }) => {
           tr = tr.delete(start, end);
         });
