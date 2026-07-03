@@ -636,6 +636,16 @@ function makeApplyStyle(schema: Schema) {
         schema.marks.textColor,
         schema.marks.underline,
         schema.marks.strike,
+        // Second-tier character effects — cleared on style switch for
+        // consistency with the primary marks above.
+        schema.marks.smallCaps,
+        schema.marks.allCaps,
+        schema.marks.superscript,
+        schema.marks.subscript,
+        schema.marks.emboss,
+        schema.marks.imprint,
+        schema.marks.textShadow,
+        schema.marks.textOutline,
       ].filter(Boolean);
 
       state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
