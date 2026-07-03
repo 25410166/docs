@@ -767,6 +767,12 @@ export const InlineHeaderFooterEditor = forwardRef<
         e.stopPropagation();
       }}
       onContextMenu={(e) => {
+        const target = e.target as HTMLElement | null;
+        if (target?.closest('td, th')) {
+          // Table cell right-click: bubble to DocxEditor's handleEditorContextMenu
+          // so the "Insert row / Delete row / …" menu appears.
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         setContextMenu({ x: e.clientX, y: e.clientY });
