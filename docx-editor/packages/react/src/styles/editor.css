@@ -181,10 +181,17 @@
  * Google Docs / Word do the same.
  * ============================================================================ */
 
+/* Scoped to `.ep-root` (the editor root — set on the standalone shell, on every
+ * Radix portal wrapper, and inherited by inline dialogs) so these overrides
+ * NEVER leak onto a host page's <html>. The un-namespaced shadcn bridge vars
+ * below (--background / --foreground / --card / --primary …) share their names
+ * with tailwind/shadcn defaults; a bare `[data-theme='dark']` selector would
+ * have overwritten a host app's own dark tokens the moment the editor went
+ * dark. The DS `--color-*` tokens (colors.css) stay global by design — those
+ * are namespaced and shared suite-wide. */
 .ep-root[data-theme='dark'],
-[data-theme='dark'] .ep-root,
-[data-theme='dark'] {
-  /* Native form controls (selects, scrollbars) follow this. */
+[data-theme='dark'] .ep-root {
+  /* Native form controls (selects, scrollbars) inside the editor follow this. */
   color-scheme: dark;
 
   /* WCAG AA overrides for the vendored DS dark tokens. The design-system is a
