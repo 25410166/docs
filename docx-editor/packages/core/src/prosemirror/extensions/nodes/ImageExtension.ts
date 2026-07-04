@@ -17,6 +17,16 @@ import type { WrapType } from '../../../docx/wrapTypes';
  */
 export type AnchorWrapType = Exclude<WrapType, 'inline'>;
 
+/** Safely parse the `data-position` JSON emitted by toDOM; null on anything bad. */
+function parseImagePosition(raw: string | undefined): ImageAttrs['position'] | undefined {
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw) as ImageAttrs['position'];
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * User-facing layout choices that mirror Word's Wrap Text menu. These are
  * directional shortcuts that fold (`wrapType`, `cssFloat`) into a single
@@ -246,6 +256,20 @@ export const ImageExtension = createNodeExtension({
               : undefined,
             borderColor: element.dataset.borderColor || undefined,
             borderStyle: element.dataset.borderStyle || undefined,
+            // Restore anchor / wrap / crop / opacity / link so a pasted float
+            // keeps its anchoring (mirror of the data-* emitted in toDOM).
+            wrapText: (element.dataset.wrapText as ImageAttrs['wrapText']) || undefined,
+            distTop: element.dataset.distTop ? Number(element.dataset.distTop) : undefined,
+            distBottom: element.dataset.distBottom ? Number(element.dataset.distBottom) : undefined,
+            distLeft: element.dataset.distLeft ? Number(element.dataset.distLeft) : undefined,
+            distRight: element.dataset.distRight ? Number(element.dataset.distRight) : undefined,
+            cropTop: element.dataset.cropTop ? Number(element.dataset.cropTop) : undefined,
+            cropRight: element.dataset.cropRight ? Number(element.dataset.cropRight) : undefined,
+            cropBottom: element.dataset.cropBottom ? Number(element.dataset.cropBottom) : undefined,
+            cropLeft: element.dataset.cropLeft ? Number(element.dataset.cropLeft) : undefined,
+            opacity: element.dataset.opacity ? Number(element.dataset.opacity) : undefined,
+            hlinkHref: element.dataset.hlinkHref || undefined,
+            position: parseImagePosition(element.dataset.position),
           };
         },
       },
@@ -267,6 +291,20 @@ export const ImageExtension = createNodeExtension({
       if (attrs.borderWidth) domAttrs['data-border-width'] = String(attrs.borderWidth);
       if (attrs.borderColor) domAttrs['data-border-color'] = attrs.borderColor;
       if (attrs.borderStyle) domAttrs['data-border-style'] = attrs.borderStyle;
+      // Anchor / wrap / crop / opacity / link — serialize so an HTML copy-paste
+      // of a floating image keeps its anchoring instead of collapsing to inline.
+      if (attrs.wrapText) domAttrs['data-wrap-text'] = String(attrs.wrapText);
+      if (attrs.distTop != null) domAttrs['data-dist-top'] = String(attrs.distTop);
+      if (attrs.distBottom != null) domAttrs['data-dist-bottom'] = String(attrs.distBottom);
+      if (attrs.distLeft != null) domAttrs['data-dist-left'] = String(attrs.distLeft);
+      if (attrs.distRight != null) domAttrs['data-dist-right'] = String(attrs.distRight);
+      if (attrs.cropTop != null) domAttrs['data-crop-top'] = String(attrs.cropTop);
+      if (attrs.cropRight != null) domAttrs['data-crop-right'] = String(attrs.cropRight);
+      if (attrs.cropBottom != null) domAttrs['data-crop-bottom'] = String(attrs.cropBottom);
+      if (attrs.cropLeft != null) domAttrs['data-crop-left'] = String(attrs.cropLeft);
+      if (attrs.opacity != null) domAttrs['data-opacity'] = String(attrs.opacity);
+      if (attrs.hlinkHref) domAttrs['data-hlink-href'] = String(attrs.hlinkHref);
+      if (attrs.position) domAttrs['data-position'] = JSON.stringify(attrs.position);
 
       const styles: string[] = [];
 

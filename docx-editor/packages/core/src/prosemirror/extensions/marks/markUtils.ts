@@ -311,26 +311,27 @@ export function isMarkActive(
     });
   }
 
-  let hasMark = false;
+  // A mark is "active" over a range only when EVERY text node in it carries
+  // the mark — matching toggleMark's allHave semantics and Word / Google Docs
+  // (a partially-bold selection shows bold as inactive, so one click bolds all).
+  let anyText = false;
+  let allHave = true;
   state.doc.nodesBetween(from, to, (node) => {
     if (node.isText) {
+      anyText = true;
       const mark = markType.isInSet(node.marks);
-      if (mark) {
-        if (!attrs) {
-          hasMark = true;
-          return false;
-        }
-        const attrsMatch = Object.entries(attrs).every(([key, value]) => mark.attrs[key] === value);
-        if (attrsMatch) {
-          hasMark = true;
-          return false;
-        }
+      const matches =
+        !!mark &&
+        (!attrs || Object.entries(attrs).every(([key, value]) => mark.attrs[key] === value));
+      if (!matches) {
+        allHave = false;
+        return false;
       }
     }
     return true;
   });
 
-  return hasMark;
+  return anyText && allHave;
 }
 
 /**
