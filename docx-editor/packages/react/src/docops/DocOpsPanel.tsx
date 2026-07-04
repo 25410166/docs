@@ -188,6 +188,27 @@ const QUICK_ACTIONS: ReadonlyArray<{ id: string; label: string; prompt: string }
   { id: 'outline', label: 'Outline', prompt: 'Give me a concise outline of this document.' },
 ];
 
+/** Parse a GitHub-flavored markdown table into columns + rows for insertion. */
+function parseMarkdownTable(md: string): { columns: string[]; rows: string[][] } | null {
+  const cellLines = md
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('|'));
+  if (cellLines.length < 2) return null;
+  const cells = (l: string): string[] =>
+    l
+      .replace(/^\||\|$/g, '')
+      .split('|')
+      .map((c) => c.trim());
+  const columns = cells(cellLines[0]);
+  const rows = cellLines
+    .slice(1)
+    .filter((l) => !/^[\s|:-]+$/.test(l)) // drop the |---| separator row(s)
+    .map(cells);
+  if (!columns.length || !rows.length) return null;
+  return { columns, rows };
+}
+
 const chipRowStyle: CSSProperties = {
   display: 'flex',
   flexWrap: 'wrap',
@@ -553,9 +574,14 @@ export function DocOpsPanel({
             return;
           }
         }
-        const system =
-          'You are a concise writing assistant inside a document editor. Follow the instruction using only the content provided below it. Return plain text only — no preamble, no markdown code fences, no commentary.';
-        const userMsg = context ? `${action.prompt}\n\n--- DOCUMENT ---\n${context}` : action.prompt;
+        const isTable = action.id === 'table';
+        const isRewrite = action.id === 'rewrite';
+        const system = isTable
+          ? 'You convert content into a table. Output ONLY a GitHub-flavored markdown table: a header row, a |---| separator row, then data rows. No preamble, no commentary. Do NOT translate — keep every term exactly as written in the source.'
+          : isRewrite
+            ? 'You are a writing assistant. Rewrite the provided text per the instruction. Output ONLY the rewritten text — no preamble, no quotes, no commentary. Do NOT translate; keep the original language.'
+            : 'You are a concise writing assistant inside a document editor. Follow the instruction using only the content provided below it. Return plain text only — no preamble, no markdown code fences. Do NOT translate any content.';
+        const userMsg = context ? `${action.prompt}\n\n--- CONTENT ---\n${context}` : action.prompt;
         let streamed = '';
         const { data, status } = await transport.call({
           model: MODEL,
@@ -588,7 +614,41 @@ export function DocOpsPanel({
               .trim();
           }
         }
-        appendDisplay({ kind: 'assistant', text: text || '(no response)' });
+        // Write actions modify the document; read actions just reply in chat.
+        const failed = (r: unknown) => (r as { ok?: boolean })?.ok === false;
+        const errMsg = (r: unknown) => (r as { message?: string })?.message ?? 'failed';
+        if (isRewrite && text) {
+          const r = await bridge.callTool('rewrite_selection', { new_text: text });
+          appendDisplay(
+            failed(r)
+              ? { kind: 'error', text: `Couldn't apply rewrite: ${errMsg(r)}` }
+              : {
+                  kind: 'assistant',
+                  text: 'Rewrote the selection as a tracked change — review it in the comments sidebar.',
+                }
+          );
+        } else if (isTable && text) {
+          const parsed = parseMarkdownTable(text);
+          if (parsed) {
+            const r = await bridge.callTool('insert_report_from_data', {
+              title: 'Table',
+              columns: parsed.columns,
+              rows: parsed.rows,
+            });
+            appendDisplay(
+              failed(r)
+                ? { kind: 'error', text: `Couldn't insert table: ${errMsg(r)}` }
+                : {
+                    kind: 'assistant',
+                    text: `Inserted a ${parsed.rows.length}×${parsed.columns.length} table into the document.`,
+                  }
+            );
+          } else {
+            appendDisplay({ kind: 'assistant', text });
+          }
+        } else {
+          appendDisplay({ kind: 'assistant', text: text || '(no response)' });
+        }
       } catch (err) {
         if ((err as { name?: string }).name === 'AbortError') return;
         appendDisplay({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
