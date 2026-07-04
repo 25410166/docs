@@ -418,3 +418,69 @@ Plausible but require visual verification or are feature gaps, not clean safe fi
 - **Even/odd headers (`evenAndOddHeaders`)** (feature gap, not a regression) — `layout-engine/index.ts` accepts the flag but `void`s it; even-page headers/footers are not rendered. This is an unimplemented feature, scoped separately.
 - **Footnote definition orphaned on reference delete** (P2) — deleting a footnote reference may leave its definition in `footnotes.xml`; needs care around the footnote data model + collab `footnoteSync` before fixing.
 - **PAGE/NUMPAGES field `displayText` stale on export** (P2) — serialized field result can carry the load-time page number; Word recomputes on field update, so cosmetic until then. Post-pagination attr sync is the fix, non-trivial.
+
+---
+
+## Multi-surface audit — 2026-07-04
+
+A whole-product audit pass (desktop / collab / SDK / editor / webapp demo), each
+finding verified against source. Fixes shipped this pass are marked; outstanding
+items are ranked for follow-up. Verification threw out several plausible-but-false
+claims (e.g. `buildTableGrid` "wrong position formula" — the offsets are byte
+offsets, not indices, so the formula is correct; `goToNextCell` merged-last-row
+"malformed clone" — per-cell iteration preserves colspan).
+
+### User-Reported Bugs Queue (this pass)
+
+| ID                        | Severity | Area              | Report                                                              | Status                                                                                                       |
+| ------------------------- | -------- | ----------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| hf-image-no-handles       | P1       | Header/footer     | No resize/drag handles on HF images; resize/rotate reverts on exit | **Fixed** — hover hit-test on outer div; PM `setNodeMarkup` persists resize + drag (EMU) (`defc4cb`, `45d8bc0`) |
+| md-notebook-too-basic     | P2       | Markdown editor   | Notebook view too basic, not much different from source            | **Fixed** — inline render of blockquotes, bullet dots, rules, links + heading spacing (`e94de0b`)             |
+| md-recents-open-docx      | P1       | Home / recents    | Opening a `.md` from localStorage recents lands in the DOCX editor | **Fixed** — md/text open records recent with original bytes + full extension; reopen routes by ext (`0315751`) |
+| md-new-file-only-docx     | P2       | Home / new file   | New-file picker only offered a Word doc, not md / other kinds       | **Fixed** — Blank Markdown / Blank Text templates (`6907e4a`)                                                 |
+| md-chrome-mismatch        | P2       | Markdown editor   | txt/md editor didn't follow the docs editor's design language      | **Fixed** — `--md-*` mapped onto the docs `--doc-*` chrome tokens + Inter font (`f078498`)                    |
+
+### Editor / SDK (docx-editor)
+
+| ID                        | Severity | Status                                                                                                     |
+| ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| table-deletecolumn-colspan | P0      | **Fixed** — `deleteColumn` reduces a spanning cell's colspan instead of deleting it (`127abc4`)             |
+| imprint-textshadow-missing | P0      | **Fixed** — `ImprintExtension.toDOM` was missing the `text-shadow:` prefix (`45d8bc0`)                      |
+| hf-view-destroy-on-scroll | P0       | **Fixed** — HF PM view was rebuilt from original content on every scroll; keyed to container availability   |
+| ismarkactive-any-vs-all   | P1       | **Fixed** — toolbar mark state now requires ALL selected text to carry the mark, not any (`497670b`)        |
+| image-paste-loses-anchor  | P1       | **Fixed** — image toDOM/parseDOM round-trip position/wrap/crop/opacity/link (`497670b`)                     |
+| sdk-cjs-worker-esm-url     | P1      | **Fixed** — tsup worker-URL rewrite is now format-aware (`.js` cjs / `.mjs` esm); root cause of GH #4 (`74fccbb`) |
+| sdk-core-version-skew      | P1      | **Fixed** — `@schnsrw/core` range bumped `^0.1.1`→`^0.2.0` to match npm (`74fccbb`)                          |
+| sdk-stale-version-docs     | P2      | **Fixed** — `VERSION` const + CSS-import example corrected (`74fccbb`)                                       |
+| sdk-styles-root-leak       | P0      | **Todo** — `dist/styles.css` emits 3 unscoped `:root` token blocks that override the host app; emit under `.ep-root`/`[data-app=docs]` |
+| find-not-in-headers        | P1      | **Todo** — `handleFind`/`handleReplace` use the body view; should use `getActiveEditorView()` so Cmd+F searches an open header/footer |
+| comment-anchorpos-zero     | P2      | **Todo** — comment cards fall back to `anchorPos: 0` (doc top) before the layout pipeline resolves anchors  |
+| versiondiff-token-cap      | P2      | **Todo** — diffs over 6k tokens/side silently return a clean doc; surface a "diff too large" notice          |
+
+### Collab server (Node/Hocuspocus) — PR CasualOffice/collab#4
+
+| ID                        | Severity | Status                                                                                                     |
+| ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| collab-sigterm-drops-saves | P0      | **Fixed (PR #4)** — `close()` drains pending debounced saves instead of cancelling them                     |
+| collab-no-drain-snapshot   | P0      | **Fixed (PR #4)** — flush the room's pending save when the last client disconnects                          |
+| collab-ephemeral-prod      | P0      | **Fixed (PR #4)** — refuse to boot on `NODE_ENV=production` + in-memory storage unless `ALLOW_EPHEMERAL`     |
+| collab-prod-compose-memory | P0      | **Todo** — `docker-compose.prod.yml` comments promise Y.Doc persistence but `REDIS_URL` is commented out    |
+| collab-trustproxy-off      | P1      | **Todo** — Fastify has no `trustProxy`; rate-limit keys on the proxy IP behind Caddy, collapsing all clients |
+| collab-room-id-math-random | P1      | **Todo** — `makeRoomId()` uses `Math.random()`; open rooms are readable by id — use `crypto.randomBytes`     |
+| collab-rooms-list-unauth   | P1      | **Todo** — `GET /api/rooms` returns every live room id unauthenticated (enables enumeration)                 |
+| collab-upload-no-validation | P2     | **Todo** — `/seed` and file upload accept any bytes (only a size cap); no zip/OOXML magic-byte check         |
+| collab-cors-open            | P2      | **Todo** — `origin: true` reflects any Origin; restrict in production                                        |
+| collab-docker-root-nolock   | P2      | **Todo** — Dockerfile runs as root, no lockfile (`npm install`), ships source + `tsx`; add `USER node`+`npm ci` |
+| collab-no-healthcheck       | P2      | **Todo** — no `HEALTHCHECK`/compose readiness gate; Caddy can route before the app is ready                 |
+
+### Desktop (Tauri / Rust)
+
+| ID                        | Severity | Status                                                                                                     |
+| ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| desk-model-no-integrity   | P0       | **Todo** — downloaded AI models have no SHA-256/size verification before load; add a `sha256` catalog field |
+| desk-worker-mutex-poison  | P1       | **Todo** — `worker.lock().unwrap()` (4 spots in `ai_local.rs`) poisons on panic; use `unwrap_or_else(into_inner)` |
+| desk-iframe-save-nonatomic | P1      | **Todo** — the iframe `save` path is a non-atomic `fs::write` with no empty-byte guard (data-loss on crash) |
+| desk-readchunk-unbounded  | P1       | **Todo** — `read_document_chunk` allocates a caller-supplied `length` up-front; clamp to a max + remaining  |
+| desk-llm-lock-whole-infer | P1       | **Todo** — `run_local_infer` holds the worker lock across the whole token loop; AI surface freezes mid-gen  |
+| desk-no-kv-cache-reuse    | P1       | **Todo** — a fresh llama context per request re-prefills the whole prompt (CPU latency)                     |
+| desk-download-no-resume   | P1       | **Todo** — concurrent downloads share one `.part` file; no range/resume                                    |
