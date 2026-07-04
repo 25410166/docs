@@ -150,6 +150,12 @@ test('Notebook mode renders markdown inline and reveals syntax on the caret', as
   await expect(source.locator('.cm-md-em').first()).toBeVisible();
   await expect(source.locator('.cm-md-code').first()).toBeVisible();
 
+  // GFM: strikethrough renders struck, and task-list markers become checkboxes
+  // (one of them checked).
+  await expect(source.locator('.cm-md-strike').first()).toBeVisible();
+  await expect(source.locator('.cm-md-checkbox')).toHaveCount(2);
+  await expect(source.locator('.cm-md-checkbox-done')).toHaveCount(1);
+
   // With the caret elsewhere, the H1 line's '#' marker is hidden (clean render).
   const h1 = source.locator('.cm-md-h1').first();
   await expect(h1).toContainText('Casual Notebook');

@@ -7,5 +7,9 @@ A **notebook mode** that renders _inline_ as you type — like `code` and ~~stri
 - first item
 - second item with **bold**
 
+### Task list
+- [ ] unchecked task
+- [x] done task
+
 ### Third level
 Plain paragraph text here.

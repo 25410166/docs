@@ -75,6 +75,9 @@ export default defineConfig(async () => {
         '@codemirror/state',
         '@codemirror/view',
         '@codemirror/language',
+        // The GFM extension's node types must come from the SAME @lezer/markdown
+        // instance the parser uses, or the notebook decorations won't match.
+        '@lezer/markdown',
       ],
       alias: [
         // Resolve package imports to source for live development

@@ -46,6 +46,7 @@
         "@codemirror/state": "^6.7.0",
         "@codemirror/view": "^6.43.2",
         "@hocuspocus/provider": "^2.15.0",
+        "@lezer/markdown": "^1.6.4",
         "codemirror": "^6.0.2",
         "dompurify": "^3.4.11",
         "marked": "^18.0.5",

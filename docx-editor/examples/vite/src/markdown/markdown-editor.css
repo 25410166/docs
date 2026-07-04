@@ -163,6 +163,32 @@
   border-radius: 4px;
   padding: 0.1em 0.35em;
 }
+/* Task-list checkbox rendered in place of `[ ]` / `[x]`. */
+.cm-md-checkbox {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.15em;
+  border: 1.5px solid var(--md-text-muted);
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+.cm-md-checkbox-done {
+  background: var(--md-accent);
+  border-color: var(--md-accent);
+  position: relative;
+}
+.cm-md-checkbox-done::after {
+  content: '';
+  position: absolute;
+  left: 0.28em;
+  top: 0.08em;
+  width: 0.28em;
+  height: 0.5em;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
 
 /* ── Print / Export PDF ───────────────────────────────────────────────────── */
 @media print {

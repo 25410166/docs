@@ -16,9 +16,35 @@
  * maintains, so there's no second parser and no separate preview pane.
  */
 
-import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view';
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  ViewPlugin,
+  type ViewUpdate,
+  WidgetType,
+} from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { EditorState, Range } from '@codemirror/state';
+
+/** A rendered task-list checkbox that replaces the raw `[ ]` / `[x]` marker. */
+class TaskCheckboxWidget extends WidgetType {
+  constructor(readonly checked: boolean) {
+    super();
+  }
+  eq(other: TaskCheckboxWidget) {
+    return other.checked === this.checked;
+  }
+  toDOM() {
+    const box = document.createElement('span');
+    box.className = 'cm-md-checkbox' + (this.checked ? ' cm-md-checkbox-done' : '');
+    box.setAttribute('aria-hidden', 'true');
+    return box;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
 
 /** Heading containers → the line class that sizes them. */
 const HEADING_LINE: Record<string, string> = {
@@ -62,6 +88,21 @@ function buildDecorations(view: EditorView): DecorationSet {
       to,
       enter: (node) => {
         const name = node.name;
+
+        // Task-list marker (GFM): render `[ ]` / `[x]` as a checkbox, unless the
+        // caret is on it (then show the raw marker so it can be edited).
+        if (name === 'TaskMarker') {
+          if (!selectionTouches(state, node.from, node.to)) {
+            const checked = /x/i.test(state.doc.sliceString(node.from, node.to));
+            ranges.push(
+              Decoration.replace({ widget: new TaskCheckboxWidget(checked) }).range(
+                node.from,
+                node.to
+              )
+            );
+          }
+          return;
+        }
 
         // Heading: always size the line; hide the leading `#`s (+ one space)
         // unless the caret is on that heading.

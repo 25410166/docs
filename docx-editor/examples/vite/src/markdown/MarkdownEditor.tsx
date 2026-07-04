@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EditorView, basicSetup } from 'codemirror';
 import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
+import { GFM } from '@lezer/markdown';
 import { yaml } from '@codemirror/lang-yaml';
 import { StreamLanguage, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
 import { properties } from '@codemirror/legacy-modes/mode/properties';
@@ -105,7 +106,9 @@ const MODE_LABEL: Record<MarkdownViewMode, string> = {
  * open in the source editor as first-class text, not an unhighlighted blob.
  */
 function languageExtensionForFile(fileName: string, kind: 'markdown' | 'text'): Extension[] {
-  if (kind === 'markdown') return [markdown()];
+  // GFM adds strikethrough, tables, task lists, and autolinks to the parser —
+  // so they highlight in source and render in notebook mode, matching preview.
+  if (kind === 'markdown') return [markdown({ extensions: [GFM] })];
   const ext = (/\.([a-z0-9]+)$/i.exec(fileName)?.[1] ?? '').toLowerCase();
   switch (ext) {
     case 'yml':
