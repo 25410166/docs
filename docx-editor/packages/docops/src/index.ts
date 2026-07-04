@@ -27,3 +27,8 @@ export type {
   LlmMessage,
   LlmResponse,
 } from './agent';
+
+// Real Model Context Protocol: client (consume external servers) + server
+// (expose the DocOps tools to external agents), over any JSON-RPC transport.
+export { RpcConnection, McpClient, McpServer } from './mcp';
+export type { JsonRpcTransport, McpClientOptions, McpToolProvider, McpServerOptions } from './mcp';
