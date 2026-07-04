@@ -32,7 +32,7 @@ import React, {
   forwardRef,
 } from 'react';
 import type { CSSProperties } from 'react';
-import { EditorState, TextSelection, Selection } from 'prosemirror-state';
+import { EditorState, TextSelection, Selection, type Plugin } from 'prosemirror-state';
 import { keymap } from 'prosemirror-keymap';
 import { useTranslation } from '../i18n';
 import { EditorView } from 'prosemirror-view';
@@ -86,6 +86,13 @@ export interface InlineHeaderFooterEditorProps {
   onToggleTitlePg?: (value: boolean) => void;
   /** Toggle `w:evenAndOddHeaders` on settings.xml. */
   onToggleEvenAndOdd?: (value: boolean) => void;
+  /**
+   * The Find & Replace highlight plugin, shared from DocxEditor so match
+   * decorations paint inside this header/footer's editor when Find/Replace
+   * runs against the open HF (the HF view is blurred while the find box has
+   * focus, so native selection alone wouldn't show the current match).
+   */
+  findHighlightPlugin?: Plugin;
 }
 
 export interface InlineHeaderFooterEditorRef {
@@ -208,6 +215,7 @@ export const InlineHeaderFooterEditor = forwardRef<
     evenAndOddHeaders,
     onToggleTitlePg,
     onToggleEvenAndOdd,
+    findHighlightPlugin,
   },
   ref
 ) {
@@ -694,7 +702,14 @@ export const InlineHeaderFooterEditor = forwardRef<
         return true;
       },
     });
-    const plugins = [navKeymap, ...hfMgr.getPlugins()];
+    // Append the shared Find & Replace highlight plugin last so its match
+    // decorations render in this HF view. Its state is keyed and per-EditorState,
+    // so reusing the one DocxEditor instance across the main + HF views is safe.
+    const plugins = [
+      navKeymap,
+      ...hfMgr.getPlugins(),
+      ...(findHighlightPlugin ? [findHighlightPlugin] : []),
+    ];
 
     const state = EditorState.create({
       doc: pmDoc,
