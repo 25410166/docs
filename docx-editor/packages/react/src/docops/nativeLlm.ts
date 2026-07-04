@@ -53,13 +53,17 @@ export async function callNativeText(
   if (!model) {
     throw new Error('No model is loaded — open AI settings and load a model first.');
   }
+  // The Rust command takes a single `args` struct parameter, so the payload
+  // MUST be wrapped in `args` (a bare object throws "missing required key args").
   const data = await invoke('docops_llm_call', {
-    model,
-    system,
-    messages: [{ role: 'user', content: userText }],
-    tools: [],
-    maxTokens: opts?.maxTokens ?? 1024,
-    apiKey: '',
+    args: {
+      model,
+      system,
+      messages: [{ role: 'user', content: userText }],
+      tools: [],
+      maxTokens: opts?.maxTokens ?? 1024,
+      apiKey: '',
+    },
   });
   return extractAnthropicText(data);
 }

@@ -375,13 +375,18 @@ export class DesktopTransport implements DocOpsTransport {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let data: any;
       try {
+        // The Rust command takes a single `args` struct parameter
+        // (docops_llm_call(args: DocopsLlmArgs)), so the payload MUST be
+        // wrapped in `args` — a bare object throws "missing required key args".
         data = await invoke('docops_llm_call', {
-          model: payload.model,
-          system: payload.system,
-          messages,
-          tools: payload.tools,
-          maxTokens: payload.max_tokens,
-          apiKey: payload.apiKey ?? '',
+          args: {
+            model: payload.model,
+            system: payload.system,
+            messages,
+            tools: payload.tools,
+            maxTokens: payload.max_tokens,
+            apiKey: payload.apiKey ?? '',
+          },
         });
       } catch (err) {
         return { data: { error: { message: String(err) } }, status: 500 };
