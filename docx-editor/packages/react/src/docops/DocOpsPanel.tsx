@@ -337,6 +337,9 @@ export function DocOpsPanel({
   const [streamingText, setStreamingText] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [busy, setBusy] = useState(false);
+  // Label for the "thinking" row shown while the (non-streaming) model runs,
+  // so the user sees progress between click and reply.
+  const [thinkingLabel, setThinkingLabel] = useState('Thinking…');
 
   // Anthropic conversation history (separate from display)
   const historyRef = useRef<LlmMessage[]>([]);
@@ -382,6 +385,7 @@ export function DocOpsPanel({
       if (transport.requiresApiKey && !apiKey) return;
 
       setInputValue('');
+      setThinkingLabel('Thinking…');
       setBusy(true);
 
       appendDisplay({ kind: 'user', text });
@@ -548,6 +552,17 @@ export function DocOpsPanel({
         appendDisplay({ kind: 'error', text: 'Add an API key to use the assistant.' });
         return;
       }
+      setThinkingLabel(
+        action.id === 'rewrite'
+          ? 'Rewriting selection…'
+          : action.id === 'table'
+            ? 'Building table…'
+            : action.id === 'summarize'
+              ? 'Summarizing…'
+              : action.id === 'outline'
+                ? 'Outlining…'
+                : 'Thinking…'
+      );
       setBusy(true);
       appendDisplay({ kind: 'user', text: action.label });
       const ctrl = new AbortController();
@@ -561,7 +576,10 @@ export function DocOpsPanel({
         if (action.id === 'summarize' || action.id === 'outline') {
           context = readField(await bridge.callTool('get_doc_stats', {}));
           if (!context) {
-            appendDisplay({ kind: 'assistant', text: 'This document is empty — nothing to work with yet.' });
+            appendDisplay({
+              kind: 'assistant',
+              text: 'This document is empty — nothing to work with yet.',
+            });
             return;
           }
         } else if (action.id === 'rewrite' || action.id === 'table') {
@@ -907,6 +925,13 @@ export function DocOpsPanel({
               <div style={{ ...msgAssistantStyle, opacity: 0.85 }}>
                 {streamingText}
                 <span style={spinnerStyle} aria-hidden="true" />
+              </div>
+            )}
+
+            {busy && !streamingText && (
+              <div style={msgToolStyle} aria-live="polite">
+                <span style={spinnerStyle} aria-hidden="true" />
+                <span>{thinkingLabel}</span>
               </div>
             )}
 

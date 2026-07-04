@@ -6139,9 +6139,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       // Accept replays exactly the span the user picked, even if the
       // cursor moves while the panel is open.
       // Close any other right panel so the suggestion gets the slot.
-      setShowWritingAssistant(false);
-      setShowChatPanel(false);
-      setShowVersionHistory(false);
+      openRightPanel('aiSuggestion');
       setAiSuggestion({
         mode,
         from,
@@ -6155,7 +6153,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       });
       void runAiSuggestion(mode, 'polish', { from, to });
     },
-    [getActiveEditorView, runAiSuggestion]
+    [getActiveEditorView, runAiSuggestion, openRightPanel]
   );
 
   const handleAiAccept = useCallback(() => {
@@ -7975,8 +7973,9 @@ body { background: white; }
           tr = tr.addMark(textFrom, textTo, deletionMark);
         }
         if (!isDeletion) {
-          const insertedNode = schema.text(options.replaceWith, [insertionMark]);
-          tr = tr.insert(textTo, insertedNode);
+          const fragment = markdownToFragment(options.replaceWith, schema, [insertionMark]);
+          if (fragment.childCount === 0) return false;
+          tr = tr.insert(textTo, fragment);
         }
 
         if (isInsertion && isDeletion) return false; // nothing to do
@@ -8300,8 +8299,9 @@ body { background: white; }
 
         let tr = view.state.tr;
         tr = tr.addMark(from, to, deletionMark);
-        const insertedNode = schema.text(options.newText, [insertionMark]);
-        tr = tr.insert(to, insertedNode);
+        const fragment = markdownToFragment(options.newText, schema, [insertionMark]);
+        if (fragment.childCount === 0) return false;
+        tr = tr.insert(to, fragment);
 
         view.dispatch(tr);
         setShowCommentsSidebar(true);
@@ -10698,7 +10698,7 @@ body { background: white; }
                 proposal goes into the inline preview popover (same
                 surface as chat-driven proposals). */}
             <SelectionAskAi
-              isOpen={hasTextSelection && aiEnabled}
+              isOpen={hasTextSelection && aiEnabled && !aiSuggestion && !showDocOpsPanel}
               getView={() => getActiveEditorView() ?? null}
               busy={askAiBusy}
               onDismiss={() => setHasTextSelection(false)}
