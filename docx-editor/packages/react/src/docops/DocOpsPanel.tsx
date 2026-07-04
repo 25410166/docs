@@ -515,6 +515,91 @@ export function DocOpsPanel({
     [inputValue, busy, apiKey, transport, bridge, appendDisplay, updateLastToolStep]
   );
 
+  // Quick actions bypass the tool-calling loop. A small local model can't
+  // reliably orchestrate the 17-tool catalog (it ignores the "call get_doc_stats
+  // first" instruction once the tool list gets long and hallucinates instead),
+  // so we gather the context the action needs client-side — the editor already
+  // has it — and send ONE completion with no tools. Robust regardless of model.
+  const runQuickAction = useCallback(
+    async (action: { id: string; label: string; prompt: string }) => {
+      if (busy) return;
+      if (transport.requiresApiKey && !apiKey) {
+        appendDisplay({ kind: 'error', text: 'Add an API key to use the assistant.' });
+        return;
+      }
+      setBusy(true);
+      appendDisplay({ kind: 'user', text: action.label });
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      try {
+        let context = '';
+        const readField = (res: unknown): string => {
+          const d = (res as { data?: Record<string, unknown> })?.data ?? {};
+          return String(d.text ?? d.selection ?? d.selectionText ?? '').trim();
+        };
+        if (action.id === 'summarize' || action.id === 'outline') {
+          context = readField(await bridge.callTool('get_doc_stats', {}));
+          if (!context) {
+            appendDisplay({ kind: 'assistant', text: 'This document is empty — nothing to work with yet.' });
+            return;
+          }
+        } else if (action.id === 'rewrite' || action.id === 'table') {
+          context = readField(await bridge.callTool('get_selection', {}));
+          if (!context) {
+            appendDisplay({
+              kind: 'assistant',
+              text: 'Select some text in the document first, then try this action.',
+            });
+            return;
+          }
+        }
+        const system =
+          'You are a concise writing assistant inside a document editor. Follow the instruction using only the content provided below it. Return plain text only — no preamble, no markdown code fences, no commentary.';
+        const userMsg = context ? `${action.prompt}\n\n--- DOCUMENT ---\n${context}` : action.prompt;
+        let streamed = '';
+        const { data, status } = await transport.call({
+          model: MODEL,
+          max_tokens: 1024,
+          system,
+          messages: [{ role: 'user', content: userMsg }],
+          tools: [],
+          apiKey: apiKey || undefined,
+          signal: ctrl.signal,
+          onText: (t) => {
+            if (t) {
+              streamed += t;
+              setStreamingText((p) => p + t);
+            }
+          },
+        });
+        setStreamingText('');
+        if (status !== 200) {
+          const e = (data as { error?: { message?: string } })?.error?.message;
+          throw new Error(e ?? `AI error ${status}`);
+        }
+        let text = streamed.trim();
+        if (!text) {
+          const content = (data as { content?: Array<{ type: string; text?: string }> })?.content;
+          if (Array.isArray(content)) {
+            text = content
+              .filter((b) => b.type === 'text' && b.text)
+              .map((b) => b.text)
+              .join('')
+              .trim();
+          }
+        }
+        appendDisplay({ kind: 'assistant', text: text || '(no response)' });
+      } catch (err) {
+        if ((err as { name?: string }).name === 'AbortError') return;
+        appendDisplay({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setBusy(false);
+        abortRef.current = null;
+      }
+    },
+    [busy, transport, apiKey, bridge, appendDisplay]
+  );
+
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
@@ -590,7 +675,7 @@ export function DocOpsPanel({
                       key={a.id}
                       type="button"
                       style={chipStyle}
-                      onClick={() => void send(a.prompt)}
+                      onClick={() => void runQuickAction(a)}
                       disabled={busy || (transport.requiresApiKey && !apiKey)}
                       data-testid={`docops-quick-${a.id}`}
                     >
