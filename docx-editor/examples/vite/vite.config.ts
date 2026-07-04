@@ -78,6 +78,9 @@ export default defineConfig(async () => {
         // The GFM extension's node types must come from the SAME @lezer/markdown
         // instance the parser uses, or the notebook decorations won't match.
         '@lezer/markdown',
+        // Highlight tags are compared by identity, so the HighlightStyle and the
+        // language must share ONE @lezer/highlight instance or nothing colors.
+        '@lezer/highlight',
       ],
       alias: [
         // Resolve package imports to source for live development

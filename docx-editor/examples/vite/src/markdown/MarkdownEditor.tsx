@@ -8,7 +8,8 @@ import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import { GFM } from '@lezer/markdown';
 import { yaml } from '@codemirror/lang-yaml';
-import { StreamLanguage, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
+import { StreamLanguage, syntaxHighlighting } from '@codemirror/language';
+import { themeHighlightStyle } from './syntaxTheme';
 import { properties } from '@codemirror/legacy-modes/mode/properties';
 import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { yCollab } from 'y-codemirror.next';
@@ -489,7 +490,10 @@ export function MarkdownEditor({
           // Explicit highlight style so language tokens (YAML keys, markdown
           // syntax, TOML, config keys) are actually colored — basicSetup's
           // fallback doesn't reliably paint tokens on its own here.
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          // NOT { fallback: true } — basicSetup already registers
+          // defaultHighlightStyle; ours must win (added after → higher
+          // precedence) so the theme-adaptive token colors actually apply.
+          syntaxHighlighting(themeHighlightStyle),
           ...langExtensions,
           // Notebook mode (markdown only) — toggled via the compartment below.
           liveCompartmentRef.current.of(
