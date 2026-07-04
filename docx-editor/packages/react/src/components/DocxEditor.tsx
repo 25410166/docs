@@ -7632,51 +7632,67 @@ body { background: white; }
   const lastFindQueryRef = useRef<{ searchText: string; options: FindOptions } | null>(null);
 
   // Publish the find matches as highlight decorations (see findHighlightPlugin).
+  // Targets the active editor — the open header/footer when one is being edited,
+  // otherwise the main body — and clears stale decorations in the other view so
+  // highlights don't linger on the body while searching an open header/footer.
   const setFindHighlights = useCallback(
     (matches: FindMatch[], current: number) => {
-      const view = pagedEditorRef.current?.getView();
+      const view = getActiveEditorView();
       if (!view) return;
       const ranges = matches
         .filter((m) => m.pmFrom != null && m.pmTo != null)
         .map((m) => ({ from: m.pmFrom as number, to: m.pmTo as number }));
       view.dispatch(view.state.tr.setMeta(findHighlightKey, { ranges, current }));
+      const mainView = pagedEditorRef.current?.getView();
+      const hfView = hfEditorRef.current?.getView();
+      const other = view === mainView ? hfView : mainView;
+      if (other && other !== view) {
+        other.dispatch(other.state.tr.setMeta(findHighlightKey, { ranges: [], current: -1 }));
+      }
     },
-    [findHighlightKey]
+    [findHighlightKey, getActiveEditorView]
   );
 
   // Select a PM-position match in the editor and scroll its painted span into
   // view. The hidden PM's own scrollIntoView is suppressed (the paginated layer
   // owns scroll), so we scroll the painted DOM directly. Works in table cells.
-  const navigateToMatch = useCallback((match: FindMatch | null): void => {
-    if (!match || match.pmFrom == null || match.pmTo == null) return;
-    const view = pagedEditorRef.current?.getView();
-    if (!view) return;
-    const size = view.state.doc.content.size;
-    const from = Math.max(0, Math.min(match.pmFrom, size));
-    const to = Math.max(from, Math.min(match.pmTo, size));
-    try {
-      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
-    } catch {
-      return;
-    }
-    const container = containerRef.current;
-    if (!container) return;
-    for (const el of Array.from(
-      container.querySelectorAll<HTMLElement>('.paged-editor__pages [data-pm-start]')
-    )) {
-      const s = Number(el.dataset.pmStart);
-      const e = Number(el.dataset.pmEnd);
-      if (from >= s && from <= e) {
-        el.scrollIntoView({ block: 'center' });
+  const navigateToMatch = useCallback(
+    (match: FindMatch | null): void => {
+      if (!match || match.pmFrom == null || match.pmTo == null) return;
+      const view = getActiveEditorView();
+      if (!view) return;
+      const size = view.state.doc.content.size;
+      const from = Math.max(0, Math.min(match.pmFrom, size));
+      const to = Math.max(from, Math.min(match.pmTo, size));
+      try {
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
+      } catch {
         return;
       }
-    }
-  }, []);
+      // A header/footer editor is already on-screen and renders the match
+      // decoration natively — the painted-page scroll below only applies to body
+      // matches, whose positions live in the main doc, not the HF doc.
+      if (hfEditPosition) return;
+      const container = containerRef.current;
+      if (!container) return;
+      for (const el of Array.from(
+        container.querySelectorAll<HTMLElement>('.paged-editor__pages [data-pm-start]')
+      )) {
+        const s = Number(el.dataset.pmStart);
+        const e = Number(el.dataset.pmEnd);
+        if (from >= s && from <= e) {
+          el.scrollIntoView({ block: 'center' });
+          return;
+        }
+      }
+    },
+    [getActiveEditorView, hfEditPosition]
+  );
 
   // Handle find operation (PM-native — searches table cells too)
   const handleFind = useCallback(
     (searchText: string, options: FindOptions): FindResult | null => {
-      const view = pagedEditorRef.current?.getView();
+      const view = getActiveEditorView();
       if (!view || !searchText.trim()) {
         findResultRef.current = null;
         lastFindQueryRef.current = null;
@@ -7691,7 +7707,7 @@ body { background: white; }
       if (matches.length > 0) navigateToMatch(matches[0]);
       return result;
     },
-    [findReplace, navigateToMatch, setFindHighlights]
+    [findReplace, navigateToMatch, setFindHighlights, getActiveEditorView]
   );
 
   // Handle find next
@@ -7729,7 +7745,7 @@ body { background: white; }
       if (!res || res.matches.length === 0) return false;
       const match = res.matches[res.currentIndex] ?? res.matches[0];
       if (!match || match.pmFrom == null || match.pmTo == null) return false;
-      const view = pagedEditorRef.current?.getView();
+      const view = getActiveEditorView();
       if (!view) return false;
       const size = view.state.doc.content.size;
       const from = Math.max(0, Math.min(match.pmFrom, size));
@@ -7741,7 +7757,7 @@ body { background: white; }
         return false;
       }
       const q = lastFindQueryRef.current;
-      const nextView = pagedEditorRef.current?.getView();
+      const nextView = getActiveEditorView();
       const matches = q && nextView ? findInPmDoc(nextView.state.doc, q.searchText, q.options) : [];
       findResultRef.current = { matches, totalCount: matches.length, currentIndex: 0 };
       findReplace.setMatches(matches, 0);
@@ -7749,7 +7765,7 @@ body { background: white; }
       if (matches.length > 0) navigateToMatch(matches[0]);
       return true;
     },
-    [findReplace, navigateToMatch, setFindHighlights]
+    [findReplace, navigateToMatch, setFindHighlights, getActiveEditorView]
   );
 
   // Replace every match in one undoable transaction. Apply end → start so each
@@ -7757,7 +7773,7 @@ body { background: white; }
   // table cells.
   const handleReplaceAll = useCallback(
     (searchText: string, replaceText: string, options: FindOptions): number => {
-      const view = pagedEditorRef.current?.getView();
+      const view = getActiveEditorView();
       if (!view || !searchText.trim()) return 0;
       const matches = findInPmDoc(view.state.doc, searchText, options).filter(
         (m) => m.pmFrom != null && m.pmTo != null
@@ -7777,7 +7793,7 @@ body { background: white; }
       setFindHighlights([], 0);
       return matches.length;
     },
-    [findReplace, setFindHighlights]
+    [findReplace, setFindHighlights, getActiveEditorView]
   );
 
   // Expose ref methods
@@ -10179,6 +10195,7 @@ body { background: white; }
                                   }
                                   onToggleTitlePg={handleToggleTitlePg}
                                   onToggleEvenAndOdd={handleToggleEvenAndOddHeaders}
+                                  findHighlightPlugin={findHighlightPlugin}
                                 />
                               );
                             })()}
