@@ -69,8 +69,11 @@ import {
   DocsBridge,
   isDocOpsEnabled,
   createDocOpsTransport,
+  isDesktopShell,
+  callNativeText,
   type DocsBridgeActions,
 } from '../docops';
+import { markdownToFragment } from '../lib/writer/markdownToFragment';
 import { AutosaveRestoreBanner } from './AutosaveRestoreBanner';
 import { writeAutosave, clearLegacyLocalStorageAutosave } from '../utils/autosave';
 import { restoreNativeBuildingBlocks } from '../utils/buildingBlocks';
@@ -6038,9 +6041,45 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         prev ? { ...prev, busy: true, suggestion: null, error: null, inferenceMs: null } : prev
       );
       try {
+        const startedAt = Date.now();
+
+        // Desktop: the browser WebLLM "writer" tier is never loaded, so route
+        // to the native model the user loaded (via docops_llm_call). Produce
+        // the same source→suggestion card the web path does.
+        if (isDesktopShell()) {
+          const NATIVE_TONE_HINT: Record<AIToneId, string> = {
+            polish: 'more polished, clear, and well-written',
+            concise: 'more concise',
+            formal: 'more formal',
+            casual: 'more casual and conversational',
+            shorter: 'shorter and tighter',
+            longer: 'more detailed and expanded',
+          };
+          const selectionText = view.state.doc.textBetween(range.from, range.to, '\n', ' ');
+          const system =
+            mode === 'rewrite'
+              ? `You are a precise writing assistant. Rewrite the text the user sends to be ${NATIVE_TONE_HINT[tone]}. Preserve the original meaning and any key facts. Return ONLY the rewritten text — no preamble, no quotation marks, no commentary.`
+              : `You are a precise writing assistant. Summarize the text the user sends clearly and concisely. Return ONLY the summary — no preamble, no quotation marks, no commentary.`;
+          const raw = await callNativeText(system, selectionText, { maxTokens: 1024 });
+          if (controller.signal.aborted) return;
+          const text = stripModelPreamble(raw).trim();
+          // Stash a fragment so Accept can replay it without re-running.
+          aiFragmentRef.current = markdownToFragment(text || selectionText, view.state.schema);
+          setAiSuggestion((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  suggestion: text || prev.original,
+                  inferenceMs: Date.now() - startedAt,
+                  busy: false,
+                }
+              : prev
+          );
+          return;
+        }
+
         const slice = view.state.doc.slice(range.from, range.to);
         const ctx = sampleContext(view.state.doc, range.from, range.to);
-        const startedAt = Date.now();
         const transformed = await rewriteFragment(
           slice.content,
           view.state.schema,
@@ -6074,11 +6113,13 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       } catch (err) {
         if (controller.signal.aborted) return;
         const e = err as Error;
-        const msg = e.message?.includes('No model is loaded')
-          ? mode === 'rewrite'
-            ? 'Enable Tone & style rewrite in the Writing Assistant first.'
-            : 'Enable Summarize selection in the Writing Assistant first.'
-          : (e.message ?? 'Inference failed.');
+        const msg = isDesktopShell()
+          ? (e.message ?? 'Inference failed.')
+          : e.message?.includes('No model is loaded')
+            ? mode === 'rewrite'
+              ? 'Enable Tone & style rewrite in the Writing Assistant first.'
+              : 'Enable Summarize selection in the Writing Assistant first.'
+            : (e.message ?? 'Inference failed.');
         setAiSuggestion((prev) => (prev ? { ...prev, busy: false, error: msg } : prev));
       }
     },
@@ -10665,6 +10706,44 @@ body { background: white; }
                 const view = getActiveEditorView();
                 if (!view) return;
                 const schema = view.state.schema;
+
+                // Desktop: the WebLLM pipeline is unavailable. Route the
+                // free-form instruction to the native model and surface the
+                // result as an accept/reject suggestion over the selection.
+                if (isDesktopShell()) {
+                  const { from, to } = view.state.selection;
+                  const selText =
+                    capturedSelectionText ||
+                    (from !== to ? view.state.doc.textBetween(from, to, '\n', ' ') : '');
+                  setAskAiBusy(true);
+                  const system =
+                    'You are a writing assistant inside a document editor. The user selected some text and gave an instruction. Apply the instruction to the selected text and return ONLY the resulting replacement text — no preamble, no quotation marks, no commentary.';
+                  const userMsg = `Instruction: ${promptText}\n\nSelected text:\n${selText}`;
+                  void callNativeText(system, userMsg, { maxTokens: 1024 })
+                    .then((raw) => {
+                      const text = stripModelPreamble(raw).trim();
+                      if (!text) {
+                        toast.error('The model returned an empty response.');
+                        return;
+                      }
+                      aiFragmentRef.current = markdownToFragment(text, schema);
+                      setAiSuggestion({
+                        mode: 'rewrite',
+                        from,
+                        to,
+                        original: selText,
+                        suggestion: text,
+                        inferenceMs: null,
+                        tone: 'polish',
+                        busy: false,
+                        error: null,
+                      });
+                    })
+                    .catch((err) => toast.error(`AI request failed: ${(err as Error).message}`))
+                    .finally(() => setAskAiBusy(false));
+                  return;
+                }
+
                 setAskAiBusy(true);
                 void runPipeline(
                   {

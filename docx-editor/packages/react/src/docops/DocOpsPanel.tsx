@@ -167,6 +167,47 @@ const inputRowStyle: CSSProperties = {
   alignItems: 'flex-end',
 };
 
+// One-tap prompts for the most common document actions, so the panel isn't a
+// blank chat box. Each seeds a natural-language prompt the model + DocOps tool
+// catalog (summarize, rewrite_selection, convert-to-table, outline/TOC) handle.
+const QUICK_ACTIONS: ReadonlyArray<{ id: string; label: string; prompt: string }> = [
+  {
+    id: 'summarize',
+    label: 'Summarize',
+    prompt: 'Summarize this document in a few clear sentences.',
+  },
+  {
+    id: 'rewrite',
+    label: 'Rewrite selection',
+    prompt: 'Rewrite the currently selected text to be clearer and more polished.',
+  },
+  {
+    id: 'table',
+    label: 'Make table',
+    prompt: 'Convert the currently selected text into a well-structured table.',
+  },
+  { id: 'outline', label: 'Outline', prompt: 'Give me a concise outline of this document.' },
+];
+
+const chipRowStyle: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 6,
+  padding: '8px 12px 0',
+};
+
+const chipStyle: CSSProperties = {
+  fontSize: 12,
+  lineHeight: 1.2,
+  padding: '5px 10px',
+  border: '1px solid var(--doc-border, #d1d5db)',
+  borderRadius: 999,
+  background: 'var(--doc-surface, #ffffff)',
+  color: 'var(--doc-text)',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
+
 const textareaStyle: CSSProperties = {
   flex: 1,
   minWidth: 0,
@@ -313,164 +354,167 @@ export function DocOpsPanel({
     setShowKeySetup(false);
   }, [keyDraft]);
 
-  const send = useCallback(async () => {
-    const text = inputValue.trim();
-    if (!text || busy) return;
-    // Block send if key is required and missing.
-    if (transport.requiresApiKey && !apiKey) return;
+  const send = useCallback(
+    async (override?: string) => {
+      const text = (override ?? inputValue).trim();
+      if (!text || busy) return;
+      // Block send if key is required and missing.
+      if (transport.requiresApiKey && !apiKey) return;
 
-    setInputValue('');
-    setBusy(true);
+      setInputValue('');
+      setBusy(true);
 
-    appendDisplay({ kind: 'user', text });
-    historyRef.current = [...historyRef.current, { role: 'user', content: text }];
+      appendDisplay({ kind: 'user', text });
+      historyRef.current = [...historyRef.current, { role: 'user', content: text }];
 
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
 
-    try {
-      if (transport.drivesLoop) {
-        // ── Collab transport: server holds the LLM loop ──────────────────
-        // tool_call messages are routed back over WS; we execute via
-        // DocsBridge and return the results to the server.
-        const toolExecutor: ToolExecutor = async (toolName, args) => {
-          appendDisplay({ kind: 'tool_step', toolName, status: 'running' });
-          try {
-            const result = await bridge.callTool(toolName, args);
-            updateLastToolStep('done');
-            return result;
-          } catch (err) {
-            updateLastToolStep('error');
-            throw err;
-          }
-        };
+      try {
+        if (transport.drivesLoop) {
+          // ── Collab transport: server holds the LLM loop ──────────────────
+          // tool_call messages are routed back over WS; we execute via
+          // DocsBridge and return the results to the server.
+          const toolExecutor: ToolExecutor = async (toolName, args) => {
+            appendDisplay({ kind: 'tool_step', toolName, status: 'running' });
+            try {
+              const result = await bridge.callTool(toolName, args);
+              updateLastToolStep('done');
+              return result;
+            } catch (err) {
+              updateLastToolStep('error');
+              throw err;
+            }
+          };
 
-        const payload: LlmCallPayload = {
-          model: MODEL,
-          max_tokens: 2048,
-          system: SYSTEM_PROMPT,
-          messages: historyRef.current,
-          tools: DOCOPS_CATALOG,
-          apiKey: apiKey || undefined,
-          signal: ctrl.signal,
-          maxToolRounds,
-          toolExecutor,
-          onText: (text) => {
-            if (text.trim()) appendDisplay({ kind: 'assistant', text });
-          },
-        };
-
-        const { data, status, updatedHistory, capHit } = await transport.call(payload);
-
-        if (status !== 200) {
-          const errMsg = (data as { error?: { message?: string } })?.error?.message;
-          throw new Error(errMsg ?? `AI error ${status}`);
-        }
-        if (updatedHistory) historyRef.current = updatedHistory as LlmMessage[];
-        if (capHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
-      } else {
-        // ── Direct / Desktop transport: panel drives the loop ────────────
-        let messages = [...historyRef.current];
-        let panelCapHit = false;
-
-        for (let round = 0; round < maxToolRounds; round++) {
-          if (ctrl.signal.aborted) break;
-
-          let streamedText = '';
           const payload: LlmCallPayload = {
             model: MODEL,
             max_tokens: 2048,
             system: SYSTEM_PROMPT,
-            messages,
+            messages: historyRef.current,
             tools: DOCOPS_CATALOG,
             apiKey: apiKey || undefined,
             signal: ctrl.signal,
             maxToolRounds,
-            onText: (tok) => {
-              if (tok) {
-                streamedText += tok;
-                setStreamingText((prev) => prev + tok);
-              }
+            toolExecutor,
+            onText: (text) => {
+              if (text.trim()) appendDisplay({ kind: 'assistant', text });
             },
           };
 
-          const { data, status } = await transport.call(payload);
-
-          // Flush any streamed tokens as a single committed message,
-          // then clear the in-flight indicator.
-          if (streamedText.trim()) {
-            appendDisplay({ kind: 'assistant', text: streamedText });
-          }
-          setStreamingText('');
+          const { data, status, updatedHistory, capHit } = await transport.call(payload);
 
           if (status !== 200) {
             const errMsg = (data as { error?: { message?: string } })?.error?.message;
-            throw new Error(errMsg ?? `API error ${status}`);
+            throw new Error(errMsg ?? `AI error ${status}`);
           }
+          if (updatedHistory) historyRef.current = updatedHistory as LlmMessage[];
+          if (capHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
+        } else {
+          // ── Direct / Desktop transport: panel drives the loop ────────────
+          let messages = [...historyRef.current];
+          let panelCapHit = false;
 
-          const response = data as LlmResponse;
+          for (let round = 0; round < maxToolRounds; round++) {
+            if (ctrl.signal.aborted) break;
 
-          messages = [...messages, { role: 'assistant', content: response.content }];
+            let streamedText = '';
+            const payload: LlmCallPayload = {
+              model: MODEL,
+              max_tokens: 2048,
+              system: SYSTEM_PROMPT,
+              messages,
+              tools: DOCOPS_CATALOG,
+              apiKey: apiKey || undefined,
+              signal: ctrl.signal,
+              maxToolRounds,
+              onText: (tok) => {
+                if (tok) {
+                  streamedText += tok;
+                  setStreamingText((prev) => prev + tok);
+                }
+              },
+            };
 
-          // Emit text blocks only when nothing was streamed via onText
-          // (i.e. the transport returned a complete response at once).
-          if (!streamedText) {
-            for (const block of response.content) {
-              if (block.type === 'text' && block.text.trim()) {
-                appendDisplay({ kind: 'assistant', text: block.text });
+            const { data, status } = await transport.call(payload);
+
+            // Flush any streamed tokens as a single committed message,
+            // then clear the in-flight indicator.
+            if (streamedText.trim()) {
+              appendDisplay({ kind: 'assistant', text: streamedText });
+            }
+            setStreamingText('');
+
+            if (status !== 200) {
+              const errMsg = (data as { error?: { message?: string } })?.error?.message;
+              throw new Error(errMsg ?? `API error ${status}`);
+            }
+
+            const response = data as LlmResponse;
+
+            messages = [...messages, { role: 'assistant', content: response.content }];
+
+            // Emit text blocks only when nothing was streamed via onText
+            // (i.e. the transport returned a complete response at once).
+            if (!streamedText) {
+              for (const block of response.content) {
+                if (block.type === 'text' && block.text.trim()) {
+                  appendDisplay({ kind: 'assistant', text: block.text });
+                }
               }
             }
-          }
 
-          if (response.stop_reason !== 'tool_use') break;
+            if (response.stop_reason !== 'tool_use') break;
 
-          const toolResults: LlmContentBlock[] = [];
-          for (const block of response.content) {
-            if (block.type !== 'tool_use') continue;
+            const toolResults: LlmContentBlock[] = [];
+            for (const block of response.content) {
+              if (block.type !== 'tool_use') continue;
 
-            appendDisplay({ kind: 'tool_step', toolName: block.name, status: 'running' });
-            try {
-              const result = await bridge.callTool(block.name, block.input);
-              updateLastToolStep('done');
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: block.id,
-                content: JSON.stringify(result),
-              });
-            } catch (err) {
-              updateLastToolStep('error');
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: block.id,
-                content: JSON.stringify({
-                  ok: false,
-                  code: 'UNSUPPORTED',
-                  message: err instanceof Error ? err.message : String(err),
-                  retryable: false,
-                }),
-              });
+              appendDisplay({ kind: 'tool_step', toolName: block.name, status: 'running' });
+              try {
+                const result = await bridge.callTool(block.name, block.input);
+                updateLastToolStep('done');
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: block.id,
+                  content: JSON.stringify(result),
+                });
+              } catch (err) {
+                updateLastToolStep('error');
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: block.id,
+                  content: JSON.stringify({
+                    ok: false,
+                    code: 'UNSUPPORTED',
+                    message: err instanceof Error ? err.message : String(err),
+                    retryable: false,
+                  }),
+                });
+              }
+            }
+
+            messages = [...messages, { role: 'user', content: toolResults }];
+
+            if (round === maxToolRounds - 1) {
+              panelCapHit = true;
             }
           }
 
-          messages = [...messages, { role: 'user', content: toolResults }];
-
-          if (round === maxToolRounds - 1) {
-            panelCapHit = true;
-          }
+          if (panelCapHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
+          historyRef.current = messages;
         }
-
-        if (panelCapHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
-        historyRef.current = messages;
+      } catch (err) {
+        if ((err as { name?: string }).name === 'AbortError') return;
+        const msg = err instanceof Error ? err.message : String(err);
+        appendDisplay({ kind: 'error', text: msg });
+      } finally {
+        setBusy(false);
+        abortRef.current = null;
       }
-    } catch (err) {
-      if ((err as { name?: string }).name === 'AbortError') return;
-      const msg = err instanceof Error ? err.message : String(err);
-      appendDisplay({ kind: 'error', text: msg });
-    } finally {
-      setBusy(false);
-      abortRef.current = null;
-    }
-  }, [inputValue, busy, apiKey, transport, bridge, appendDisplay, updateLastToolStep]);
+    },
+    [inputValue, busy, apiKey, transport, bridge, appendDisplay, updateLastToolStep]
+  );
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -539,44 +583,62 @@ export function DocOpsPanel({
         testId="docops-panel"
         footer={
           showKeySetup ? undefined : (
-            <div style={inputRowStyle}>
-              <textarea
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-                placeholder={busy ? 'Working…' : 'Ask about your document… (Enter to send)'}
-                rows={1}
-                style={textareaStyle}
-                disabled={busy}
-                data-testid="docops-input"
-              />
-              {busy ? (
-                <button
-                  type="button"
-                  style={sendBtnStyle(false)}
-                  onClick={stop}
-                  title="Stop"
-                  data-testid="docops-stop"
-                >
-                  <MaterialSymbol name="close" size={16} />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  style={sendBtnStyle(!inputValue.trim())}
-                  onClick={() => void send()}
-                  disabled={!inputValue.trim()}
-                  title="Send (Enter)"
-                  data-testid="docops-send"
-                >
-                  <MaterialSymbol name="keyboard_arrow_right" size={16} />
-                </button>
+            <div>
+              {!busy && (
+                <div style={chipRowStyle}>
+                  {QUICK_ACTIONS.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      style={chipStyle}
+                      onClick={() => void send(a.prompt)}
+                      disabled={busy || (transport.requiresApiKey && !apiKey)}
+                      data-testid={`docops-quick-${a.id}`}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
               )}
+              <div style={inputRowStyle}>
+                <textarea
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void send();
+                    }
+                  }}
+                  placeholder={busy ? 'Working…' : 'Ask about your document… (Enter to send)'}
+                  rows={1}
+                  style={textareaStyle}
+                  disabled={busy}
+                  data-testid="docops-input"
+                />
+                {busy ? (
+                  <button
+                    type="button"
+                    style={sendBtnStyle(false)}
+                    onClick={stop}
+                    title="Stop"
+                    data-testid="docops-stop"
+                  >
+                    <MaterialSymbol name="close" size={16} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    style={sendBtnStyle(!inputValue.trim())}
+                    onClick={() => void send()}
+                    disabled={!inputValue.trim()}
+                    title="Send (Enter)"
+                    data-testid="docops-send"
+                  >
+                    <MaterialSymbol name="keyboard_arrow_right" size={16} />
+                  </button>
+                )}
+              </div>
             </div>
           )
         }
