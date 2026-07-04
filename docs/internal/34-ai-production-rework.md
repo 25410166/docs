@@ -1,6 +1,19 @@
 # 34 — Local-AI production rework: two surfaces, formatting-preserving edits, reliable tool-calling
 
-Status: **plan** (2026-07-05). Supersedes the ad-hoc AI fixes on `feat/desktop-native-ai-panel` (PR #236) and `fix/ai-detok-and-macos-build` (desktop PR #69). Grounded in two 2026-07-05 investigations:
+Status: **in progress** (2026-07-05).
+
+**Web** (`document` @ `feat/desktop-native-ai-panel`, not pushed): `9ba7a07` P0 quick wins (error surfacing, tool_use history balance, worker-crash rejection, shared `API_KEY_STORAGE`, transformDoc/research routing); `64a201d` P0-A first-cut (desktop Ask-AI preserves formatting via `rewriteFragmentWith` — unit-proven).
+
+**Desktop** (`desktop` @ `fix/ai-detok-and-macos-build`, not pushed): `2d959fb` P0-5 kill silent local→cloud egress (local_active flag; require explicit LLM_ENDPOINT); `6e0bde4` P0-6 context budget (TOO_LARGE before prefill) + P1-3 multibyte streaming; `0406ec5` gate grammar off.
+
+**On-device validation (2026-07-05, Qwen2.5-1.5B, drove the ai-worker binary directly):**
+- **Grammar (P0-1) does NOT work in this build** — `LlamaSampler::grammar_lazy` aborts the whole worker process ("Rust cannot catch foreign exceptions") on ANY tool-call request, even a trivially-valid grammar. The C++ exception crosses the FFI boundary uncatchably. **Gated off** (`AI_WORKER_GRAMMAR=1` to opt in); builder + plumbing kept for a future fix. The model already emits valid `<tool_call>` JSON for common cases unaided; tool-name safety stays parser/bridge-side.
+- **Multibyte (P1-3): PASS** — 你好世界/café/🎉 stream with no U+FFFD.
+- **Context budget (P0-6): PASS** — 20k-token prompt returns TOO_LARGE, worker stays responsive (no SIGABRT).
+
+**Remaining:** grammar_lazy replacement (crate update or non-lazy loop) is the deferred "biggest reliability" lever; P0-B streaming UX (web); P0-9 ready handshake; P0-7 parser catalog validation; `<tool_call>` XML prompt split; **GUI-level check** of formatting-preserving Ask-AI (needs the desktop window).
+
+Below is the original plan. Supersedes the ad-hoc AI fixes on `feat/desktop-native-ai-panel` (PR #236) and `fix/ai-detok-and-macos-build` (desktop PR #69). Grounded in two 2026-07-05 investigations:
 
 - **Code audit** (multi-agent, 65 confirmed findings: 13 high / 25 med / 27 low) — scratchpad `audit-findings.json`.
 - **UX/architecture research** (Gemini / Copilot / Notion / Tiptap / Liveblocks / llama.cpp) — scratchpad `research-brief.md`.
