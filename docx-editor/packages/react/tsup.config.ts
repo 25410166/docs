@@ -23,11 +23,16 @@ import { defineConfig, type Plugin } from 'tsup';
 const rewriteWorkerUrls: Plugin = {
   name: 'rewrite-worker-urls',
   async renderChunk(code) {
-    // Only the format-converter chunk references the worker URL.
+    // Only the format-converter chunk references the worker URL. Point it at
+    // the compiled sibling for THIS output's format: tsup emits the worker as
+    // `.mjs` for esm and `.js` for cjs. Previously this always rewrote to
+    // `.mjs`, so a `require()` (CJS) consumer got an ESM-only worker URL and
+    // foreign-format open (.odt/.md/.txt) broke at runtime.
     if (!code.includes('format-converter.worker.ts')) return null;
+    const ext = this.format === 'cjs' ? 'js' : 'mjs';
     const rewritten = code.replace(
       /["']\.\/format-converter\.worker\.ts["']/g,
-      `'./format-converter.worker.mjs'`,
+      `'./format-converter.worker.${ext}'`,
     );
     return { code: rewritten };
   },

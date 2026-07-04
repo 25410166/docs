@@ -18,9 +18,10 @@
  * - AI-powered context menu
  *
  * CSS Styles:
- * For optimal cursor visibility and selection highlighting, import the editor styles:
+ * The editor ships a stylesheet you MUST import once for cursor, selection,
+ * and toolbar styling (it is not auto-injected):
  * ```
- * import '@eigenpal/docx-js-editor/styles/editor.css';
+ * import '@casualoffice/docs/styles.css';
  * ```
  */
 
@@ -28,7 +29,7 @@
 // VERSION
 // ============================================================================
 
-export const VERSION = '0.0.2';
+export const VERSION = '1.1.7';
 
 // ============================================================================
 // MAIN COMPONENT
