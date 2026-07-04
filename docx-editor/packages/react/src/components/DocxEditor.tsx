@@ -256,7 +256,7 @@ import { getGrammarCheckerImpl, isGrammarEnabled, setGrammarEnabled } from '../l
 import { SpellSuggestionsMenu } from './SpellSuggestionsMenu';
 import { GrammarSuggestionsMenu } from './GrammarSuggestionsMenu';
 import { bootWriterController, useWriterState } from '../lib/writer/controller';
-import { rewriteFragment, sampleContext } from '../lib/writer/rewriteFragment';
+import { rewriteFragment, rewriteFragmentWith, sampleContext } from '../lib/writer/rewriteFragment';
 import {
   applyFragmentAsSuggestion,
   applyInsertAsSuggestion,
@@ -6056,16 +6056,30 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
             shorter: 'shorter and tighter',
             longer: 'more detailed and expanded',
           };
-          const selectionText = view.state.doc.textBetween(range.from, range.to, '\n', ' ');
           const system =
             mode === 'rewrite'
               ? `You are a precise writing assistant. Rewrite the text the user sends to be ${NATIVE_TONE_HINT[tone]}. Preserve the original meaning and any key facts. Return ONLY the rewritten text — no preamble, no quotation marks, no commentary.`
               : `You are a precise writing assistant. Summarize the text the user sends clearly and concisely. Return ONLY the summary — no preamble, no quotation marks, no commentary.`;
-          const raw = await callNativeText(system, selectionText, { maxTokens: 1024 });
+          // Walk the rich selection leaf-by-leaf so headings, bold/italic,
+          // lists, and tables survive — instead of flattening to plain text and
+          // rebuilding a single paragraph (which nuked all formatting). Marks
+          // and block structure are carried through by rewriteFragmentWith.
+          const slice = view.state.doc.slice(range.from, range.to);
+          const transformed = await rewriteFragmentWith(
+            slice.content,
+            view.state.schema,
+            async (leafText) => {
+              const raw = await callNativeText(system, leafText, { maxTokens: 1024 });
+              return stripModelPreamble(raw).trim();
+            },
+            controller.signal
+          );
           if (controller.signal.aborted) return;
-          const text = stripModelPreamble(raw).trim();
-          // Stash a fragment so Accept can replay it without re-running.
-          aiFragmentRef.current = markdownToFragment(text || selectionText, view.state.schema);
+          let text = '';
+          for (let i = 0; i < transformed.childCount; i++) text += transformed.child(i).textContent;
+          text = text.trim();
+          // Stash the transformed fragment so Accept can replay it.
+          aiFragmentRef.current = transformed;
           setAiSuggestion((prev) =>
             prev
               ? {
