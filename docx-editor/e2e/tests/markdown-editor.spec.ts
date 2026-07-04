@@ -33,6 +33,29 @@ async function openMarkdown(page: import('@playwright/test').Page) {
   await page.waitForSelector('[data-testid="markdown-editor"]', { timeout: 30000 });
 }
 
+test('dark mode: source + preview text stays readable (no white-on-light)', async ({ page }) => {
+  // A prior docx-editor mount sets data-theme="dark" on <html>; the markdown
+  // editor must theme its panes consistently. Regression: the panes used the
+  // always-light page-paper token while text used the theme-swapping text
+  // token, producing white text on a near-white pane.
+  await page.addInitScript(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  await page.goto('/');
+  await page.getByTestId('home-file-input').setInputFiles(MD_FIXTURE);
+  await page.waitForSelector('[data-testid="markdown-editor"]', { timeout: 30000 });
+
+  const lum = (rgb: string) => {
+    const m = rgb.match(/\d+/g)!.map(Number);
+    return (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255;
+  };
+  const contrast = await page.evaluate(() => {
+    const src = document.querySelector('[data-testid="markdown-source"] .cm-content')!;
+    const pane = document.querySelector('[data-testid="markdown-source"] .cm-editor')!;
+    return { text: getComputedStyle(src).color, bg: getComputedStyle(pane).backgroundColor };
+  });
+  // Text and pane luminance must differ enough to be readable.
+  expect(Math.abs(lum(contrast.text) - lum(contrast.bg))).toBeGreaterThan(0.3);
+});
+
 test('opens .md in the source+preview editor with raw markdown and rendered preview', async ({
   page,
 }) => {

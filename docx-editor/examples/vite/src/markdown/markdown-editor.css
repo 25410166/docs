@@ -21,8 +21,12 @@
      as one product. --doc-* is defined globally by editor.css (imported in
      styles.css); the hex fallbacks are the DS light values. */
   --md-chrome: var(--doc-chrome, #eef1f5);
-  --md-paper: var(--doc-page-paper, #ffffff);
-  --md-surface: var(--doc-page-paper, #ffffff);
+  /* Editing panes use --doc-SURFACE (theme-swapping panel bg), NOT
+     --doc-page-paper: the page-paper token stays light in dark mode (the
+     printed page is always white), so pairing it with --doc-text — which DOES
+     go light in dark mode — produced white text on a light pane. */
+  --md-paper: var(--doc-surface, #ffffff);
+  --md-surface: var(--doc-surface, #ffffff);
   --md-surface-2: var(--doc-chrome, #eef1f5);
   --md-surface-3: var(--doc-bg-hover, #e3e7ee);
   --md-border: var(--doc-border, #cdd3db);
@@ -38,8 +42,8 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --md-chrome: var(--doc-chrome, #2a2e35);
-    --md-paper: var(--doc-page-paper, #1b1e23);
-    --md-surface: var(--doc-page-paper, #1b1e23);
+    --md-paper: var(--doc-surface, #1b1e23);
+    --md-surface: var(--doc-surface, #1b1e23);
     --md-surface-2: var(--doc-chrome, #2a2e35);
     --md-surface-3: var(--doc-bg-hover, #14161a);
     --md-border: var(--doc-border, #424751);
