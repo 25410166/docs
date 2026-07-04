@@ -46,6 +46,33 @@ class TaskCheckboxWidget extends WidgetType {
   }
 }
 
+/** A rendered bullet dot that replaces a `-` / `*` / `+` list marker. */
+class BulletWidget extends WidgetType {
+  eq() {
+    return true;
+  }
+  toDOM() {
+    const dot = document.createElement('span');
+    dot.className = 'cm-md-bullet';
+    dot.textContent = '•';
+    dot.setAttribute('aria-hidden', 'true');
+    return dot;
+  }
+}
+
+/** A rendered horizontal rule that replaces a `---` / `***` line. */
+class RuleWidget extends WidgetType {
+  eq() {
+    return true;
+  }
+  toDOM() {
+    const hr = document.createElement('span');
+    hr.className = 'cm-md-hr';
+    hr.setAttribute('aria-hidden', 'true');
+    return hr;
+  }
+}
+
 /** Heading containers → the line class that sizes them. */
 const HEADING_LINE: Record<string, string> = {
   ATXHeading1: 'cm-md-h1',
@@ -119,6 +146,63 @@ function buildDecorations(view: EditorView): DecorationSet {
               if (end > mark.from) ranges.push(hiddenMark.range(mark.from, end));
             }
           }
+          return;
+        }
+
+        // Blockquote: style every line of the quote; hide each `>` marker
+        // (+ trailing space) unless the caret is inside the quote.
+        if (name === 'Blockquote') {
+          const first = state.doc.lineAt(node.from).number;
+          const last = state.doc.lineAt(node.to).number;
+          for (let n = first; n <= last; n++) {
+            ranges.push(Decoration.line({ class: 'cm-md-blockquote' }).range(state.doc.line(n).from));
+          }
+          return;
+        }
+        if (name === 'QuoteMark' && !selectionTouches(state, node.from, node.to)) {
+          let end = node.to;
+          if (state.doc.sliceString(end, end + 1) === ' ') end += 1;
+          ranges.push(hiddenMark.range(node.from, end));
+          return;
+        }
+
+        // Horizontal rule: render the `---` line as a drawn rule.
+        if (name === 'HorizontalRule' && !selectionTouches(state, node.from, node.to)) {
+          ranges.push(Decoration.replace({ widget: new RuleWidget() }).range(node.from, node.to));
+          return;
+        }
+
+        // Bullet list marker: render `-` / `*` / `+` as a bullet dot (ordered
+        // markers like `1.` are left as-is). Skip task-list items — their
+        // checkbox stands in for the marker. Revealed when the caret is on it.
+        if (name === 'ListMark' && !selectionTouches(state, node.from, node.to)) {
+          const marker = state.doc.sliceString(node.from, node.to);
+          const isTaskItem = /^\s*\[[ xX]\]/.test(state.doc.sliceString(node.to, node.to + 5));
+          if (/^[-*+]$/.test(marker) && !isTaskItem) {
+            ranges.push(
+              Decoration.replace({ widget: new BulletWidget() }).range(node.from, node.to)
+            );
+          }
+          return;
+        }
+
+        // Link: style the display text as a link and hide the `[`, `](url)`
+        // scaffolding unless the caret is inside the link.
+        if (name === 'Link') {
+          if (!selectionTouches(state, node.from, node.to)) {
+            const cursor = node.node.cursor();
+            if (cursor.firstChild()) {
+              do {
+                if (
+                  (cursor.name === 'LinkMark' || cursor.name === 'URL') &&
+                  cursor.to > cursor.from
+                ) {
+                  ranges.push(hiddenMark.range(cursor.from, cursor.to));
+                }
+              } while (cursor.nextSibling());
+            }
+          }
+          ranges.push(Decoration.mark({ class: 'cm-md-link' }).range(node.from, node.to));
           return;
         }
 

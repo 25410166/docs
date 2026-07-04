@@ -122,16 +122,21 @@
   font-size: 1.9em;
   font-weight: 700;
   line-height: 1.3;
+  padding-top: 0.4em;
+  padding-bottom: 0.15em;
 }
 .cm-md-h2 {
   font-size: 1.55em;
   font-weight: 700;
   line-height: 1.3;
+  padding-top: 0.35em;
+  padding-bottom: 0.1em;
 }
 .cm-md-h3 {
   font-size: 1.3em;
   font-weight: 600;
   line-height: 1.35;
+  padding-top: 0.3em;
 }
 .cm-md-h4 {
   font-size: 1.15em;
@@ -188,6 +193,34 @@
   border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
+}
+/* Bullet dot rendered for `-` / `*` / `+` list markers. */
+.cm-md-bullet {
+  color: var(--md-text-muted);
+  font-weight: 700;
+  padding-right: 0.15em;
+}
+/* Link display text (URL scaffolding hidden). */
+.cm-md-link {
+  color: var(--md-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+/* Blockquote lines: accent left rule + muted text. */
+.cm-md-blockquote {
+  border-left: 3px solid var(--md-border);
+  padding-left: 0.8em;
+  color: var(--md-text-muted);
+  font-style: italic;
+}
+/* Horizontal rule rendered for a `---` / `***` line. */
+.cm-md-hr {
+  display: inline-block;
+  width: 100%;
+  height: 0;
+  border-top: 2px solid var(--md-border);
+  vertical-align: middle;
 }
 
 /* ── Print / Export PDF ───────────────────────────────────────────────────── */
