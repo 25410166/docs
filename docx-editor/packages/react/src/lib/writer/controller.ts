@@ -145,6 +145,14 @@ function ensureWorker(): Worker {
       errorCode: 'unknown',
       errorMessage: 'The Writing Assistant worker stopped unexpectedly.',
     });
+    // Reject every in-flight request so awaiting callers surface an error and
+    // flip their spinners off — otherwise a worker crash strands each promise
+    // forever and the inline AI card stays stuck on "busy".
+    const err = new Error('The Writing Assistant worker stopped unexpectedly.');
+    for (const [id, p] of pending) {
+      pending.delete(id);
+      p.reject(err);
+    }
     // Recycle so the next call can spin up a fresh worker.
     worker?.terminate();
     worker = null;

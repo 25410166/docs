@@ -56,7 +56,7 @@ type DisplayMessage =
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
-const API_KEY_STORAGE = 'casual_docops_api_key';
+export const API_KEY_STORAGE = 'casual_docops_api_key';
 const MODEL = 'claude-haiku-4-5-20251001';
 const DEFAULT_MAX_TOOL_ROUNDS = 12;
 
@@ -475,8 +475,17 @@ export function DocOpsPanel({
             }
 
             const response = data as LlmResponse;
+            const willContinue = response.stop_reason === 'tool_use';
 
-            messages = [...messages, { role: 'assistant', content: response.content }];
+            // Only persist tool_use blocks when we will follow them with
+            // matching tool_result blocks this iteration. If the model emitted
+            // tool_use but stopped for another reason (e.g. max_tokens), the
+            // dangling tool_use would make every subsequent request 400 with
+            // "tool_use ids were found without tool_result blocks". Strip them.
+            const assistantContent = willContinue
+              ? response.content
+              : response.content.filter((block) => block.type !== 'tool_use');
+            messages = [...messages, { role: 'assistant', content: assistantContent }];
 
             // Emit text blocks only when nothing was streamed via onText
             // (i.e. the transport returned a complete response at once).
@@ -488,7 +497,7 @@ export function DocOpsPanel({
               }
             }
 
-            if (response.stop_reason !== 'tool_use') break;
+            if (!willContinue) break;
 
             const toolResults: LlmContentBlock[] = [];
             for (const block of response.content) {

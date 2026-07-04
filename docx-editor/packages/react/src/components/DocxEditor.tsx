@@ -71,6 +71,7 @@ import {
   createDocOpsTransport,
   isDesktopShell,
   callNativeText,
+  API_KEY_STORAGE,
   type DocsBridgeActions,
 } from '../docops';
 import { markdownToFragment } from '../lib/writer/markdownToFragment';
@@ -2954,7 +2955,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       setAiEnabled(true);
     } else {
       // Direct transport: check for a saved key (same storage key as DocOpsPanel).
-      setAiEnabled(!!localStorage.getItem('docops-api-key'));
+      setAiEnabled(!!localStorage.getItem(API_KEY_STORAGE));
     }
   }, [docopsTransport]);
   useEffect(() => {

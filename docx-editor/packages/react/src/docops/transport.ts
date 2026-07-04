@@ -98,6 +98,19 @@ export class DirectTransport implements DocOpsTransport {
       signal: payload.signal,
     });
 
+    // Surface the real Anthropic error instead of trying to parse an error
+    // body as an SSE stream (which yields a bare "API error 400"). The error
+    // body is JSON even on the streaming endpoint when the request is rejected.
+    if (!resp.ok) {
+      let data: unknown;
+      try {
+        data = await resp.json();
+      } catch {
+        data = { error: { message: `Anthropic API error ${resp.status}` } };
+      }
+      return { data, status: resp.status };
+    }
+
     if (!useStream || !resp.body) {
       return { data: await resp.json(), status: resp.status };
     }
