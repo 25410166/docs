@@ -2448,23 +2448,33 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // Document inheriting the live doc's sections/headers/footers so the
   // preview paints with the same page chrome. Built with the live schema
   // so `nodeFromJSON` resolves the same node/mark types.
-  const previewDocument = useMemo(() => {
+  const previewResult = useMemo(() => {
     if (!versionPreview) return null;
     const schema = bodyView?.state.schema;
     if (!schema) return null;
     try {
-      const node = previewShowChanges
-        ? buildVersionDiffDoc(versionPreview.previousData, versionPreview.data, schema, {
-            author: versionPreview.author,
-            date: new Date(versionPreview.savedAt).toISOString(),
-          }).doc
-        : schema.nodeFromJSON(versionPreview.data);
-      return fromProseDoc(node, history.state ?? undefined);
+      let tooLarge = false;
+      let node;
+      if (previewShowChanges) {
+        const diff = buildVersionDiffDoc(versionPreview.previousData, versionPreview.data, schema, {
+          author: versionPreview.author,
+          date: new Date(versionPreview.savedAt).toISOString(),
+        });
+        node = diff.doc;
+        tooLarge = diff.tooLarge === true;
+      } else {
+        node = schema.nodeFromJSON(versionPreview.data);
+      }
+      return { document: fromProseDoc(node, history.state ?? undefined), tooLarge };
     } catch (err) {
       console.warn('[version-preview] failed to build preview doc', err);
       return null;
     }
   }, [versionPreview, previewShowChanges, bodyView, history.state]);
+  const previewDocument = previewResult?.document ?? null;
+  // When Show changes is on but a side exceeded the diff token cap, the preview
+  // shows the plain version with no highlights — tell the user why.
+  const previewDiffTooLarge = previewResult?.tooLarge ?? false;
 
   // Long-sentence highlighter — Hemingway-style amber + yellow inline
   // decorations for sentences > 25/35 words. Attached once on view
@@ -9991,6 +10001,19 @@ body { background: white; }
                                     />
                                     Show changes
                                   </label>
+                                  {previewShowChanges && previewDiffTooLarge && (
+                                    <span
+                                      data-testid="version-preview-diff-too-large"
+                                      title="This version is too large to compute an inline diff; showing it without change highlights."
+                                      style={{
+                                        fontSize: 12,
+                                        color: 'var(--doc-text-muted, #5f6368)',
+                                        fontStyle: 'italic',
+                                      }}
+                                    >
+                                      Too large to highlight changes
+                                    </span>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={handleRestoreFromPreview}
