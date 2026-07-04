@@ -35,6 +35,33 @@
   --md-text-muted: var(--doc-text-subtle, #7a7f88);
   --md-accent: var(--doc-primary, #1a73e8);
   --md-accent-soft: var(--doc-primary-light, rgba(26, 115, 232, 0.14));
+
+  /* Syntax-highlight token colors (light) — legible on the light pane. */
+  --md-hl-keyword: #0550ae;
+  --md-hl-property: #0b7285;
+  --md-hl-string: #0a7d33;
+  --md-hl-atom: #8250df;
+  --md-hl-comment: #6a737d;
+  --md-hl-variable: #1f2328;
+  --md-hl-type: #953800;
+  --md-hl-punct: #57606a;
+  --md-hl-meta: #795548;
+}
+
+/* Dark syntax colors — the pane goes dark when [data-theme='dark'] is set on an
+   ancestor (--md-surface = --doc-surface swaps there), so the token colors must
+   swap on the SAME trigger, not on prefers-color-scheme. Default's light-blue
+   keywords were unreadable on the dark pane. */
+[data-theme='dark'] {
+  --md-hl-keyword: #79c0ff;
+  --md-hl-property: #56d4dd;
+  --md-hl-string: #7ee787;
+  --md-hl-atom: #d2a8ff;
+  --md-hl-comment: #8b949e;
+  --md-hl-variable: #e6edf3;
+  --md-hl-type: #ffa657;
+  --md-hl-punct: #a5adba;
+  --md-hl-meta: #d7ba7d;
 }
 
 /* Dark: --doc-* already swaps under [data-theme='dark'] set by editor.css;

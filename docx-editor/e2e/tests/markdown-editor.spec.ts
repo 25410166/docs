@@ -56,6 +56,28 @@ test('dark mode: source + preview text stays readable (no white-on-light)', asyn
   expect(Math.abs(lum(contrast.text) - lum(contrast.bg))).toBeGreaterThan(0.3);
 });
 
+test('dark mode: .yml syntax-highlight tokens stay readable', async ({ page }) => {
+  // The default CodeMirror highlight style bakes in light-mode token colors
+  // (dark-blue keys) that vanish on a dark pane. Our theme-adaptive style must
+  // win over basicSetup's and swap colors under data-theme="dark".
+  await page.addInitScript(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  await page.goto('/');
+  await page.getByTestId('home-file-input').setInputFiles(YML_FIXTURE);
+  await page.waitForSelector('[data-testid="markdown-editor"]', { timeout: 30000 });
+
+  const lum = (rgb: string) => {
+    const m = rgb.match(/\d+/g)!.map(Number);
+    return (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255;
+  };
+  const c = await page.evaluate(() => {
+    const lines = document.querySelectorAll('[data-testid="markdown-source"] .cm-line');
+    const key = lines[1]?.querySelector('span'); // a YAML key token
+    const pane = document.querySelector('[data-testid="markdown-source"] .cm-editor')!;
+    return { key: key ? getComputedStyle(key).color : '', bg: getComputedStyle(pane).backgroundColor };
+  });
+  expect(Math.abs(lum(c.key) - lum(c.bg))).toBeGreaterThan(0.3);
+});
+
 test('opens .md in the source+preview editor with raw markdown and rendered preview', async ({
   page,
 }) => {
