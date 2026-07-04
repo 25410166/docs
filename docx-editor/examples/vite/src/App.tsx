@@ -24,6 +24,7 @@ import {
   isForeignFormat,
   convertToDocx,
   formatFromFilename,
+  recordRecentFile,
   type AutoSaveEditorRef,
   type FileSource,
 } from '@casualoffice/docs';
@@ -865,6 +866,22 @@ export function App() {
             kind:
               fmt === 'md' ? 'markdown' : fmt === 'rtf' ? 'rtf' : fmt === 'eml' ? 'eml' : 'text',
           });
+          // Record the recent with its ORIGINAL bytes and full filename (incl.
+          // .md/.txt) so reopening from the Home recents routes back through
+          // formatFromFilename to the SAME source editor — not the DOCX editor.
+          // (DocxEditor's own open path records converted docx bytes under a
+          // stripped name, which is why md recents used to reopen as docx.)
+          const onDesktopOpen = !!(window as { __deskApp__?: { isDesktop?: boolean } }).__deskApp__
+            ?.isDesktop;
+          if (!onDesktopOpen) {
+            const bytes = await file.arrayBuffer();
+            void recordRecentFile({
+              name: file.name,
+              buffer: bytes,
+              size: bytes.byteLength,
+              openedAt: Date.now(),
+            });
+          }
           setStatus('');
           if (!legacyForcedEditor) navigate('/document/new');
           setView('editor');

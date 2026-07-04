@@ -129,6 +129,28 @@ test('new-file picker offers Markdown and Text kinds', async ({ page }) => {
   await expect(page.getByTestId('markdown-view-notebook')).toBeVisible();
 });
 
+test('a .md opened from Home is recorded as a recent and reopens in the md editor', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByTestId('home-file-input').setInputFiles(MD_FIXTURE);
+  await page.waitForSelector('[data-testid="markdown-editor"]', { timeout: 30000 });
+  // Let the async recordRecentFile commit to IndexedDB.
+  await page.waitForTimeout(600);
+
+  // Reload Home — the file should appear in recents (read from IndexedDB).
+  await page.goto('/');
+  const recent = page.locator('[data-testid^="recent-card-"]').first();
+  await expect(recent).toBeVisible({ timeout: 15000 });
+
+  // Reopening it must land in the markdown editor (source/preview), NOT the
+  // DOCX editor — the extension routes it back to the same surface.
+  await recent.click();
+  await page.waitForSelector('[data-testid="markdown-editor"]', { timeout: 30000 });
+  await expect(page.getByTestId('markdown-view-notebook')).toBeVisible();
+  await expect(page.locator('[data-testid="docx-editor"]')).toHaveCount(0);
+});
+
 test('Notebook mode renders markdown inline and reveals syntax on the caret', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('home-file-input').setInputFiles(NOTEBOOK_FIXTURE);
