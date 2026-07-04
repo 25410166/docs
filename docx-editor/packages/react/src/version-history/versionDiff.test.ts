@@ -85,6 +85,18 @@ describe('buildVersionDiffDoc', () => {
     expect(hasChanges).toBe(false);
   });
 
+  test('over the token cap → tooLarge flag set, diff skipped', () => {
+    const huge = Array.from({ length: 7000 }, (_, i) => `word${i}`).join(' ');
+    const { hasChanges, tooLarge } = buildVersionDiffDoc(
+      docJSON('hello world'),
+      docJSON(huge),
+      schema
+    );
+    // Distinguishable from "no changes": the diff was skipped, not empty.
+    expect(hasChanges).toBe(false);
+    expect(tooLarge).toBe(true);
+  });
+
   test('appended text → marked as insertion', () => {
     const { doc, hasChanges } = buildVersionDiffDoc(
       docJSON('hello world'),
