@@ -116,6 +116,19 @@ describe('runAgent (plan → execute → reflect)', () => {
     expect(result.tasks.some((t) => t.title === 'Fix the leftover issue')).toBe(true);
   });
 
+  it('marks a step that calls no tool as failed, not done (no false success)', async () => {
+    const registry = registryWith(['rewrite_selection']);
+    // The executor narrates without calling any tool, then reflection claims met.
+    const { llm } = scriptedLlm([
+      plan('Rewrite the intro'),
+      finish('I have rewritten the introduction.'),
+      reflection(true),
+    ]);
+    const result = await runAgent('Goal', { llm, registry });
+    expect(result.tasks[0].status).toBe('failed');
+    expect(result.changedBlockIds).toHaveLength(0);
+  });
+
   it('falls back to the goal as a single task when no plan is produced', async () => {
     const registry = registryWith(['get_outline']);
     const { llm } = scriptedLlm([
