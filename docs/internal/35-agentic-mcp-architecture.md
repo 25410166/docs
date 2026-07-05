@@ -29,11 +29,19 @@ Unifies tools from any number of `ToolSource`s into one catalog and routes each 
 
 Protocol version `2025-06-18`. Round-trip tested client↔server in-memory, including an MCP client registered alongside built-in tools in the agent registry.
 
-## Remaining (wiring)
+## Wired (commit 2707731)
 
-- **Agentic panel UX** (`DocOpsPanel`): register `DocsBridge` as a `ToolSource`, call `runAgent`, render the live plan + per-step status + reflection, cancel, all writes as tracked changes. Agentic vs single-shot toggle. Playwright-verify.
-- **MCP host wiring:** connect `McpServer` to a desktop stdio pipe (external agents drive the doc) and a collab WebSocket; connect `McpClient` to user-configured external MCP servers, registered into the panel's `ToolRegistry`.
-- Prompts/model tuning for the planner/reflection meta-tools on the local Qwen model (validate on-device).
+- **Agentic panel UX** (`DocOpsPanel`): `agentRuntime.ts` adapts `DocsBridge` → `ToolSource` and the panel transport → the agent's `LlmFn`, and builds the `ToolRegistry` (built-in + external MCP sources). The `send()` agent branch runs plan→execute→reflect for panel-driven transports; the live plan renders as a checklist with per-step status + tool steps + reflection notes. **Agent/Chat toggle** (opt-in, default Chat; hidden on collab). Playwright-verified: toggle renders, defaults Chat, flips to Agent.
+
+## Remaining
+
+- **MCP host wiring:** connect `McpServer` to a desktop stdio pipe (external agents drive the doc) and a collab WebSocket; connect `McpClient` to user-configured external MCP servers, registered into the panel's `ToolRegistry`; a settings surface to add external MCP servers.
+- Prompts/model tuning for the planner/reflection meta-tools on the local Qwen model (validate on-device — the agent makes several LLM round-trips, so latency/plan quality on a 1.5B model needs checking).
+- Cancel wiring for a running agent; render `changedBlockIds` in the tracked-change/accept UI.
+
+## Known unrelated red
+
+Shard 1 of the docs e2e has 3 pre-existing SelectionAskAi-pill failures (pill anchored via `coordsAtPos` on the hidden off-screen ProseMirror — fails in headless). They fail identically at the branch base `0515980`, i.e. predate the agentic work; tracked separately.
 
 ## Tests
 `packages/docops/src/agent/{registry,agent}.test.ts` (registry routing/collisions; plan-execute-reflect, corrective reflection, fallback, abort) + `mcp/mcp.test.ts` (client↔server round-trip, error mapping, registry integration). 13 tests, all green.
