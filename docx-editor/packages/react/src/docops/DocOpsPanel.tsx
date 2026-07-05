@@ -88,10 +88,11 @@ const SYSTEM_PROMPT = `You are DocOps, an AI assistant inside a .docx editor.
 IMPORTANT: You do not have the document text. It is not in this chat. You are the one who calls tools — the user never runs tools. When you need information about the document, YOU emit a <tool_call> block and the editor runs it and returns the result to you.
 
 Read tools (inspect the document — never mutate):
-- get_doc_stats() — returns word/paragraph/table/image counts AND the FULL document text. Call this to summarize, describe, or answer "what is this about".
+- search_document(query) — returns the passages most relevant to the query, each with its heading path and blockIds. Use this to summarize, describe, or answer questions — it works on documents of any length.
+- get_doc_stats() — word/paragraph/table/image counts + a short preview (NOT the full text).
 - get_outline() — returns the heading tree.
 - get_selection() — returns the user's currently selected text.
-- find_text(query) — searches the document for a phrase.
+- find_text(query) — exact-phrase search; returns blockIds + snippets.
 - list_styles() — lists paragraph styles and fonts used.
 
 Write tools — direct edits (immediately visible):
@@ -102,12 +103,12 @@ Write tools — suggestion mode (user reviews in the sidebar):
 - suggest_text_change, set_paragraph_style, add_comment, rewrite_selection (call get_selection first), delete_paragraphs (pass paraIds from get_outline/find_text), insert_paragraph_after, harmonize_styles (call list_styles first), insert_report_from_data, create_document (call get_doc_stats first, confirm wordCount === 0)
 
 Rules:
-- To summarize, describe, or answer ANY question about the document, your VERY FIRST response must be a <tool_call> for get_doc_stats. Do not write prose first. Do not ask the user to do anything. Do not assume or invent the document's content.
-- Emit exactly this and nothing else, then stop:
+- To summarize, describe, or answer ANY question about the document, your VERY FIRST response must be a <tool_call> for search_document with a query built from the user's request. Do not write prose first. Do not ask the user to do anything. Do not assume or invent the document's content.
+- Emit exactly this and nothing else, then stop (replace the query with the topic asked about; for a whole-document summary use the main subject or "overview"):
 <tool_call>
-{"name": "get_doc_stats", "arguments": {}}
+{"name": "search_document", "arguments": {"query": "overview main topics"}}
 </tool_call>
-- After the tool result arrives, write a short, plain-language answer.
+- After the tool result arrives, write a short, plain-language answer grounded only in the retrieved passages.
 - Always read before you write. For suggest_text_change the search text must be exact (case-sensitive) — call find_text first. For rewrite_selection, call get_selection first.
 - Tracked changes appear in the comments sidebar — tell the user to open it to review.
 - Keep responses short. Users want results, not explanations.`;
@@ -851,7 +852,30 @@ export function DocOpsPanel({
           return String(d.text ?? d.selection ?? d.selectionText ?? '').trim();
         };
         if (action.id === 'summarize' || action.id === 'outline') {
-          context = readField(await bridge.callTool('get_doc_stats', {}));
+          // RAG: retrieve representative passages (budget-bounded) instead of
+          // dumping the whole document — grounds the answer and can't blow the
+          // local model's context on a long doc. Broad query for a generic
+          // summary; fall back to the doc preview if nothing matches.
+          const search = await bridge.callTool('search_document', {
+            query: 'overview summary introduction main points key findings results conclusion',
+            k: 6,
+          });
+          const chunks =
+            (search as { data?: { chunks?: Array<{ headingPath?: string[]; snippet?: string }> } })
+              ?.data?.chunks ?? [];
+          context = chunks
+            .map(
+              (c) =>
+                (c.headingPath?.length ? c.headingPath.join(' › ') + '\n' : '') + (c.snippet ?? '')
+            )
+            .join('\n\n')
+            .trim();
+          if (!context) {
+            const stats = (await bridge.callTool('get_doc_stats', {})) as {
+              data?: { preview?: string };
+            };
+            context = String(stats?.data?.preview ?? '').trim();
+          }
           if (!context) {
             appendDisplay({
               kind: 'assistant',
