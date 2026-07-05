@@ -687,10 +687,19 @@ export function DocOpsPanel({
             .map((s) => s.source as ToolSource);
           const registry = createAgentRegistry(bridge, mcpSources);
           const llm = transportLlm(transport, { model: MODEL, apiKey: apiKey || undefined });
+          // Ground the planner with the heading outline so it plans against the
+          // real document structure.
+          let planningContext: string | undefined;
+          try {
+            const outline = await bridge.callTool('get_outline', {});
+            if (outline.ok && outline.data) planningContext = JSON.stringify(outline.data).slice(0, 1500);
+          } catch {
+            /* outline is best-effort context */
+          }
           const result = await runAgent(
             text,
             { llm, registry },
-            { signal: ctrl.signal, onEvent: handleAgentEvent }
+            { signal: ctrl.signal, onEvent: handleAgentEvent, planningContext }
           );
           if (result.summary) {
             appendDisplay({ kind: 'assistant', text: result.summary });
