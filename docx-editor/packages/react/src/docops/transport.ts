@@ -352,9 +352,15 @@ export class CollabTransport implements DocOpsTransport {
  */
 export class DesktopTransport implements DocOpsTransport {
   readonly requiresApiKey = false;
-  readonly drivesLoop = true;
+  // Single round per call() — the panel (chat) and runAgent (agent mode) drive
+  // the multi-round tool loop, exactly like DirectTransport. Previously this was
+  // drivesLoop=true with a JS runLoop, which hid the Agent toggle on desktop
+  // (gated on !drivesLoop) so the plan→execute→reflect agent NEVER ran on the
+  // local model. The panel's else-branch ("Direct / Desktop transport: panel
+  // drives the loop") already handles single-round desktop calls.
+  readonly drivesLoop = false;
 
-  call(payload: LlmCallPayload): Promise<LlmCallResult> {
+  async call(payload: LlmCallPayload): Promise<LlmCallResult> {
     if (payload.signal?.aborted) {
       return Promise.reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }));
     }
@@ -368,95 +374,43 @@ export class DesktopTransport implements DocOpsTransport {
     if (!tauri?.invoke) {
       return new DirectTransport().call(payload);
     }
+    const invoke = tauri.invoke.bind(tauri);
 
-    return this.runLoop(payload, tauri.invoke.bind(tauri));
-  }
-
-  private async runLoop(
-    payload: LlmCallPayload,
-    invoke: (cmd: string, args?: unknown) => Promise<unknown>
-  ): Promise<LlmCallResult> {
-    const maxRounds = payload.maxToolRounds ?? 12;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const messages: any[] = [...payload.messages];
+    let data: any;
+    try {
+      // One model turn. The Rust command takes a single `args` struct
+      // (docops_llm_call(args: DocopsLlmArgs)); a bare object throws "missing
+      // required key args". It returns { content: [...blocks], stop_reason } —
+      // the same shape DirectTransport yields, with native tool_use blocks.
+      data = await invoke('docops_llm_call', {
+        args: {
+          model: payload.model,
+          system: payload.system,
+          messages: payload.messages,
+          tools: payload.tools,
+          maxTokens: payload.max_tokens,
+          apiKey: payload.apiKey ?? '',
+        },
+      });
+    } catch (err) {
+      return { data: { error: { message: String(err) } }, status: 500 };
+    }
 
-    for (let round = 0; round < maxRounds; round++) {
-      if (payload.signal?.aborted) {
-        throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let data: any;
-      try {
-        // The Rust command takes a single `args` struct parameter
-        // (docops_llm_call(args: DocopsLlmArgs)), so the payload MUST be
-        // wrapped in `args` — a bare object throws "missing required key args".
-        data = await invoke('docops_llm_call', {
-          args: {
-            model: payload.model,
-            system: payload.system,
-            messages,
-            tools: payload.tools,
-            maxTokens: payload.max_tokens,
-            apiKey: payload.apiKey ?? '',
-          },
-        });
-      } catch (err) {
-        return { data: { error: { message: String(err) } }, status: 500 };
-      }
-
-      // Stream text blocks as they arrive
-      if (Array.isArray(data?.content)) {
-        for (const block of data.content) {
-          if (block?.type === 'text' && typeof block.text === 'string') {
-            payload.onText?.(block.text);
-          }
+    // Surface text blocks via onText (the worker returns them complete, not
+    // token-streamed).
+    if (Array.isArray(data?.content)) {
+      for (const block of data.content) {
+        if (block?.type === 'text' && typeof block.text === 'string') {
+          payload.onText?.(block.text);
         }
-      }
-
-      messages.push({ role: 'assistant', content: data?.content ?? [] });
-
-      // Terminate if no tool_use blocks or model signalled end_turn
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const toolUseBlocks: any[] = Array.isArray(data?.content)
-        ? data.content.filter((b: any) => b?.type === 'tool_use')
-        : [];
-
-      if (toolUseBlocks.length === 0 || data?.stop_reason === 'end_turn') break;
-      if (!payload.toolExecutor) break;
-
-      // Execute tool calls and collect results
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const toolResults: any[] = [];
-      for (const block of toolUseBlocks) {
-        try {
-          const result = await payload.toolExecutor(
-            block.name as string,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (block.input ?? {}) as Record<string, unknown>
-          );
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id as string,
-            content: JSON.stringify(result),
-          });
-        } catch (err) {
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id as string,
-            content: err instanceof Error ? err.message : String(err),
-            is_error: true,
-          });
-        }
-      }
-      messages.push({ role: 'user', content: toolResults });
-
-      if (round === maxRounds - 1) {
-        return { data: { ok: true }, status: 200, updatedHistory: messages, capHit: true };
       }
     }
 
-    return { data: { ok: true }, status: 200, updatedHistory: messages };
+    return {
+      data: { content: data?.content ?? [], stop_reason: data?.stop_reason ?? 'end_turn' },
+      status: 200,
+    };
   }
 }
 
