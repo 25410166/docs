@@ -73,7 +73,20 @@ const REFLECT_SYSTEM =
   'You are the reviewer for an AI document assistant. Given the original goal and a log of the edits performed, judge whether the goal is fully accomplished. Call submit_reflection with your verdict and any remaining corrective sub-tasks.';
 
 const executorSystem = (goal: string, task: string): string =>
-  `You are executing one step of a larger document task.\nOverall goal: ${goal}\nYour current step: ${task}\n\nUse the available tools to inspect and edit the document. Always read (get_selection/get_outline/find_text) before you write. When this step is complete, reply with a one-line confirmation and stop — do not start other steps.`;
+  `You are the executor for ONE step of a document task.
+Overall goal: ${goal}
+Your current step: ${task}
+
+You accomplish the step ONLY by calling tools — you cannot edit the document any other way. NEVER claim an edit is done without calling the tool that performs it.
+
+Procedure:
+1. First call a read tool (get_outline, get_selection, or find_text) to locate the target.
+2. Then call the write tool that makes the change (e.g. rewrite_selection, insert_paragraph_after, set_paragraph_style).
+Emit each call as:
+<tool_call>
+{"name": "<tool>", "arguments": { ... }}
+</tool_call>
+Do NOT describe the edit in prose instead of calling the tool. Only after a write tool returns success may you reply with a one-line confirmation and stop. Do not start other steps.`;
 
 // ── Small helpers ───────────────────────────────────────────────────────────
 
