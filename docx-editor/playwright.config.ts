@@ -35,17 +35,18 @@ export default defineConfig({
   ],
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // 846-test suite × ~3s/test serially ≈ 42 minutes, which had us
-  // cancelling CI runs before they finished. Bumping to 4 workers brings
-  // the wall-clock to ~10 min on the standard GitHub runner (2 vCPU,
-  // 7 GB) and the existing retry=2 absorbs the small flake-rate uptick
-  // from parallel execution. Local stays at 4 too — symmetric.
-  workers: 4,
-  // Default timeout of 30s per test (can override with --timeout flag)
-  timeout: 30000,
-  // Expect timeout for assertions
+  // CI shards the suite across 4 runners; on a 2-vCPU GitHub runner, running
+  // 4 workers PER shard oversubscribed the CPU 2x, so every test ran slow and
+  // blew the 5s assertion timeout — and the slowness was consistent, so even
+  // retry=2 failed all attempts (alignment/table/heading specs). Match workers
+  // to the 2 vCPUs on CI so tests run at full speed. Local keeps 4.
+  workers: process.env.CI ? 2 : 4,
+  // Per-test timeout (override with --timeout).
+  timeout: process.env.CI ? 45000 : 30000,
+  // Assertion timeout — give it headroom for CI load so a slow paint under
+  // contention doesn't fail an otherwise-correct assertion.
   expect: {
-    timeout: 5000,
+    timeout: process.env.CI ? 10000 : 5000,
   },
   reporter: [
     ['list'],
