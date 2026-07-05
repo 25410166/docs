@@ -200,7 +200,7 @@ export function AISuggestionPanel({
     return () => document.removeEventListener('keydown', onKey);
   }, [onAccept, onReject, suggestion, busy]);
 
-  const title = mode === 'rewrite' ? 'Rewrite with AI' : 'Summary with AI';
+  const title = mode === 'rewrite' ? 'Rewrite with AI' : 'Summarize with AI';
   // Accept stages the change as a tracked suggestion (deletion +
   // insertion marks) — the doc body shows it with the standard
   // red-strike / green-underline UI so the user can Accept / Reject
