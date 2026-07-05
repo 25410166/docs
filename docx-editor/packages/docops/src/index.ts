@@ -14,8 +14,16 @@ export type {
 export { DOCOPS_CATALOG } from './catalog';
 
 // Local-first RAG: BM25 retrieval over in-memory chunks (no embeddings/model).
-export { tokenize, Bm25Index, retrieve } from './retrieval';
-export type { RetrievalChunk, RetrievedChunk, RetrieveOptions, RetrieveResult } from './retrieval';
+export { tokenize, Bm25Index, retrieve, WorkspaceIndex } from './retrieval';
+export type {
+  RetrievalChunk,
+  RetrievedChunk,
+  RetrieveOptions,
+  RetrieveResult,
+  WorkspaceDoc,
+  WorkspaceHit,
+  WorkspaceSearchResult,
+} from './retrieval';
 
 // Agentic layer: plan → execute → reflect over a pluggable tool registry.
 export { ToolRegistry, runAgent } from './agent';
