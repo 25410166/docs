@@ -80,8 +80,30 @@ type DisplayMessage =
 // ── Constants ─────────────────────────────────────────────────────────────
 
 export const API_KEY_STORAGE = 'casual_docops_api_key';
+const MCP_STORAGE = 'casual_docops_mcp_servers';
 const MODEL = 'claude-haiku-4-5-20251001';
 const DEFAULT_MAX_TOOL_ROUNDS = 12;
+
+type StoredMcp = { url: string; token?: string };
+
+/** Configured MCP servers persist across reloads (URL + optional auth token). */
+function loadStoredMcp(): StoredMcp[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MCP_STORAGE) ?? '[]');
+    return Array.isArray(parsed)
+      ? parsed.filter((s): s is StoredMcp => !!s && typeof s.url === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+function saveStoredMcp(list: StoredMcp[]): void {
+  try {
+    localStorage.setItem(MCP_STORAGE, JSON.stringify(list));
+  } catch {
+    /* storage unavailable — non-fatal */
+  }
+}
 
 const SYSTEM_PROMPT = `You are DocOps, an AI assistant inside a .docx editor.
 
@@ -479,21 +501,35 @@ export function DocOpsPanel({
   // External MCP servers whose tools join the agent's registry.
   const [mcpServers, setMcpServers] = useState<McpServerState[]>([]);
   const [mcpUrlDraft, setMcpUrlDraft] = useState('');
+  const [mcpTokenDraft, setMcpTokenDraft] = useState('');
   const [showMcpAdd, setShowMcpAdd] = useState(false);
 
   const connectMcp = useCallback(
-    async (rawUrl: string) => {
+    async (rawUrl: string, rawToken?: string, persist = true) => {
       const url = rawUrl.trim();
       if (!url) return;
       const id = `mcp:${url}`;
       if (mcpServers.some((s) => s.id === id)) return;
-      const client = createMcpClient(url, id);
+      const token = rawToken?.trim();
+      const client = createMcpClient(
+        url,
+        id,
+        token ? { Authorization: `Bearer ${token}` } : undefined
+      );
       setMcpServers((prev) => [
         ...prev,
         { id, url, status: 'connecting', toolCount: 0, source: client },
       ]);
       setMcpUrlDraft('');
+      setMcpTokenDraft('');
       setShowMcpAdd(false);
+      // Persist so the server reconnects on reload (token included if given).
+      if (persist) {
+        const stored = loadStoredMcp();
+        if (!stored.some((s) => s.url === url)) {
+          saveStoredMcp([...stored, { url, token: token || undefined }]);
+        }
+      }
       try {
         const tools = await client.listTools();
         setMcpServers((prev) =>
@@ -516,9 +552,17 @@ export function DocOpsPanel({
 
   const removeMcp = useCallback((id: string) => {
     setMcpServers((prev) => {
-      prev.find((s) => s.id === id)?.source?.close();
+      const target = prev.find((s) => s.id === id);
+      target?.source?.close();
+      if (target) saveStoredMcp(loadStoredMcp().filter((s) => s.url !== target.url));
       return prev.filter((s) => s.id !== id);
     });
+  }, []);
+
+  // Reconnect persisted MCP servers on mount.
+  useEffect(() => {
+    for (const s of loadStoredMcp()) void connectMcp(s.url, s.token, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // Label for the "thinking" row shown while the (non-streaming) model runs,
   // so the user sees progress between click and reply.
@@ -1143,7 +1187,7 @@ export function DocOpsPanel({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            void connectMcp(mcpUrlDraft);
+                            void connectMcp(mcpUrlDraft, mcpTokenDraft);
                           }
                         }}
                         placeholder="https://mcp.example.com/rpc"
@@ -1151,9 +1195,24 @@ export function DocOpsPanel({
                         style={mcpInputStyle}
                         data-testid="docops-mcp-input"
                       />
+                      <input
+                        type="password"
+                        value={mcpTokenDraft}
+                        onChange={(e) => setMcpTokenDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void connectMcp(mcpUrlDraft, mcpTokenDraft);
+                          }
+                        }}
+                        placeholder="Auth token (optional)"
+                        aria-label="MCP auth token (optional)"
+                        style={mcpInputStyle}
+                        data-testid="docops-mcp-token"
+                      />
                       <button
                         type="button"
-                        onClick={() => void connectMcp(mcpUrlDraft)}
+                        onClick={() => void connectMcp(mcpUrlDraft, mcpTokenDraft)}
                         style={mcpAddBtnStyle}
                         disabled={!mcpUrlDraft.trim()}
                         data-testid="docops-mcp-connect"
