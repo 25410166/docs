@@ -35,10 +35,29 @@ export const DOCOPS_CATALOG: DocOpsTool[] = [
   {
     name: 'get_doc_stats',
     description:
-      'Returns document statistics: word count, paragraph count, table count, image count, and heading levels used.',
+      'Returns document statistics: word count, paragraph count, table count, image count, heading levels, and a short text preview. To summarize or answer questions about the content, use search_document — do NOT rely on the preview alone.',
     input_schema: {
       type: 'object',
       properties: {},
+    },
+  },
+  {
+    name: 'search_document',
+    description:
+      'Retrieve the passages of the document most relevant to a natural-language query (top-k chunks with their heading path and block IDs). Use this — NOT get_doc_stats — to summarize, answer questions, or locate content to edit in anything longer than a couple of paragraphs. Edit via the returned blockIds.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'What to look for, in natural language.',
+        },
+        k: {
+          type: 'number',
+          description: 'Max passages to return (1–8). Defaults to 5.',
+        },
+      },
+      required: ['query'],
     },
   },
   {

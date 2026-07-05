@@ -14,7 +14,7 @@ import type { EditorView } from 'prosemirror-view';
 import { collectHeadings } from '@eigenpal/docx-core/utils';
 import { generateTOC } from '@eigenpal/docx-core/prosemirror/commands';
 import { convertSelectionToTable } from '../utils/convertTextToTable';
-import type { DocOpsResult } from '@casualoffice/docops';
+import { retrieve, type DocOpsResult, type RetrievalChunk } from '@casualoffice/docops';
 
 /**
  * Subset of DocxEditorRef exposed to the bridge for mutation operations.
@@ -72,6 +72,8 @@ export class DocsBridge {
         return this.getSelection();
       case 'get_doc_stats':
         return this.getDocStats();
+      case 'search_document':
+        return this.searchDocument(args);
       case 'list_styles':
         return this.listStyles();
       case 'find_text':
@@ -200,15 +202,14 @@ export class DocsBridge {
       }
     });
 
-    // Cap the returned text so a long document can't overflow the local
-    // model's context window. ~14k chars ≈ 3.5k tokens, well within the
-    // 8k-token worker context alongside the prompt + generation.
-    const MAX_TEXT_CHARS = 14000;
+    // Do NOT dump the whole document here — that overflowed the local model's
+    // 8k-token context (TOO_LARGE) and silently truncated long docs. Return a
+    // short preview for orientation; the model reads real content via
+    // search_document (relevant passages) or get_block (a specific block).
+    const PREVIEW_CHARS = 1200;
     const fullText = textParts.join('\n');
-    const text =
-      fullText.length > MAX_TEXT_CHARS
-        ? fullText.slice(0, MAX_TEXT_CHARS) + '\n…[document truncated]'
-        : fullText;
+    const preview =
+      fullText.length > PREVIEW_CHARS ? fullText.slice(0, PREVIEW_CHARS) + '…' : fullText;
 
     return {
       ok: true,
@@ -220,7 +221,97 @@ export class DocsBridge {
         headingLevels: Array.from(headingLevelSet)
           .sort()
           .map((l) => l + 1),
-        text,
+        preview,
+        note: 'preview is only the first ~1200 chars. To summarize or answer questions, call search_document(query) to retrieve the relevant passages.',
+      },
+    };
+  }
+
+  /**
+   * RAG: chunk the document by heading section and return the passages most
+   * relevant to `query` (BM25), each with its blockIds so the agent can edit
+   * the retrieved text. Replaces dumping the whole document into the prompt.
+   */
+  private searchDocument(args: Record<string, unknown>): DocOpsResult {
+    const view = this.getView();
+    if (!view) return this.noView();
+    const query = String(args.query ?? '').trim();
+    if (!query) {
+      return { ok: false, code: 'VALIDATION', message: 'query is required.', retryable: false };
+    }
+    const k = typeof args.k === 'number' ? Math.min(Math.max(Math.floor(args.k), 1), 8) : 5;
+
+    const CHUNK_CHARS = 1800;
+    const chunks: RetrievalChunk[] = [];
+    const headingStack: { level: number; text: string }[] = [];
+    let seq = 0;
+    let headingPath: string[] = [];
+    let blockIds: string[] = [];
+    let parts: string[] = [];
+
+    const flush = () => {
+      const body = parts.join('\n').trim();
+      if (body) {
+        const prefix = headingPath.length ? headingPath.join(' › ') + '\n' : '';
+        chunks.push({
+          id: `dc${seq++}`,
+          text: prefix + body,
+          meta: { blockIds: [...blockIds], headingPath: [...headingPath] },
+        });
+      }
+      blockIds = [];
+      parts = [];
+    };
+
+    view.state.doc.descendants((node) => {
+      if (node.type.name !== 'paragraph') return;
+      const paraId = node.attrs.paraId as string | undefined;
+      let text = '';
+      node.forEach((child) => {
+        if (child.isText) text += child.text ?? '';
+      });
+
+      const level = node.attrs.outlineLevel as number | null;
+      const styleId = node.attrs.styleId as string | null;
+      let effLevel = level;
+      if (effLevel == null && styleId) {
+        const m = styleId.match(/^[Hh]eading(\d)$/);
+        if (m) effLevel = parseInt(m[1], 10) - 1;
+      }
+
+      if (effLevel != null) {
+        // New section — close the previous chunk and reset the heading path.
+        flush();
+        while (headingStack.length && headingStack[headingStack.length - 1].level >= effLevel) {
+          headingStack.pop();
+        }
+        headingStack.push({ level: effLevel, text: text.trim() });
+        headingPath = headingStack.map((h) => h.text).filter(Boolean);
+        if (paraId) blockIds.push(paraId);
+      } else {
+        if (paraId) blockIds.push(paraId);
+        if (text.trim()) parts.push(text);
+        if (parts.join('\n').length > CHUNK_CHARS) flush();
+      }
+    });
+    flush();
+
+    const result = retrieve(chunks, query, { k });
+    return {
+      ok: true,
+      data: {
+        chunks: result.chunks.map((c) => ({
+          chunkId: c.id,
+          headingPath: (c.meta as { headingPath?: string[] })?.headingPath ?? [],
+          blockIds: (c.meta as { blockIds?: string[] })?.blockIds ?? [],
+          snippet: c.text.slice(0, 700),
+          score: Math.round(c.score * 100) / 100,
+        })),
+        count: result.chunks.length,
+        truncated: result.truncated,
+        note: result.chunks.length
+          ? 'These are the passages most relevant to the query. Edit via the blockIds.'
+          : 'No passages matched the query.',
       },
     };
   }
