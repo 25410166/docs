@@ -392,7 +392,7 @@ export function SelectionAskAi({
           }}
           aria-label={t('common.cancel')}
         >
-          ✕
+          <MaterialSymbol name="close" size={14} />
         </button>
       </div>
       <div style={hintRowStyle}>

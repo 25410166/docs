@@ -28,7 +28,12 @@ import {
   type McpClient,
   type ToolSource,
 } from '@casualoffice/docops';
-import { createAgentRegistry, createMcpClient, transportLlm } from './agentRuntime';
+import {
+  createAgentRegistry,
+  createMcpClient,
+  friendlyLlmError,
+  transportLlm,
+} from './agentRuntime';
 import {
   DirectTransport,
   type DocOpsTransport,
@@ -608,8 +613,13 @@ export function DocOpsPanel({
     async (override?: string) => {
       const text = (override ?? inputValue).trim();
       if (!text || busy) return;
-      // Block send if key is required and missing.
-      if (transport.requiresApiKey && !apiKey) return;
+      // Block send if key is required and missing — but tell the user why and
+      // reopen the key setup, instead of a silent dead no-op.
+      if (transport.requiresApiKey && !apiKey) {
+        appendDisplay({ kind: 'error', text: 'Add an API key to use the assistant.' });
+        setShowKeySetup(true);
+        return;
+      }
 
       setInputValue('');
       setThinkingLabel('Thinking…');
@@ -678,8 +688,7 @@ export function DocOpsPanel({
           const { data, status, updatedHistory, capHit } = await transport.call(payload);
 
           if (status !== 200) {
-            const errMsg = (data as { error?: { message?: string } })?.error?.message;
-            throw new Error(errMsg ?? `AI error ${status}`);
+            throw new Error(friendlyLlmError(status, data));
           }
           if (updatedHistory) historyRef.current = updatedHistory as LlmMessage[];
           if (capHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
@@ -719,8 +728,7 @@ export function DocOpsPanel({
             setStreamingText('');
 
             if (status !== 200) {
-              const errMsg = (data as { error?: { message?: string } })?.error?.message;
-              throw new Error(errMsg ?? `API error ${status}`);
+              throw new Error(friendlyLlmError(status, data));
             }
 
             const response = data as LlmResponse;
@@ -1077,8 +1085,22 @@ export function DocOpsPanel({
                       <span title={s.error ?? s.url}>
                         {s.url.replace(/^https?:\/\//, '')}
                         {s.status === 'connected' ? ` · ${s.toolCount} tools` : ''}
-                        {s.status === 'error' ? ' · failed' : ''}
+                        {s.status === 'error' ? ` · ${(s.error ?? 'failed').slice(0, 40)}` : ''}
                       </span>
+                      {s.status === 'error' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            removeMcp(s.id);
+                            void connectMcp(s.url);
+                          }}
+                          style={{ ...mcpRemoveStyle, fontSize: 10, fontWeight: 600 }}
+                          aria-label="Retry MCP server"
+                          title="Retry"
+                        >
+                          Retry
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => removeMcp(s.id)}
@@ -1090,19 +1112,31 @@ export function DocOpsPanel({
                     </div>
                   ))}
                   {showMcpAdd && (
-                    <input
-                      value={mcpUrlDraft}
-                      onChange={(e) => setMcpUrlDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          void connectMcp(mcpUrlDraft);
-                        }
-                      }}
-                      placeholder="https://mcp.example.com/rpc  (Enter to connect)"
-                      style={mcpInputStyle}
-                      data-testid="docops-mcp-input"
-                    />
+                    <>
+                      <input
+                        value={mcpUrlDraft}
+                        onChange={(e) => setMcpUrlDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void connectMcp(mcpUrlDraft);
+                          }
+                        }}
+                        placeholder="https://mcp.example.com/rpc"
+                        aria-label="MCP server URL"
+                        style={mcpInputStyle}
+                        data-testid="docops-mcp-input"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void connectMcp(mcpUrlDraft)}
+                        style={mcpAddBtnStyle}
+                        disabled={!mcpUrlDraft.trim()}
+                        data-testid="docops-mcp-connect"
+                      >
+                        Connect
+                      </button>
+                    </>
                   )}
                 </div>
               )}
@@ -1196,7 +1230,13 @@ export function DocOpsPanel({
             )}
           </div>
         ) : (
-          <div style={messagesStyle} data-testid="docops-messages">
+          <div
+            style={messagesStyle}
+            data-testid="docops-messages"
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions text"
+          >
             {displayMessages.length === 0 && (
               <div
                 style={{
