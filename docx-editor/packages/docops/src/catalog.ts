@@ -61,6 +61,25 @@ export const DOCOPS_CATALOG: DocOpsTool[] = [
     },
   },
   {
+    name: 'search_workspace',
+    description:
+      "Retrieve relevant passages from the user's OTHER local files (the open folder/workspace), not just the current document. Returns passages each tagged with their source file so you can cite them. Use when the question spans multiple documents ('what did we say about X across my files'). Only available when a workspace folder is open.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'What to look for across the workspace, in natural language.',
+        },
+        k: {
+          type: 'number',
+          description: 'Max passages to return (1–8). Defaults to 6.',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'list_styles',
     description: 'Lists paragraph styles and fonts used in the document, sorted by frequency.',
     input_schema: {

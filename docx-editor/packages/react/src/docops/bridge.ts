@@ -14,7 +14,13 @@ import type { EditorView } from 'prosemirror-view';
 import { collectHeadings } from '@eigenpal/docx-core/utils';
 import { generateTOC } from '@eigenpal/docx-core/prosemirror/commands';
 import { convertSelectionToTable } from '../utils/convertTextToTable';
-import { retrieve, type DocOpsResult, type RetrievalChunk } from '@casualoffice/docops';
+import {
+  retrieve,
+  WorkspaceIndex,
+  type DocOpsResult,
+  type RetrievalChunk,
+  type WorkspaceDoc,
+} from '@casualoffice/docops';
 
 /**
  * Subset of DocxEditorRef exposed to the bridge for mutation operations.
@@ -59,10 +65,32 @@ export interface DocsBridgeActions {
 }
 
 export class DocsBridge {
+  // On-device workspace RAG (north-star O2): the host (desktop shell) extracts
+  // plain text from the user's local files and pushes it here via
+  // setWorkspaceDocs; search_workspace then retrieves across all of them. Null
+  // until a workspace is provided, so search_workspace degrades gracefully.
+  private workspace: WorkspaceIndex | null = null;
+
   constructor(
     private readonly getView: () => EditorView | null,
     private readonly getActions: () => DocsBridgeActions | null = () => null
   ) {}
+
+  /** Replace the indexed workspace (host-driven; files stay on the machine). */
+  setWorkspaceDocs(docs: WorkspaceDoc[]): void {
+    const idx = new WorkspaceIndex();
+    for (const doc of docs) idx.add(doc);
+    this.workspace = idx;
+  }
+
+  /** True when a local workspace has been indexed (gates the search_workspace tool). */
+  hasWorkspace(): boolean {
+    return !!this.workspace && this.workspace.size > 0;
+  }
+
+  clearWorkspace(): void {
+    this.workspace = null;
+  }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<DocOpsResult> {
     switch (name) {
@@ -74,6 +102,8 @@ export class DocsBridge {
         return this.getDocStats();
       case 'search_document':
         return this.searchDocument(args);
+      case 'search_workspace':
+        return this.searchWorkspace(args);
       case 'list_styles':
         return this.listStyles();
       case 'find_text':
@@ -312,6 +342,44 @@ export class DocsBridge {
         note: result.chunks.length
           ? 'These are the passages most relevant to the query. Edit via the blockIds.'
           : 'No passages matched the query.',
+      },
+    };
+  }
+
+  /**
+   * RAG across the user's LOCAL workspace (other files in the folder), not just
+   * the open document — the on-device answer to cloud workspace search. Returns
+   * the best passages with the source file for each, so the model can cite them.
+   */
+  private searchWorkspace(args: Record<string, unknown>): DocOpsResult {
+    if (!this.workspace || this.workspace.size === 0) {
+      return {
+        ok: false,
+        code: 'UNSUPPORTED',
+        message: 'No workspace folder is indexed. Ask the user to open a folder first.',
+        retryable: false,
+      };
+    }
+    const query = String(args.query ?? '').trim();
+    if (!query) {
+      return { ok: false, code: 'VALIDATION', message: 'query is required.', retryable: false };
+    }
+    const k = typeof args.k === 'number' ? Math.min(Math.max(Math.floor(args.k), 1), 8) : 6;
+    const result = this.workspace.search(query, k);
+    return {
+      ok: true,
+      data: {
+        hits: result.hits.map((h) => ({
+          source: h.docName,
+          snippet: h.snippet,
+          score: h.score,
+        })),
+        sources: result.sources.map((s) => s.docName),
+        count: result.hits.length,
+        truncated: result.truncated,
+        note: result.hits.length
+          ? 'Passages from across the workspace. Cite the source file for each claim.'
+          : 'No passages in the workspace matched the query.',
       },
     };
   }

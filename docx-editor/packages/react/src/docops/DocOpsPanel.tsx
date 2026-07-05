@@ -111,6 +111,7 @@ IMPORTANT: You do not have the document text. It is not in this chat. You are th
 
 Read tools (inspect the document — never mutate):
 - search_document(query) — returns the passages most relevant to the query, each with its heading path and blockIds. Use this to summarize, describe, or answer questions — it works on documents of any length.
+- search_workspace(query) — searches the user's OTHER local files (when a folder is open), returning passages tagged with their source file to cite. Use for questions that span multiple documents.
 - get_doc_stats() — word/paragraph/table/image counts + a short preview (NOT the full text).
 - get_outline() — returns the heading tree.
 - get_selection() — returns the user's currently selected text.
