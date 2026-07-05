@@ -47,6 +47,20 @@ describe('ToolRegistry', () => {
     expect(docopsCalls).toEqual([]);
   });
 
+  it('labels external MCP output as untrusted, leaves built-in output alone', async () => {
+    const r = new ToolRegistry();
+    r.register(source('docops', ['get_outline']));
+    r.register(source('mcp:search', ['web_search']));
+    await r.tools();
+
+    const external = await r.call('web_search', { q: 'x' });
+    expect(external.ok && external.untrusted).toBe(true);
+    expect(external.ok && external.diffSummary).toContain('Untrusted');
+
+    const builtin = await r.call('get_outline', {});
+    expect(builtin.ok && builtin.untrusted).toBeUndefined();
+  });
+
   it('reports first-registered-wins collisions', async () => {
     const r = new ToolRegistry();
     r.register(source('a', ['dup']));
