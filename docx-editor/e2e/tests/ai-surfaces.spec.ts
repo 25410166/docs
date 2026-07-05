@@ -26,7 +26,9 @@
 import { expect, Page, test } from '@playwright/test';
 
 // Key checked by DocxEditor to enable the SelectionAskAi pill (web path).
-const DOCX_EDITOR_AI_KEY = 'docops-api-key';
+// Unified with the panel's key: DocxEditor now reads API_KEY_STORAGE, the same
+// 'casual_docops_api_key' the panel writes (previously a divergent literal).
+const DOCX_EDITOR_AI_KEY = 'casual_docops_api_key';
 // Key checked by DocOpsPanel to skip the key-setup screen.
 const DOCOPS_PANEL_KEY = 'casual_docops_api_key';
 const FAKE_KEY = 'sk-ant-test-fake-key';
@@ -222,5 +224,41 @@ test.describe('DocOpsPanel SSE streaming', () => {
     await expect(page.locator('[data-testid="docops-messages"]')).toContainText('Hello world', {
       timeout: 8000,
     });
+  });
+
+  test('agent-mode toggle renders and flips Chat ↔ Agent', async ({ page }) => {
+    await page.addInitScript(
+      ({ k, editorKey, panelKey }) => {
+        (window as any).__casualFeatures__ = { docops: true };
+        try {
+          localStorage.setItem(editorKey, k);
+        } catch {
+          /* ignore */
+        }
+        try {
+          localStorage.setItem(panelKey, k);
+        } catch {
+          /* ignore */
+        }
+      },
+      { k: FAKE_KEY, editorKey: DOCX_EDITOR_AI_KEY, panelKey: DOCOPS_PANEL_KEY }
+    );
+    await loadEditor(page);
+
+    const docopsBtn = page.locator('[data-testid="rail-docops"]');
+    if (!(await docopsBtn.isVisible())) {
+      test.skip(true, 'DocOps rail button not present');
+      return;
+    }
+    await docopsBtn.click();
+    await page.waitForSelector('[data-testid="docops-input"]', { timeout: 5000 });
+
+    // DirectTransport does not drive its own loop, so the toggle is available
+    // and defaults to Chat (single-shot).
+    const toggle = page.locator('[data-testid="docops-agent-toggle"]');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveText(/Chat/);
+    await toggle.click();
+    await expect(toggle).toHaveText(/Agent/);
   });
 });

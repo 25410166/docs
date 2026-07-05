@@ -20,7 +20,8 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { RightDockPanel } from '../components/RightDockPanel';
 import { MaterialSymbol } from '../components/ui/Icons';
 import type { DocsBridge } from './bridge';
-import { DOCOPS_CATALOG } from '@casualoffice/docops';
+import { DOCOPS_CATALOG, runAgent, type AgentEvent, type AgentTask } from '@casualoffice/docops';
+import { createAgentRegistry, transportLlm } from './agentRuntime';
 import {
   DirectTransport,
   type DocOpsTransport,
@@ -52,7 +53,8 @@ type DisplayMessage =
   | { kind: 'assistant'; text: string }
   | { kind: 'tool_step'; toolName: string; status: 'running' | 'done' | 'error' }
   | { kind: 'error'; text: string }
-  | { kind: 'cap'; rounds: number };
+  | { kind: 'cap'; rounds: number }
+  | { kind: 'plan'; tasks: AgentTask[] };
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -158,6 +160,53 @@ const msgCapStyle: CSSProperties = {
   background: 'var(--doc-surface-sunken, #f8f9fa)',
   border: '1px solid var(--doc-border-light)',
 };
+
+const msgPlanStyle: CSSProperties = {
+  alignSelf: 'stretch',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  padding: '8px 12px',
+  borderRadius: 8,
+  background: 'var(--doc-surface-sunken, #f8f9fa)',
+  border: '1px solid var(--doc-border-light)',
+};
+
+const msgPlanTitleStyle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+  color: 'var(--doc-text-muted)',
+  marginBottom: 2,
+};
+
+const msgPlanTaskStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  fontSize: 13,
+  color: 'var(--doc-text)',
+};
+
+const agentToggleRowStyle: CSSProperties = {
+  display: 'flex',
+  padding: '4px 12px 0',
+};
+
+const agentToggleStyle = (active: boolean): CSSProperties => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  fontSize: 11.5,
+  fontWeight: 600,
+  padding: '2px 8px',
+  borderRadius: 999,
+  cursor: 'pointer',
+  color: active ? '#fff' : 'var(--doc-text-muted)',
+  background: active ? 'var(--doc-primary, #1a73e8)' : 'var(--doc-surface-sunken, #f8f9fa)',
+  border: `1px solid ${active ? 'var(--doc-primary, #1a73e8)' : 'var(--doc-border-light)'}`,
+});
 
 const inputRowStyle: CSSProperties = {
   display: 'flex',
@@ -337,6 +386,10 @@ export function DocOpsPanel({
   const [streamingText, setStreamingText] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [busy, setBusy] = useState(false);
+  // Agent mode: plan → execute → reflect instead of a single tool-loop reply.
+  // Opt-in via the toggle; only available when the panel drives the loop
+  // (Direct/Desktop, not collab where the server owns the loop).
+  const [agentMode, setAgentMode] = useState(false);
   // Label for the "thinking" row shown while the (non-streaming) model runs,
   // so the user sees progress between click and reply.
   const [thinkingLabel, setThinkingLabel] = useState('Thinking…');
@@ -368,6 +421,56 @@ export function DocOpsPanel({
     });
   }, []);
 
+  // Mutate the tasks in the most recent 'plan' message (the live agent plan).
+  const updatePlan = useCallback((mutate: (tasks: AgentTask[]) => AgentTask[]) => {
+    setDisplayMessages((prev) => {
+      const copy = [...prev];
+      for (let i = copy.length - 1; i >= 0; i--) {
+        if (copy[i].kind === 'plan') {
+          const msg = copy[i] as Extract<DisplayMessage, { kind: 'plan' }>;
+          copy[i] = { ...msg, tasks: mutate(msg.tasks) };
+          break;
+        }
+      }
+      return copy;
+    });
+  }, []);
+
+  // Translate the agent's event stream into the panel's display messages.
+  const handleAgentEvent = useCallback(
+    (ev: AgentEvent) => {
+      switch (ev.type) {
+        case 'plan':
+          appendDisplay({ kind: 'plan', tasks: ev.tasks });
+          break;
+        case 'task-start':
+          updatePlan((tasks) =>
+            tasks.map((t) => (t.id === ev.taskId ? { ...t, status: 'running' } : t))
+          );
+          break;
+        case 'task-tool':
+          if (ev.status === 'running')
+            appendDisplay({ kind: 'tool_step', toolName: ev.tool, status: 'running' });
+          else updateLastToolStep(ev.status);
+          break;
+        case 'task-end':
+          updatePlan((tasks) =>
+            tasks.map((t) => (t.id === ev.taskId ? { ...t, status: ev.status } : t))
+          );
+          break;
+        case 'reflect':
+          if (ev.note) appendDisplay({ kind: 'assistant', text: ev.note });
+          if (ev.addedTasks.length) updatePlan((tasks) => [...tasks, ...ev.addedTasks]);
+          break;
+        case 'error':
+          appendDisplay({ kind: 'error', text: ev.message });
+          break;
+        // 'done' → the summary is appended by the caller.
+      }
+    },
+    [appendDisplay, updateLastToolStep, updatePlan]
+  );
+
   const saveKey = useCallback(() => {
     const trimmed = keyDraft.trim();
     if (!trimmed) return;
@@ -395,7 +498,26 @@ export function DocOpsPanel({
       abortRef.current = ctrl;
 
       try {
-        if (transport.drivesLoop) {
+        if (agentMode && !transport.drivesLoop) {
+          // ── Agent mode: plan → execute → reflect ─────────────────────────
+          // The panel-driven agent decomposes the goal, runs each sub-task
+          // through the tool loop, and reflects. Built-in DocOps tools plus any
+          // external MCP tools flow through one ToolRegistry.
+          const registry = createAgentRegistry(bridge);
+          const llm = transportLlm(transport, { model: MODEL, apiKey: apiKey || undefined });
+          const result = await runAgent(
+            text,
+            { llm, registry },
+            { signal: ctrl.signal, onEvent: handleAgentEvent }
+          );
+          if (result.summary) {
+            appendDisplay({ kind: 'assistant', text: result.summary });
+            historyRef.current = [
+              ...historyRef.current,
+              { role: 'assistant', content: result.summary },
+            ];
+          }
+        } else if (transport.drivesLoop) {
           // ── Collab transport: server holds the LLM loop ──────────────────
           // tool_call messages are routed back over WS; we execute via
           // DocsBridge and return the results to the server.
@@ -546,7 +668,17 @@ export function DocOpsPanel({
         abortRef.current = null;
       }
     },
-    [inputValue, busy, apiKey, transport, bridge, appendDisplay, updateLastToolStep]
+    [
+      inputValue,
+      busy,
+      apiKey,
+      transport,
+      bridge,
+      appendDisplay,
+      updateLastToolStep,
+      agentMode,
+      handleAgentEvent,
+    ]
   );
 
   // Quick actions bypass the tool-calling loop. A small local model can't
@@ -771,6 +903,25 @@ export function DocOpsPanel({
                   ))}
                 </div>
               )}
+              {!transport.drivesLoop && (
+                <div style={agentToggleRowStyle}>
+                  <button
+                    type="button"
+                    onClick={() => setAgentMode((v) => !v)}
+                    style={agentToggleStyle(agentMode)}
+                    data-testid="docops-agent-toggle"
+                    title={
+                      agentMode
+                        ? 'Agent mode — plans, executes, and reviews multi-step tasks'
+                        : 'Chat mode — single reply'
+                    }
+                    disabled={busy}
+                  >
+                    <MaterialSymbol name="smart_toy" size={13} />
+                    {agentMode ? 'Agent' : 'Chat'}
+                  </button>
+                </div>
+              )}
               <div style={inputRowStyle}>
                 <textarea
                   value={inputValue}
@@ -924,6 +1075,27 @@ export function DocOpsPanel({
                 return (
                   <div key={i} style={msgCapStyle}>
                     Stopped after {msg.rounds} tool steps — send another message to continue.
+                  </div>
+                );
+              }
+              if (msg.kind === 'plan') {
+                return (
+                  <div key={i} style={msgPlanStyle} data-testid="docops-plan">
+                    <div style={msgPlanTitleStyle}>Plan</div>
+                    {msg.tasks.map((t) => (
+                      <div key={t.id} style={msgPlanTaskStyle}>
+                        {t.status === 'running' ? (
+                          <span style={spinnerStyle} aria-hidden="true" />
+                        ) : t.status === 'done' ? (
+                          <MaterialSymbol name="check" size={12} />
+                        ) : t.status === 'failed' ? (
+                          <MaterialSymbol name="close" size={12} />
+                        ) : (
+                          <MaterialSymbol name="radio_button_unchecked" size={12} />
+                        )}
+                        <span style={{ opacity: t.status === 'pending' ? 0.6 : 1 }}>{t.title}</span>
+                      </div>
+                    ))}
                   </div>
                 );
               }
