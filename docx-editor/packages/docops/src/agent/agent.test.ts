@@ -116,6 +116,22 @@ describe('runAgent (plan → execute → reflect)', () => {
     expect(result.tasks.some((t) => t.title === 'Fix the leftover issue')).toBe(true);
   });
 
+  it('stops a task that repeats the identical tool call (loop guard)', async () => {
+    const toolCalls: string[] = [];
+    const registry = registryWith(['get_outline'], toolCalls);
+    // The executor emits the SAME call every round; scriptedLlm repeats the last
+    // response, so without the guard it would run all maxRoundsPerTask rounds.
+    const { llm } = scriptedLlm([
+      plan('Read the outline'),
+      callTool('get_outline'),
+      callTool('get_outline'),
+      reflection(true),
+    ]);
+    await runAgent('Goal', { llm, registry }, { maxRoundsPerTask: 6 });
+    // Executed once, then the guard broke the loop — not 6 identical calls.
+    expect(toolCalls).toEqual(['get_outline']);
+  });
+
   it('feeds the planning context snapshot to the planner', async () => {
     const registry = registryWith(['rewrite_selection']);
     let planMsg = '';
