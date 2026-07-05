@@ -74,4 +74,44 @@ describe('HttpMcpTransport ↔ McpServer over HTTP', () => {
     const tools = await client.listTools();
     expect(tools).toHaveLength(1);
   });
+
+  it('reads a streaming text/event-stream body incrementally (chunked)', async () => {
+    const prov = provider([]);
+    let reply = '';
+    let serverHandler: ((m: string) => void) | null = null;
+    const t: JsonRpcTransport = {
+      send: (m) => {
+        reply = m;
+      },
+      onMessage: (h) => {
+        serverHandler = h;
+      },
+    };
+    // eslint-disable-next-line no-new
+    new McpServer(t, prov);
+    const streamingFetch = (async (_url: string, init: { body?: string }) => {
+      reply = '';
+      serverHandler?.(String(init.body));
+      await new Promise((r) => setTimeout(r, 5));
+      const frame = `event: message\ndata: ${reply}\n\n`;
+      const enc = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          // Split mid-frame to prove incremental parsing, not buffering.
+          controller.enqueue(enc.encode(frame.slice(0, 12)));
+          controller.enqueue(enc.encode(frame.slice(12)));
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    }) as unknown as typeof fetch;
+
+    const transport = new HttpMcpTransport('http://mcp.test/rpc', { fetchImpl: streamingFetch });
+    const client = new McpClient(transport, { id: 'mcp:stream' });
+    const tools = await client.listTools();
+    expect(tools).toHaveLength(1);
+  });
 });
