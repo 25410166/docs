@@ -77,16 +77,12 @@ const executorSystem = (goal: string, task: string): string =>
 Overall goal: ${goal}
 Your current step: ${task}
 
-You accomplish the step ONLY by calling tools — you cannot edit the document any other way. NEVER claim an edit is done without calling the tool that performs it.
+You accomplish the step ONLY by calling the provided tools (function calling) — you cannot edit the document any other way. NEVER describe an edit in prose instead of calling the tool, and never claim an edit is done without calling the tool that performs it.
 
 Procedure:
-1. First call a read tool (get_outline, get_selection, or find_text) to locate the target.
+1. First call a read tool (search_document, get_outline, get_selection, or find_text) to locate the target.
 2. Then call the write tool that makes the change (e.g. rewrite_selection, insert_paragraph_after, set_paragraph_style).
-Emit each call as:
-<tool_call>
-{"name": "<tool>", "arguments": { ... }}
-</tool_call>
-Do NOT describe the edit in prose instead of calling the tool. Only after a write tool returns success may you reply with a one-line confirmation and stop. Do not start other steps.`;
+Only after a write tool returns success may you reply with a one-line confirmation and stop. Do not start other steps.`;
 
 // ── Small helpers ───────────────────────────────────────────────────────────
 
@@ -188,7 +184,13 @@ export async function runAgent(
       if (cursor >= tasks.length && reflections < maxReflections && !aborted()) {
         reflections += 1;
         const verdict = await reflect(goal, executionLog, llm, signal);
-        const added = verdict.remaining.slice(0, maxTasks - tasks.length).map(makeTask);
+        // Dedup corrective tasks against work already planned/done so reflection
+        // can't re-queue a step that's already been executed.
+        const existing = new Set(tasks.map((t) => t.title.trim().toLowerCase()));
+        const added = verdict.remaining
+          .filter((title) => !existing.has(title.trim().toLowerCase()))
+          .slice(0, maxTasks - tasks.length)
+          .map(makeTask);
         tasks.push(...added);
         emit({
           type: 'reflect',
@@ -230,7 +232,9 @@ async function executeTask(
   registry: ToolRegistry,
   opts: { maxRounds: number; signal?: AbortSignal; emit: (e: AgentEvent) => void }
 ): Promise<TaskOutcome> {
-  const tools = await registry.tools();
+  // Never expose create_document to a sub-task executor — it REPLACES the whole
+  // document. Only the planner's explicit create path should reach it.
+  const tools = (await registry.tools()).filter((t) => t.name !== 'create_document');
   const messages: LlmMessage[] = [{ role: 'user', content: task.title }];
   const changed: string[] = [];
   let lastError: string | undefined;
@@ -281,9 +285,15 @@ async function executeTask(
     messages.push({ role: 'user', content: results });
   }
 
-  // A task is a failure only if it attempted tools and every one errored.
-  const failed = attemptedTools > 0 && failedTools === attemptedTools;
-  return { changed, failed, error: failed ? lastError : undefined };
+  // A task did nothing useful if it made ZERO tool calls (the model narrated
+  // instead of acting) or every call errored — treat both as failed so
+  // reflection can re-queue corrective work instead of reporting false success.
+  const failed = attemptedTools === 0 || failedTools === attemptedTools;
+  return {
+    changed,
+    failed,
+    error: failed ? (lastError ?? 'The step produced no tool call.') : undefined,
+  };
 }
 
 /** Reflection pass: did we meet the goal, and what's left? */
@@ -307,6 +317,13 @@ async function reflect(
   const call = toolUses(resp.content).find((t) => t.name === 'submit_reflection');
   const goalMet = call?.input?.goalMet === true;
   const note = typeof call?.input?.note === 'string' ? (call.input.note as string) : '';
-  const remaining = goalMet ? [] : parseTasks(resp.content, 'submit_reflection');
+  // Only accept STRUCTURED corrective tasks from the tool call. Never fall back
+  // to splitting the prose verdict into tasks — that turned a sentence like
+  // "the summary looks good" into executable garbage steps.
+  const rawRemaining = (call?.input?.remainingTasks ?? call?.input?.tasks) as unknown;
+  const remaining =
+    goalMet || !Array.isArray(rawRemaining)
+      ? []
+      : rawRemaining.map((t) => String(t).trim()).filter(Boolean);
   return { goalMet, note, remaining };
 }
