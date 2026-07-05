@@ -307,4 +307,74 @@ test.describe('DocOpsPanel SSE streaming', () => {
     await toggle.click();
     await expect(toggle).toHaveText(/Agent/);
   });
+
+  test('connects an external MCP server and shows its tool count', async ({ page }) => {
+    await page.addInitScript(
+      ({ k, editorKey, panelKey }) => {
+        (window as any).__casualFeatures__ = { docops: true };
+        try {
+          localStorage.setItem(editorKey, k);
+        } catch {
+          /* ignore */
+        }
+        try {
+          localStorage.setItem(panelKey, k);
+        } catch {
+          /* ignore */
+        }
+      },
+      { k: FAKE_KEY, editorKey: DOCX_EDITOR_AI_KEY, panelKey: DOCOPS_PANEL_KEY }
+    );
+
+    // Mock a Streamable-HTTP MCP server: reply to initialize + tools/list.
+    await page.route('**/mcp-test/rpc', async (route) => {
+      const body = JSON.parse(route.request().postData() || '{}');
+      if (body.id === undefined) {
+        await route.fulfill({ status: 202, body: '' }); // notification
+        return;
+      }
+      const result =
+        body.method === 'initialize'
+          ? {
+              protocolVersion: '2025-06-18',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'mock', version: '1' },
+            }
+          : body.method === 'tools/list'
+            ? {
+                tools: [
+                  {
+                    name: 'web_search',
+                    description: 'Search',
+                    inputSchema: { type: 'object', properties: {} },
+                  },
+                ],
+              }
+            : {};
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result }),
+      });
+    });
+
+    await loadEditor(page);
+
+    const docopsBtn = page.locator('[data-testid="rail-docops"]');
+    if (!(await docopsBtn.isVisible())) {
+      test.skip(true, 'DocOps rail button not present');
+      return;
+    }
+    await docopsBtn.click();
+    await page.waitForSelector('[data-testid="docops-input"]', { timeout: 5000 });
+
+    await page.locator('[data-testid="docops-agent-toggle"]').click();
+    await page.locator('[data-testid="docops-mcp-add"]').click();
+    await page.locator('[data-testid="docops-mcp-input"]').fill('http://localhost/mcp-test/rpc');
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('[data-testid="docops-mcp-section"]')).toContainText('1 tools', {
+      timeout: 8000,
+    });
+  });
 });

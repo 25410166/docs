@@ -11,6 +11,8 @@
 
 import {
   DOCOPS_CATALOG,
+  HttpMcpTransport,
+  McpClient,
   ToolRegistry,
   type LlmFn,
   type LlmResponse,
@@ -26,6 +28,20 @@ export function bridgeToolSource(bridge: DocsBridge): ToolSource {
     listTools: () => DOCOPS_CATALOG,
     callTool: (name, args) => bridge.callTool(name, args),
   };
+}
+
+/**
+ * Connect to an external MCP server over Streamable HTTP and return it as a
+ * ToolSource (McpClient). `id` namespaces it in the registry (e.g. 'mcp:search').
+ * Call `.listTools()` on the result to verify the server is reachable before
+ * registering it.
+ */
+export function createMcpClient(
+  url: string,
+  id: string,
+  headers?: Record<string, string>
+): McpClient {
+  return new McpClient(new HttpMcpTransport(url, { headers }), { id });
 }
 
 /**
