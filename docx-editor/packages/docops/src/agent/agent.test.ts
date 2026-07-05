@@ -116,6 +116,27 @@ describe('runAgent (plan → execute → reflect)', () => {
     expect(result.tasks.some((t) => t.title === 'Fix the leftover issue')).toBe(true);
   });
 
+  it('feeds the planning context snapshot to the planner', async () => {
+    const registry = registryWith(['rewrite_selection']);
+    let planMsg = '';
+    let call = 0;
+    const llm: LlmFn = async ({ messages }) => {
+      if (call++ === 0) {
+        const c = messages[0].content;
+        planMsg = typeof c === 'string' ? c : '';
+        return plan('Do X');
+      }
+      return finish('done');
+    };
+    await runAgent(
+      'Summarize the document',
+      { llm, registry },
+      { planningContext: 'H1: Introduction\nH2: Methods' }
+    );
+    expect(planMsg).toContain('H2: Methods');
+    expect(planMsg).toContain('Summarize the document');
+  });
+
   it('marks a step that calls no tool as failed, not done (no false success)', async () => {
     const registry = registryWith(['rewrite_selection']);
     // The executor narrates without calling any tool, then reflection claims met.

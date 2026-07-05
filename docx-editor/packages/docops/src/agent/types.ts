@@ -81,4 +81,11 @@ export interface AgentOptions {
   maxReflections?: number;
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => void;
+  /**
+   * A short snapshot of the document/workbook (e.g. the heading outline or sheet
+   * summary) given to the PLANNER so it decomposes the goal against real
+   * structure instead of guessing — without it, a "summarize" goal can be
+   * planned as edit sub-tasks. Keep it small (well under the context budget).
+   */
+  planningContext?: string;
 }
