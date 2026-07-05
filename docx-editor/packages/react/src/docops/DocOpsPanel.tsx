@@ -692,7 +692,8 @@ export function DocOpsPanel({
           let planningContext: string | undefined;
           try {
             const outline = await bridge.callTool('get_outline', {});
-            if (outline.ok && outline.data) planningContext = JSON.stringify(outline.data).slice(0, 1500);
+            if (outline.ok && outline.data)
+              planningContext = JSON.stringify(outline.data).slice(0, 1500);
           } catch {
             /* outline is best-effort context */
           }
