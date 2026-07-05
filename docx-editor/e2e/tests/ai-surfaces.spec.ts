@@ -24,9 +24,26 @@
  */
 
 import { expect, Page, test } from '@playwright/test';
+import { EditorPage } from '../helpers/editor-page';
+
+/**
+ * Reliable editor selection for headless: type via the editor, then set the PM
+ * selection through the `?e2e=1` editor ref. Raw `keyboard.press('Control+A')`
+ * does not register a ProseMirror selection in headless Chromium (the editing
+ * view is off-screen), so the on-selection pill never opens.
+ */
+async function typeAndSelect(page: Page, text: string): Promise<void> {
+  const editor = new EditorPage(page);
+  await editor.typeText(text);
+  const ok = await editor.selectText(text);
+  expect(ok).toBe(true);
+  await page.waitForTimeout(120);
+}
 
 // Key checked by DocxEditor to enable the SelectionAskAi pill (web path).
-const DOCX_EDITOR_AI_KEY = 'docops-api-key';
+// Unified with the panel's key: DocxEditor now reads API_KEY_STORAGE, the same
+// 'casual_docops_api_key' the panel writes (previously a divergent literal).
+const DOCX_EDITOR_AI_KEY = 'casual_docops_api_key';
 // Key checked by DocOpsPanel to skip the key-setup screen.
 const DOCOPS_PANEL_KEY = 'casual_docops_api_key';
 const FAKE_KEY = 'sk-ant-test-fake-key';
@@ -41,9 +58,16 @@ async function loadEditor(page: Page) {
 
 test.describe('SelectionAskAi pill', () => {
   test('hidden when no text is selected — web transport', async ({ page }) => {
-    await page.addInitScript(({ k, s }) => {
-      try { localStorage.setItem(s, k); } catch { /* ignore */ }
-    }, { k: FAKE_KEY, s: DOCX_EDITOR_AI_KEY });
+    await page.addInitScript(
+      ({ k, s }) => {
+        try {
+          localStorage.setItem(s, k);
+        } catch {
+          /* ignore */
+        }
+      },
+      { k: FAKE_KEY, s: DOCX_EDITOR_AI_KEY }
+    );
     await loadEditor(page);
 
     const pill = page.locator('[data-testid="selection-ask-ai-pill"]');
@@ -51,15 +75,19 @@ test.describe('SelectionAskAi pill', () => {
   });
 
   test('appears after selecting text — web transport with saved key', async ({ page }) => {
-    await page.addInitScript(({ k, s }) => {
-      try { localStorage.setItem(s, k); } catch { /* ignore */ }
-    }, { k: FAKE_KEY, s: DOCX_EDITOR_AI_KEY });
+    await page.addInitScript(
+      ({ k, s }) => {
+        try {
+          localStorage.setItem(s, k);
+        } catch {
+          /* ignore */
+        }
+      },
+      { k: FAKE_KEY, s: DOCX_EDITOR_AI_KEY }
+    );
     await loadEditor(page);
 
-    await page.locator('.paged-editor__pages').click();
-    await page.keyboard.type('Hello world');
-    await page.keyboard.press('Control+A');
-    await page.waitForTimeout(150);
+    await typeAndSelect(page, 'Hello world');
 
     await expect(page.locator('[data-testid="selection-ask-ai-pill"]')).toBeVisible();
   });
@@ -74,10 +102,7 @@ test.describe('SelectionAskAi pill', () => {
     });
     await loadEditor(page);
 
-    await page.locator('.paged-editor__pages').click();
-    await page.keyboard.type('Some text');
-    await page.keyboard.press('Control+A');
-    await page.waitForTimeout(150);
+    await typeAndSelect(page, 'Some text');
 
     await expect(page.locator('[data-testid="selection-ask-ai-pill"]')).not.toBeVisible();
   });
@@ -100,10 +125,7 @@ test.describe('SelectionAskAi pill', () => {
     });
     await loadEditor(page);
 
-    await page.locator('.paged-editor__pages').click();
-    await page.keyboard.type('AI gated text');
-    await page.keyboard.press('Control+A');
-    await page.waitForTimeout(150);
+    await typeAndSelect(page, 'AI gated text');
 
     await expect(page.locator('[data-testid="selection-ask-ai-pill"]')).not.toBeVisible();
 
@@ -118,19 +140,30 @@ test.describe('SelectionAskAi pill', () => {
     });
     await page.waitForTimeout(100);
 
+    // Re-select now that AI is enabled: the selection handler ignores selection
+    // changes while aiEnabled is false, so the pill only opens on a selection
+    // that occurs after the model becomes available.
+    const editor = new EditorPage(page);
+    await editor.selectText('AI gated text');
+    await page.waitForTimeout(150);
+
     await expect(page.locator('[data-testid="selection-ask-ai-pill"]')).toBeVisible();
   });
 
   test('pill closes on Escape', async ({ page }) => {
-    await page.addInitScript(({ k, s }) => {
-      try { localStorage.setItem(s, k); } catch { /* ignore */ }
-    }, { k: FAKE_KEY, s: DOCX_EDITOR_AI_KEY });
+    await page.addInitScript(
+      ({ k, s }) => {
+        try {
+          localStorage.setItem(s, k);
+        } catch {
+          /* ignore */
+        }
+      },
+      { k: FAKE_KEY, s: DOCX_EDITOR_AI_KEY }
+    );
     await loadEditor(page);
 
-    await page.locator('.paged-editor__pages').click();
-    await page.keyboard.type('Escape test');
-    await page.keyboard.press('Control+A');
-    await page.waitForTimeout(150);
+    await typeAndSelect(page, 'Escape test');
 
     const pill = page.locator('[data-testid="selection-ask-ai-pill"]');
     await expect(pill).toBeVisible();
@@ -148,7 +181,11 @@ test.describe('DocOpsPanel SSE streaming', () => {
     // Enable DocOps feature flag but leave no API key.
     await page.addInitScript((panelKey) => {
       (window as any).__casualFeatures__ = { docops: true };
-      try { localStorage.removeItem(panelKey); } catch { /* ignore */ }
+      try {
+        localStorage.removeItem(panelKey);
+      } catch {
+        /* ignore */
+      }
     }, DOCOPS_PANEL_KEY);
     await loadEditor(page);
 
@@ -163,13 +200,24 @@ test.describe('DocOpsPanel SSE streaming', () => {
   });
 
   test('in-flight streaming tokens commit to message on completion', async ({ page }) => {
-    await page.addInitScript(({ k, editorKey, panelKey }) => {
-      (window as any).__casualFeatures__ = { docops: true };
-      // editorKey enables aiEnabled in DocxEditor (gates the pill + DocOps button).
-      // panelKey bypasses the key-setup screen inside DocOpsPanel itself.
-      try { localStorage.setItem(editorKey, k); } catch { /* ignore */ }
-      try { localStorage.setItem(panelKey, k); } catch { /* ignore */ }
-    }, { k: FAKE_KEY, editorKey: DOCX_EDITOR_AI_KEY, panelKey: DOCOPS_PANEL_KEY });
+    await page.addInitScript(
+      ({ k, editorKey, panelKey }) => {
+        (window as any).__casualFeatures__ = { docops: true };
+        // editorKey enables aiEnabled in DocxEditor (gates the pill + DocOps button).
+        // panelKey bypasses the key-setup screen inside DocOpsPanel itself.
+        try {
+          localStorage.setItem(editorKey, k);
+        } catch {
+          /* ignore */
+        }
+        try {
+          localStorage.setItem(panelKey, k);
+        } catch {
+          /* ignore */
+        }
+      },
+      { k: FAKE_KEY, editorKey: DOCX_EDITOR_AI_KEY, panelKey: DOCOPS_PANEL_KEY }
+    );
     await loadEditor(page);
 
     // Intercept Anthropic fetch — return a minimal SSE stream.
@@ -222,5 +270,41 @@ test.describe('DocOpsPanel SSE streaming', () => {
     await expect(page.locator('[data-testid="docops-messages"]')).toContainText('Hello world', {
       timeout: 8000,
     });
+  });
+
+  test('agent-mode toggle renders and flips Chat ↔ Agent', async ({ page }) => {
+    await page.addInitScript(
+      ({ k, editorKey, panelKey }) => {
+        (window as any).__casualFeatures__ = { docops: true };
+        try {
+          localStorage.setItem(editorKey, k);
+        } catch {
+          /* ignore */
+        }
+        try {
+          localStorage.setItem(panelKey, k);
+        } catch {
+          /* ignore */
+        }
+      },
+      { k: FAKE_KEY, editorKey: DOCX_EDITOR_AI_KEY, panelKey: DOCOPS_PANEL_KEY }
+    );
+    await loadEditor(page);
+
+    const docopsBtn = page.locator('[data-testid="rail-docops"]');
+    if (!(await docopsBtn.isVisible())) {
+      test.skip(true, 'DocOps rail button not present');
+      return;
+    }
+    await docopsBtn.click();
+    await page.waitForSelector('[data-testid="docops-input"]', { timeout: 5000 });
+
+    // DirectTransport does not drive its own loop, so the toggle is available
+    // and defaults to Chat (single-shot).
+    const toggle = page.locator('[data-testid="docops-agent-toggle"]');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveText(/Chat/);
+    await toggle.click();
+    await expect(toggle).toHaveText(/Agent/);
   });
 });

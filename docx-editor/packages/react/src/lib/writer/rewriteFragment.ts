@@ -56,14 +56,53 @@ function buildPrompt(task: WriterTask, text: string, opts: RewriteOptions): stri
 }
 
 /**
+ * Generate replacement text for one text leaf. Receives the leaf's
+ * current text and returns the rewritten text. Return the input
+ * unchanged (or empty) to keep the original.
+ */
+export type LeafRewriter = (text: string, signal?: AbortSignal) => Promise<string>;
+
+/**
  * Walk every text leaf inside `fragment` and replace its text with
- * the model's response, keeping the node's marks intact. Block
- * structure (paragraphs, headings, list items, tables) passes
- * through via `node.copy(newContent)` — the same recipe
- * `translateFragment` uses.
+ * `generate(text)`, keeping the node's marks intact. Block structure
+ * (paragraphs, headings, list items, tables) passes through via
+ * `node.copy(newContent)` — the same recipe `translateFragment` uses.
+ * This is what preserves headings/bold/italic/lists/tables instead of
+ * collapsing a rich selection into a single plain paragraph.
  *
- * Rejects on the first model error so the caller can surface it
- * without leaving the popover in a half-applied state.
+ * Non-text leaves (images, etc.) pass through untouched.
+ *
+ * Rejects on the first `generate` error so the caller can surface it
+ * without leaving the selection in a half-applied state.
+ */
+export async function rewriteFragmentWith(
+  fragment: Fragment,
+  schema: Schema,
+  generate: LeafRewriter,
+  signal?: AbortSignal
+): Promise<Fragment> {
+  const children: ProseMirrorNode[] = [];
+  for (let i = 0; i < fragment.childCount; i++) {
+    const node = fragment.child(i);
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    if (node.isText && node.text) {
+      const out = await generate(node.text, signal);
+      const cleaned = (out ?? '').trim() || node.text;
+      children.push(schema.text(cleaned, node.marks));
+    } else if (node.isLeaf) {
+      children.push(node);
+    } else {
+      const newContent = await rewriteFragmentWith(node.content, schema, generate, signal);
+      children.push(node.copy(newContent));
+    }
+  }
+  return Fragment.fromArray(children);
+}
+
+/**
+ * Rewrite a fragment via the in-browser WebLLM "writer" worker,
+ * preserving node + mark structure. Thin wrapper over
+ * `rewriteFragmentWith` that builds the flan-t5-style prompt per leaf.
  */
 export async function rewriteFragment(
   fragment: Fragment,
@@ -72,23 +111,12 @@ export async function rewriteFragment(
   opts: RewriteOptions,
   signal?: AbortSignal
 ): Promise<Fragment> {
-  const children: ProseMirrorNode[] = [];
-  for (let i = 0; i < fragment.childCount; i++) {
-    const node = fragment.child(i);
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    if (node.isText && node.text) {
-      const prompt = buildPrompt(task, node.text, opts);
-      const out = await runTask(task, prompt, signal);
-      const cleaned = (out ?? '').trim() || node.text;
-      children.push(schema.text(cleaned, node.marks));
-    } else if (node.isLeaf) {
-      children.push(node);
-    } else {
-      const newContent = await rewriteFragment(node.content, schema, task, opts, signal);
-      children.push(node.copy(newContent));
-    }
-  }
-  return Fragment.fromArray(children);
+  return rewriteFragmentWith(
+    fragment,
+    schema,
+    (text, sig) => runTask(task, buildPrompt(task, text, opts), sig),
+    signal
+  );
 }
 
 /**

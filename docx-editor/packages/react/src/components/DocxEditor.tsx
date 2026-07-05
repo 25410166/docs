@@ -69,8 +69,12 @@ import {
   DocsBridge,
   isDocOpsEnabled,
   createDocOpsTransport,
+  isDesktopShell,
+  callNativeText,
+  API_KEY_STORAGE,
   type DocsBridgeActions,
 } from '../docops';
+import { markdownToFragment } from '../lib/writer/markdownToFragment';
 import { AutosaveRestoreBanner } from './AutosaveRestoreBanner';
 import { writeAutosave, clearLegacyLocalStorageAutosave } from '../utils/autosave';
 import { restoreNativeBuildingBlocks } from '../utils/buildingBlocks';
@@ -252,7 +256,7 @@ import { getGrammarCheckerImpl, isGrammarEnabled, setGrammarEnabled } from '../l
 import { SpellSuggestionsMenu } from './SpellSuggestionsMenu';
 import { GrammarSuggestionsMenu } from './GrammarSuggestionsMenu';
 import { bootWriterController, useWriterState } from '../lib/writer/controller';
-import { rewriteFragment, sampleContext } from '../lib/writer/rewriteFragment';
+import { rewriteFragment, rewriteFragmentWith, sampleContext } from '../lib/writer/rewriteFragment';
 import {
   applyFragmentAsSuggestion,
   applyInsertAsSuggestion,
@@ -2951,7 +2955,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       setAiEnabled(true);
     } else {
       // Direct transport: check for a saved key (same storage key as DocOpsPanel).
-      setAiEnabled(!!localStorage.getItem('docops-api-key'));
+      setAiEnabled(!!localStorage.getItem(API_KEY_STORAGE));
     }
   }, [docopsTransport]);
   useEffect(() => {
@@ -6038,9 +6042,59 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         prev ? { ...prev, busy: true, suggestion: null, error: null, inferenceMs: null } : prev
       );
       try {
+        const startedAt = Date.now();
+
+        // Desktop: the browser WebLLM "writer" tier is never loaded, so route
+        // to the native model the user loaded (via docops_llm_call). Produce
+        // the same source→suggestion card the web path does.
+        if (isDesktopShell()) {
+          const NATIVE_TONE_HINT: Record<AIToneId, string> = {
+            polish: 'more polished, clear, and well-written',
+            concise: 'more concise',
+            formal: 'more formal',
+            casual: 'more casual and conversational',
+            shorter: 'shorter and tighter',
+            longer: 'more detailed and expanded',
+          };
+          const system =
+            mode === 'rewrite'
+              ? `You are a precise writing assistant. Rewrite the text the user sends to be ${NATIVE_TONE_HINT[tone]}. Preserve the original meaning and any key facts. Return ONLY the rewritten text — no preamble, no quotation marks, no commentary.`
+              : `You are a precise writing assistant. Summarize the text the user sends clearly and concisely. Return ONLY the summary — no preamble, no quotation marks, no commentary.`;
+          // Walk the rich selection leaf-by-leaf so headings, bold/italic,
+          // lists, and tables survive — instead of flattening to plain text and
+          // rebuilding a single paragraph (which nuked all formatting). Marks
+          // and block structure are carried through by rewriteFragmentWith.
+          const slice = view.state.doc.slice(range.from, range.to);
+          const transformed = await rewriteFragmentWith(
+            slice.content,
+            view.state.schema,
+            async (leafText) => {
+              const raw = await callNativeText(system, leafText, { maxTokens: 1024 });
+              return stripModelPreamble(raw).trim();
+            },
+            controller.signal
+          );
+          if (controller.signal.aborted) return;
+          let text = '';
+          for (let i = 0; i < transformed.childCount; i++) text += transformed.child(i).textContent;
+          text = text.trim();
+          // Stash the transformed fragment so Accept can replay it.
+          aiFragmentRef.current = transformed;
+          setAiSuggestion((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  suggestion: text || prev.original,
+                  inferenceMs: Date.now() - startedAt,
+                  busy: false,
+                }
+              : prev
+          );
+          return;
+        }
+
         const slice = view.state.doc.slice(range.from, range.to);
         const ctx = sampleContext(view.state.doc, range.from, range.to);
-        const startedAt = Date.now();
         const transformed = await rewriteFragment(
           slice.content,
           view.state.schema,
@@ -6074,11 +6128,13 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       } catch (err) {
         if (controller.signal.aborted) return;
         const e = err as Error;
-        const msg = e.message?.includes('No model is loaded')
-          ? mode === 'rewrite'
-            ? 'Enable Tone & style rewrite in the Writing Assistant first.'
-            : 'Enable Summarize selection in the Writing Assistant first.'
-          : (e.message ?? 'Inference failed.');
+        const msg = isDesktopShell()
+          ? (e.message ?? 'Inference failed.')
+          : e.message?.includes('No model is loaded')
+            ? mode === 'rewrite'
+              ? 'Enable Tone & style rewrite in the Writing Assistant first.'
+              : 'Enable Summarize selection in the Writing Assistant first.'
+            : (e.message ?? 'Inference failed.');
         setAiSuggestion((prev) => (prev ? { ...prev, busy: false, error: msg } : prev));
       }
     },
@@ -6098,9 +6154,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       // Accept replays exactly the span the user picked, even if the
       // cursor moves while the panel is open.
       // Close any other right panel so the suggestion gets the slot.
-      setShowWritingAssistant(false);
-      setShowChatPanel(false);
-      setShowVersionHistory(false);
+      openRightPanel('aiSuggestion');
       setAiSuggestion({
         mode,
         from,
@@ -6114,7 +6168,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       });
       void runAiSuggestion(mode, 'polish', { from, to });
     },
-    [getActiveEditorView, runAiSuggestion]
+    [getActiveEditorView, runAiSuggestion, openRightPanel]
   );
 
   const handleAiAccept = useCallback(() => {
@@ -7934,8 +7988,9 @@ body { background: white; }
           tr = tr.addMark(textFrom, textTo, deletionMark);
         }
         if (!isDeletion) {
-          const insertedNode = schema.text(options.replaceWith, [insertionMark]);
-          tr = tr.insert(textTo, insertedNode);
+          const fragment = markdownToFragment(options.replaceWith, schema, [insertionMark]);
+          if (fragment.childCount === 0) return false;
+          tr = tr.insert(textTo, fragment);
         }
 
         if (isInsertion && isDeletion) return false; // nothing to do
@@ -8259,8 +8314,9 @@ body { background: white; }
 
         let tr = view.state.tr;
         tr = tr.addMark(from, to, deletionMark);
-        const insertedNode = schema.text(options.newText, [insertionMark]);
-        tr = tr.insert(to, insertedNode);
+        const fragment = markdownToFragment(options.newText, schema, [insertionMark]);
+        if (fragment.childCount === 0) return false;
+        tr = tr.insert(to, fragment);
 
         view.dispatch(tr);
         setShowCommentsSidebar(true);
@@ -10657,7 +10713,7 @@ body { background: white; }
                 proposal goes into the inline preview popover (same
                 surface as chat-driven proposals). */}
             <SelectionAskAi
-              isOpen={hasTextSelection && aiEnabled}
+              isOpen={hasTextSelection && aiEnabled && !aiSuggestion && !showDocOpsPanel}
               getView={() => getActiveEditorView() ?? null}
               busy={askAiBusy}
               onDismiss={() => setHasTextSelection(false)}
@@ -10665,6 +10721,44 @@ body { background: white; }
                 const view = getActiveEditorView();
                 if (!view) return;
                 const schema = view.state.schema;
+
+                // Desktop: the WebLLM pipeline is unavailable. Route the
+                // free-form instruction to the native model and surface the
+                // result as an accept/reject suggestion over the selection.
+                if (isDesktopShell()) {
+                  const { from, to } = view.state.selection;
+                  const selText =
+                    capturedSelectionText ||
+                    (from !== to ? view.state.doc.textBetween(from, to, '\n', ' ') : '');
+                  setAskAiBusy(true);
+                  const system =
+                    'You are a writing assistant inside a document editor. The user selected some text and gave an instruction. Apply the instruction to the selected text and return ONLY the resulting replacement text — no preamble, no quotation marks, no commentary.';
+                  const userMsg = `Instruction: ${promptText}\n\nSelected text:\n${selText}`;
+                  void callNativeText(system, userMsg, { maxTokens: 1024 })
+                    .then((raw) => {
+                      const text = stripModelPreamble(raw).trim();
+                      if (!text) {
+                        toast.error('The model returned an empty response.');
+                        return;
+                      }
+                      aiFragmentRef.current = markdownToFragment(text, schema);
+                      setAiSuggestion({
+                        mode: 'rewrite',
+                        from,
+                        to,
+                        original: selText,
+                        suggestion: text,
+                        inferenceMs: null,
+                        tone: 'polish',
+                        busy: false,
+                        error: null,
+                      });
+                    })
+                    .catch((err) => toast.error(`AI request failed: ${(err as Error).message}`))
+                    .finally(() => setAskAiBusy(false));
+                  return;
+                }
+
                 setAskAiBusy(true);
                 void runPipeline(
                   {

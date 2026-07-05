@@ -20,7 +20,8 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { RightDockPanel } from '../components/RightDockPanel';
 import { MaterialSymbol } from '../components/ui/Icons';
 import type { DocsBridge } from './bridge';
-import { DOCOPS_CATALOG } from '@casualoffice/docops';
+import { DOCOPS_CATALOG, runAgent, type AgentEvent, type AgentTask } from '@casualoffice/docops';
+import { createAgentRegistry, transportLlm } from './agentRuntime';
 import {
   DirectTransport,
   type DocOpsTransport,
@@ -52,43 +53,43 @@ type DisplayMessage =
   | { kind: 'assistant'; text: string }
   | { kind: 'tool_step'; toolName: string; status: 'running' | 'done' | 'error' }
   | { kind: 'error'; text: string }
-  | { kind: 'cap'; rounds: number };
+  | { kind: 'cap'; rounds: number }
+  | { kind: 'plan'; tasks: AgentTask[] };
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
-const API_KEY_STORAGE = 'casual_docops_api_key';
+export const API_KEY_STORAGE = 'casual_docops_api_key';
 const MODEL = 'claude-haiku-4-5-20251001';
 const DEFAULT_MAX_TOOL_ROUNDS = 12;
 
-const SYSTEM_PROMPT = `You are DocOps, an AI document assistant embedded in Casual Docs.
+const SYSTEM_PROMPT = `You are DocOps, an AI assistant inside a .docx editor.
 
-You help users read and edit their .docx documents using a structured tool catalog.
+IMPORTANT: You do not have the document text. It is not in this chat. You are the one who calls tools — the user never runs tools. When you need information about the document, YOU emit a <tool_call> block and the editor runs it and returns the result to you.
 
-Read tools (never mutate):
-  get_outline, get_selection, get_doc_stats, list_styles, find_text, get_block
+Read tools (inspect the document — never mutate):
+- get_doc_stats() — returns word/paragraph/table/image counts AND the FULL document text. Call this to summarize, describe, or answer "what is this about".
+- get_outline() — returns the heading tree.
+- get_selection() — returns the user's currently selected text.
+- find_text(query) — searches the document for a phrase.
+- list_styles() — lists paragraph styles and fonts used.
 
 Write tools — direct edits (immediately visible):
-  convert_range_to_table — user must have the text selected first
-  insert_toc — inserts at the cursor position
+- convert_range_to_table — user must have the text selected first
+- insert_toc — inserts at the cursor position
 
 Write tools — suggestion mode (user reviews in the sidebar):
-  suggest_text_change — creates a tracked change the user can Accept or Reject
-  set_paragraph_style — changes heading level, list style, etc.
-  add_comment — adds a review comment anchored to a paragraph
-  rewrite_selection — rewrites the current selection as a tracked change; always call get_selection first
-  delete_paragraphs — marks paragraphs for deletion as tracked changes; pass paraIds from get_outline or find_text
-  insert_paragraph_after — inserts a new paragraph after a block as a tracked change
-  harmonize_styles — bulk-correct heading levels and/or font inconsistencies; call list_styles first
-  insert_report_from_data — generate a heading + table from structured data; pass title, columns, and rows
-  create_document — replace the entire document with a structured spec (title + sections); call get_doc_stats first and confirm wordCount === 0
+- suggest_text_change, set_paragraph_style, add_comment, rewrite_selection (call get_selection first), delete_paragraphs (pass paraIds from get_outline/find_text), insert_paragraph_after, harmonize_styles (call list_styles first), insert_report_from_data, create_document (call get_doc_stats first, confirm wordCount === 0)
 
-Guidelines:
-- Always read before you write. Call get_outline or get_doc_stats first on a fresh conversation.
-- For suggest_text_change, the search text must be exact (case-sensitive). Call find_text first to confirm the exact phrasing.
-- For rewrite_selection, call get_selection first to confirm a selection exists and read its current text.
+Rules:
+- To summarize, describe, or answer ANY question about the document, your VERY FIRST response must be a <tool_call> for get_doc_stats. Do not write prose first. Do not ask the user to do anything. Do not assume or invent the document's content.
+- Emit exactly this and nothing else, then stop:
+<tool_call>
+{"name": "get_doc_stats", "arguments": {}}
+</tool_call>
+- After the tool result arrives, write a short, plain-language answer.
+- Always read before you write. For suggest_text_change the search text must be exact (case-sensitive) — call find_text first. For rewrite_selection, call get_selection first.
 - Tracked changes appear in the comments sidebar — tell the user to open it to review.
-- Keep responses short. Users want results, not explanations.
-- Never invent content about what's in the document — always call a read tool first.`;
+- Keep responses short. Users want results, not explanations.`;
 
 // ── Styles ────────────────────────────────────────────────────────────────
 
@@ -160,11 +161,120 @@ const msgCapStyle: CSSProperties = {
   border: '1px solid var(--doc-border-light)',
 };
 
+const msgPlanStyle: CSSProperties = {
+  alignSelf: 'stretch',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  padding: '8px 12px',
+  borderRadius: 8,
+  background: 'var(--doc-surface-sunken, #f8f9fa)',
+  border: '1px solid var(--doc-border-light)',
+};
+
+const msgPlanTitleStyle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: 0.4,
+  color: 'var(--doc-text-muted)',
+  marginBottom: 2,
+};
+
+const msgPlanTaskStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  fontSize: 13,
+  color: 'var(--doc-text)',
+};
+
+const agentToggleRowStyle: CSSProperties = {
+  display: 'flex',
+  padding: '4px 12px 0',
+};
+
+const agentToggleStyle = (active: boolean): CSSProperties => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  fontSize: 11.5,
+  fontWeight: 600,
+  padding: '2px 8px',
+  borderRadius: 999,
+  cursor: 'pointer',
+  color: active ? '#fff' : 'var(--doc-text-muted)',
+  background: active ? 'var(--doc-primary, #1a73e8)' : 'var(--doc-surface-sunken, #f8f9fa)',
+  border: `1px solid ${active ? 'var(--doc-primary, #1a73e8)' : 'var(--doc-border-light)'}`,
+});
+
 const inputRowStyle: CSSProperties = {
   display: 'flex',
   gap: 8,
   padding: '10px 12px',
   alignItems: 'flex-end',
+};
+
+// One-tap prompts for the most common document actions, so the panel isn't a
+// blank chat box. Each seeds a natural-language prompt the model + DocOps tool
+// catalog (summarize, rewrite_selection, convert-to-table, outline/TOC) handle.
+const QUICK_ACTIONS: ReadonlyArray<{ id: string; label: string; prompt: string }> = [
+  {
+    id: 'summarize',
+    label: 'Summarize',
+    prompt: 'Summarize this document in a few clear sentences.',
+  },
+  {
+    id: 'rewrite',
+    label: 'Rewrite selection',
+    prompt: 'Rewrite the currently selected text to be clearer and more polished.',
+  },
+  {
+    id: 'table',
+    label: 'Make table',
+    prompt: 'Convert the currently selected text into a well-structured table.',
+  },
+  { id: 'outline', label: 'Outline', prompt: 'Give me a concise outline of this document.' },
+];
+
+/** Parse a GitHub-flavored markdown table into columns + rows for insertion. */
+function parseMarkdownTable(md: string): { columns: string[]; rows: string[][] } | null {
+  const cellLines = md
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('|'));
+  if (cellLines.length < 2) return null;
+  const cells = (l: string): string[] =>
+    l
+      .replace(/^\||\|$/g, '')
+      .split('|')
+      .map((c) => c.trim());
+  const columns = cells(cellLines[0]);
+  const rows = cellLines
+    .slice(1)
+    .filter((l) => !/^[\s|:-]+$/.test(l)) // drop the |---| separator row(s)
+    .map(cells);
+  if (!columns.length || !rows.length) return null;
+  return { columns, rows };
+}
+
+const chipRowStyle: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 6,
+  padding: '8px 12px 0',
+};
+
+const chipStyle: CSSProperties = {
+  fontSize: 12,
+  lineHeight: 1.2,
+  padding: '5px 10px',
+  border: '1px solid var(--doc-border, #d1d5db)',
+  borderRadius: 999,
+  background: 'var(--doc-surface, #ffffff)',
+  color: 'var(--doc-text)',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
 };
 
 const textareaStyle: CSSProperties = {
@@ -276,6 +386,13 @@ export function DocOpsPanel({
   const [streamingText, setStreamingText] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [busy, setBusy] = useState(false);
+  // Agent mode: plan → execute → reflect instead of a single tool-loop reply.
+  // Opt-in via the toggle; only available when the panel drives the loop
+  // (Direct/Desktop, not collab where the server owns the loop).
+  const [agentMode, setAgentMode] = useState(false);
+  // Label for the "thinking" row shown while the (non-streaming) model runs,
+  // so the user sees progress between click and reply.
+  const [thinkingLabel, setThinkingLabel] = useState('Thinking…');
 
   // Anthropic conversation history (separate from display)
   const historyRef = useRef<LlmMessage[]>([]);
@@ -304,6 +421,56 @@ export function DocOpsPanel({
     });
   }, []);
 
+  // Mutate the tasks in the most recent 'plan' message (the live agent plan).
+  const updatePlan = useCallback((mutate: (tasks: AgentTask[]) => AgentTask[]) => {
+    setDisplayMessages((prev) => {
+      const copy = [...prev];
+      for (let i = copy.length - 1; i >= 0; i--) {
+        if (copy[i].kind === 'plan') {
+          const msg = copy[i] as Extract<DisplayMessage, { kind: 'plan' }>;
+          copy[i] = { ...msg, tasks: mutate(msg.tasks) };
+          break;
+        }
+      }
+      return copy;
+    });
+  }, []);
+
+  // Translate the agent's event stream into the panel's display messages.
+  const handleAgentEvent = useCallback(
+    (ev: AgentEvent) => {
+      switch (ev.type) {
+        case 'plan':
+          appendDisplay({ kind: 'plan', tasks: ev.tasks });
+          break;
+        case 'task-start':
+          updatePlan((tasks) =>
+            tasks.map((t) => (t.id === ev.taskId ? { ...t, status: 'running' } : t))
+          );
+          break;
+        case 'task-tool':
+          if (ev.status === 'running')
+            appendDisplay({ kind: 'tool_step', toolName: ev.tool, status: 'running' });
+          else updateLastToolStep(ev.status);
+          break;
+        case 'task-end':
+          updatePlan((tasks) =>
+            tasks.map((t) => (t.id === ev.taskId ? { ...t, status: ev.status } : t))
+          );
+          break;
+        case 'reflect':
+          if (ev.note) appendDisplay({ kind: 'assistant', text: ev.note });
+          if (ev.addedTasks.length) updatePlan((tasks) => [...tasks, ...ev.addedTasks]);
+          break;
+        case 'error':
+          appendDisplay({ kind: 'error', text: ev.message });
+          break;
+        // 'done' → the summary is appended by the caller.
+      }
+    },
+    [appendDisplay, updateLastToolStep, updatePlan]
+  );
+
   const saveKey = useCallback(() => {
     const trimmed = keyDraft.trim();
     if (!trimmed) return;
@@ -313,164 +480,344 @@ export function DocOpsPanel({
     setShowKeySetup(false);
   }, [keyDraft]);
 
-  const send = useCallback(async () => {
-    const text = inputValue.trim();
-    if (!text || busy) return;
-    // Block send if key is required and missing.
-    if (transport.requiresApiKey && !apiKey) return;
+  const send = useCallback(
+    async (override?: string) => {
+      const text = (override ?? inputValue).trim();
+      if (!text || busy) return;
+      // Block send if key is required and missing.
+      if (transport.requiresApiKey && !apiKey) return;
 
-    setInputValue('');
-    setBusy(true);
+      setInputValue('');
+      setThinkingLabel('Thinking…');
+      setBusy(true);
 
-    appendDisplay({ kind: 'user', text });
-    historyRef.current = [...historyRef.current, { role: 'user', content: text }];
+      appendDisplay({ kind: 'user', text });
+      historyRef.current = [...historyRef.current, { role: 'user', content: text }];
 
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
 
-    try {
-      if (transport.drivesLoop) {
-        // ── Collab transport: server holds the LLM loop ──────────────────
-        // tool_call messages are routed back over WS; we execute via
-        // DocsBridge and return the results to the server.
-        const toolExecutor: ToolExecutor = async (toolName, args) => {
-          appendDisplay({ kind: 'tool_step', toolName, status: 'running' });
-          try {
-            const result = await bridge.callTool(toolName, args);
-            updateLastToolStep('done');
-            return result;
-          } catch (err) {
-            updateLastToolStep('error');
-            throw err;
+      try {
+        if (agentMode && !transport.drivesLoop) {
+          // ── Agent mode: plan → execute → reflect ─────────────────────────
+          // The panel-driven agent decomposes the goal, runs each sub-task
+          // through the tool loop, and reflects. Built-in DocOps tools plus any
+          // external MCP tools flow through one ToolRegistry.
+          const registry = createAgentRegistry(bridge);
+          const llm = transportLlm(transport, { model: MODEL, apiKey: apiKey || undefined });
+          const result = await runAgent(
+            text,
+            { llm, registry },
+            { signal: ctrl.signal, onEvent: handleAgentEvent }
+          );
+          if (result.summary) {
+            appendDisplay({ kind: 'assistant', text: result.summary });
+            historyRef.current = [
+              ...historyRef.current,
+              { role: 'assistant', content: result.summary },
+            ];
           }
-        };
+        } else if (transport.drivesLoop) {
+          // ── Collab transport: server holds the LLM loop ──────────────────
+          // tool_call messages are routed back over WS; we execute via
+          // DocsBridge and return the results to the server.
+          const toolExecutor: ToolExecutor = async (toolName, args) => {
+            appendDisplay({ kind: 'tool_step', toolName, status: 'running' });
+            try {
+              const result = await bridge.callTool(toolName, args);
+              updateLastToolStep('done');
+              return result;
+            } catch (err) {
+              updateLastToolStep('error');
+              throw err;
+            }
+          };
 
-        const payload: LlmCallPayload = {
-          model: MODEL,
-          max_tokens: 2048,
-          system: SYSTEM_PROMPT,
-          messages: historyRef.current,
-          tools: DOCOPS_CATALOG,
-          apiKey: apiKey || undefined,
-          signal: ctrl.signal,
-          maxToolRounds,
-          toolExecutor,
-          onText: (text) => {
-            if (text.trim()) appendDisplay({ kind: 'assistant', text });
-          },
-        };
-
-        const { data, status, updatedHistory, capHit } = await transport.call(payload);
-
-        if (status !== 200) {
-          const errMsg = (data as { error?: { message?: string } })?.error?.message;
-          throw new Error(errMsg ?? `AI error ${status}`);
-        }
-        if (updatedHistory) historyRef.current = updatedHistory as LlmMessage[];
-        if (capHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
-      } else {
-        // ── Direct / Desktop transport: panel drives the loop ────────────
-        let messages = [...historyRef.current];
-        let panelCapHit = false;
-
-        for (let round = 0; round < maxToolRounds; round++) {
-          if (ctrl.signal.aborted) break;
-
-          let streamedText = '';
           const payload: LlmCallPayload = {
             model: MODEL,
             max_tokens: 2048,
             system: SYSTEM_PROMPT,
-            messages,
+            messages: historyRef.current,
             tools: DOCOPS_CATALOG,
             apiKey: apiKey || undefined,
             signal: ctrl.signal,
             maxToolRounds,
-            onText: (tok) => {
-              if (tok) {
-                streamedText += tok;
-                setStreamingText((prev) => prev + tok);
-              }
+            toolExecutor,
+            onText: (text) => {
+              if (text.trim()) appendDisplay({ kind: 'assistant', text });
             },
           };
 
-          const { data, status } = await transport.call(payload);
-
-          // Flush any streamed tokens as a single committed message,
-          // then clear the in-flight indicator.
-          if (streamedText.trim()) {
-            appendDisplay({ kind: 'assistant', text: streamedText });
-          }
-          setStreamingText('');
+          const { data, status, updatedHistory, capHit } = await transport.call(payload);
 
           if (status !== 200) {
             const errMsg = (data as { error?: { message?: string } })?.error?.message;
-            throw new Error(errMsg ?? `API error ${status}`);
+            throw new Error(errMsg ?? `AI error ${status}`);
           }
+          if (updatedHistory) historyRef.current = updatedHistory as LlmMessage[];
+          if (capHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
+        } else {
+          // ── Direct / Desktop transport: panel drives the loop ────────────
+          let messages = [...historyRef.current];
+          let panelCapHit = false;
 
-          const response = data as LlmResponse;
+          for (let round = 0; round < maxToolRounds; round++) {
+            if (ctrl.signal.aborted) break;
 
-          messages = [...messages, { role: 'assistant', content: response.content }];
+            let streamedText = '';
+            const payload: LlmCallPayload = {
+              model: MODEL,
+              max_tokens: 2048,
+              system: SYSTEM_PROMPT,
+              messages,
+              tools: DOCOPS_CATALOG,
+              apiKey: apiKey || undefined,
+              signal: ctrl.signal,
+              maxToolRounds,
+              onText: (tok) => {
+                if (tok) {
+                  streamedText += tok;
+                  setStreamingText((prev) => prev + tok);
+                }
+              },
+            };
 
-          // Emit text blocks only when nothing was streamed via onText
-          // (i.e. the transport returned a complete response at once).
-          if (!streamedText) {
-            for (const block of response.content) {
-              if (block.type === 'text' && block.text.trim()) {
-                appendDisplay({ kind: 'assistant', text: block.text });
+            const { data, status } = await transport.call(payload);
+
+            // Flush any streamed tokens as a single committed message,
+            // then clear the in-flight indicator.
+            if (streamedText.trim()) {
+              appendDisplay({ kind: 'assistant', text: streamedText });
+            }
+            setStreamingText('');
+
+            if (status !== 200) {
+              const errMsg = (data as { error?: { message?: string } })?.error?.message;
+              throw new Error(errMsg ?? `API error ${status}`);
+            }
+
+            const response = data as LlmResponse;
+            const willContinue = response.stop_reason === 'tool_use';
+
+            // Only persist tool_use blocks when we will follow them with
+            // matching tool_result blocks this iteration. If the model emitted
+            // tool_use but stopped for another reason (e.g. max_tokens), the
+            // dangling tool_use would make every subsequent request 400 with
+            // "tool_use ids were found without tool_result blocks". Strip them.
+            const assistantContent = willContinue
+              ? response.content
+              : response.content.filter((block) => block.type !== 'tool_use');
+            messages = [...messages, { role: 'assistant', content: assistantContent }];
+
+            // Emit text blocks only when nothing was streamed via onText
+            // (i.e. the transport returned a complete response at once).
+            if (!streamedText) {
+              for (const block of response.content) {
+                if (block.type === 'text' && block.text.trim()) {
+                  appendDisplay({ kind: 'assistant', text: block.text });
+                }
               }
             }
-          }
 
-          if (response.stop_reason !== 'tool_use') break;
+            if (!willContinue) break;
 
-          const toolResults: LlmContentBlock[] = [];
-          for (const block of response.content) {
-            if (block.type !== 'tool_use') continue;
+            const toolResults: LlmContentBlock[] = [];
+            for (const block of response.content) {
+              if (block.type !== 'tool_use') continue;
 
-            appendDisplay({ kind: 'tool_step', toolName: block.name, status: 'running' });
-            try {
-              const result = await bridge.callTool(block.name, block.input);
-              updateLastToolStep('done');
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: block.id,
-                content: JSON.stringify(result),
-              });
-            } catch (err) {
-              updateLastToolStep('error');
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: block.id,
-                content: JSON.stringify({
-                  ok: false,
-                  code: 'UNSUPPORTED',
-                  message: err instanceof Error ? err.message : String(err),
-                  retryable: false,
-                }),
-              });
+              appendDisplay({ kind: 'tool_step', toolName: block.name, status: 'running' });
+              try {
+                const result = await bridge.callTool(block.name, block.input);
+                updateLastToolStep('done');
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: block.id,
+                  content: JSON.stringify(result),
+                });
+              } catch (err) {
+                updateLastToolStep('error');
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: block.id,
+                  content: JSON.stringify({
+                    ok: false,
+                    code: 'UNSUPPORTED',
+                    message: err instanceof Error ? err.message : String(err),
+                    retryable: false,
+                  }),
+                });
+              }
+            }
+
+            messages = [...messages, { role: 'user', content: toolResults }];
+
+            if (round === maxToolRounds - 1) {
+              panelCapHit = true;
             }
           }
 
-          messages = [...messages, { role: 'user', content: toolResults }];
+          if (panelCapHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
+          historyRef.current = messages;
+        }
+      } catch (err) {
+        if ((err as { name?: string }).name === 'AbortError') return;
+        const msg = err instanceof Error ? err.message : String(err);
+        appendDisplay({ kind: 'error', text: msg });
+      } finally {
+        setBusy(false);
+        abortRef.current = null;
+      }
+    },
+    [
+      inputValue,
+      busy,
+      apiKey,
+      transport,
+      bridge,
+      appendDisplay,
+      updateLastToolStep,
+      agentMode,
+      handleAgentEvent,
+    ]
+  );
 
-          if (round === maxToolRounds - 1) {
-            panelCapHit = true;
+  // Quick actions bypass the tool-calling loop. A small local model can't
+  // reliably orchestrate the 17-tool catalog (it ignores the "call get_doc_stats
+  // first" instruction once the tool list gets long and hallucinates instead),
+  // so we gather the context the action needs client-side — the editor already
+  // has it — and send ONE completion with no tools. Robust regardless of model.
+  const runQuickAction = useCallback(
+    async (action: { id: string; label: string; prompt: string }) => {
+      if (busy) return;
+      if (transport.requiresApiKey && !apiKey) {
+        appendDisplay({ kind: 'error', text: 'Add an API key to use the assistant.' });
+        return;
+      }
+      setThinkingLabel(
+        action.id === 'rewrite'
+          ? 'Rewriting selection…'
+          : action.id === 'table'
+            ? 'Building table…'
+            : action.id === 'summarize'
+              ? 'Summarizing…'
+              : action.id === 'outline'
+                ? 'Outlining…'
+                : 'Thinking…'
+      );
+      setBusy(true);
+      appendDisplay({ kind: 'user', text: action.label });
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      try {
+        let context = '';
+        const readField = (res: unknown): string => {
+          const d = (res as { data?: Record<string, unknown> })?.data ?? {};
+          return String(d.text ?? d.selection ?? d.selectionText ?? '').trim();
+        };
+        if (action.id === 'summarize' || action.id === 'outline') {
+          context = readField(await bridge.callTool('get_doc_stats', {}));
+          if (!context) {
+            appendDisplay({
+              kind: 'assistant',
+              text: 'This document is empty — nothing to work with yet.',
+            });
+            return;
+          }
+        } else if (action.id === 'rewrite' || action.id === 'table') {
+          context = readField(await bridge.callTool('get_selection', {}));
+          if (!context) {
+            appendDisplay({
+              kind: 'assistant',
+              text: 'Select some text in the document first, then try this action.',
+            });
+            return;
           }
         }
-
-        if (panelCapHit) appendDisplay({ kind: 'cap', rounds: maxToolRounds });
-        historyRef.current = messages;
+        const isTable = action.id === 'table';
+        const isRewrite = action.id === 'rewrite';
+        const system = isTable
+          ? 'You convert content into a table. Output ONLY a GitHub-flavored markdown table: a header row, a |---| separator row, then data rows. No preamble, no commentary. Do NOT translate — keep every term exactly as written in the source.'
+          : isRewrite
+            ? 'You are a writing assistant. Rewrite the provided text per the instruction. Output ONLY the rewritten text — no preamble, no quotes, no commentary. Do NOT translate; keep the original language.'
+            : 'You are a concise writing assistant inside a document editor. Follow the instruction using only the content provided below it. Return plain text only — no preamble, no markdown code fences. Do NOT translate any content.';
+        const userMsg = context ? `${action.prompt}\n\n--- CONTENT ---\n${context}` : action.prompt;
+        let streamed = '';
+        const { data, status } = await transport.call({
+          model: MODEL,
+          max_tokens: 1024,
+          system,
+          messages: [{ role: 'user', content: userMsg }],
+          tools: [],
+          apiKey: apiKey || undefined,
+          signal: ctrl.signal,
+          onText: (t) => {
+            if (t) {
+              streamed += t;
+              setStreamingText((p) => p + t);
+            }
+          },
+        });
+        setStreamingText('');
+        if (status !== 200) {
+          const e = (data as { error?: { message?: string } })?.error?.message;
+          throw new Error(e ?? `AI error ${status}`);
+        }
+        let text = streamed.trim();
+        if (!text) {
+          const content = (data as { content?: Array<{ type: string; text?: string }> })?.content;
+          if (Array.isArray(content)) {
+            text = content
+              .filter((b) => b.type === 'text' && b.text)
+              .map((b) => b.text)
+              .join('')
+              .trim();
+          }
+        }
+        // Write actions modify the document; read actions just reply in chat.
+        const failed = (r: unknown) => (r as { ok?: boolean })?.ok === false;
+        const errMsg = (r: unknown) => (r as { message?: string })?.message ?? 'failed';
+        if (isRewrite && text) {
+          const r = await bridge.callTool('rewrite_selection', { new_text: text });
+          appendDisplay(
+            failed(r)
+              ? { kind: 'error', text: `Couldn't apply rewrite: ${errMsg(r)}` }
+              : {
+                  kind: 'assistant',
+                  text: 'Rewrote the selection as a tracked change — review it in the comments sidebar.',
+                }
+          );
+        } else if (isTable && text) {
+          const parsed = parseMarkdownTable(text);
+          if (parsed) {
+            const r = await bridge.callTool('insert_report_from_data', {
+              title: 'Table',
+              columns: parsed.columns,
+              rows: parsed.rows,
+            });
+            appendDisplay(
+              failed(r)
+                ? { kind: 'error', text: `Couldn't insert table: ${errMsg(r)}` }
+                : {
+                    kind: 'assistant',
+                    text: `Inserted a ${parsed.rows.length}×${parsed.columns.length} table into the document.`,
+                  }
+            );
+          } else {
+            appendDisplay({ kind: 'assistant', text });
+          }
+        } else {
+          appendDisplay({ kind: 'assistant', text: text || '(no response)' });
+        }
+      } catch (err) {
+        if ((err as { name?: string }).name === 'AbortError') return;
+        appendDisplay({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setBusy(false);
+        abortRef.current = null;
       }
-    } catch (err) {
-      if ((err as { name?: string }).name === 'AbortError') return;
-      const msg = err instanceof Error ? err.message : String(err);
-      appendDisplay({ kind: 'error', text: msg });
-    } finally {
-      setBusy(false);
-      abortRef.current = null;
-    }
-  }, [inputValue, busy, apiKey, transport, bridge, appendDisplay, updateLastToolStep]);
+    },
+    [busy, transport, apiKey, bridge, appendDisplay]
+  );
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -539,44 +886,81 @@ export function DocOpsPanel({
         testId="docops-panel"
         footer={
           showKeySetup ? undefined : (
-            <div style={inputRowStyle}>
-              <textarea
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-                placeholder={busy ? 'Working…' : 'Ask about your document… (Enter to send)'}
-                rows={1}
-                style={textareaStyle}
-                disabled={busy}
-                data-testid="docops-input"
-              />
-              {busy ? (
-                <button
-                  type="button"
-                  style={sendBtnStyle(false)}
-                  onClick={stop}
-                  title="Stop"
-                  data-testid="docops-stop"
-                >
-                  <MaterialSymbol name="close" size={16} />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  style={sendBtnStyle(!inputValue.trim())}
-                  onClick={() => void send()}
-                  disabled={!inputValue.trim()}
-                  title="Send (Enter)"
-                  data-testid="docops-send"
-                >
-                  <MaterialSymbol name="keyboard_arrow_right" size={16} />
-                </button>
+            <div>
+              {!busy && (
+                <div style={chipRowStyle}>
+                  {QUICK_ACTIONS.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      style={chipStyle}
+                      onClick={() => void runQuickAction(a)}
+                      disabled={busy || (transport.requiresApiKey && !apiKey)}
+                      data-testid={`docops-quick-${a.id}`}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
               )}
+              {!transport.drivesLoop && (
+                <div style={agentToggleRowStyle}>
+                  <button
+                    type="button"
+                    onClick={() => setAgentMode((v) => !v)}
+                    style={agentToggleStyle(agentMode)}
+                    data-testid="docops-agent-toggle"
+                    title={
+                      agentMode
+                        ? 'Agent mode — plans, executes, and reviews multi-step tasks'
+                        : 'Chat mode — single reply'
+                    }
+                    disabled={busy}
+                  >
+                    <MaterialSymbol name="smart_toy" size={13} />
+                    {agentMode ? 'Agent' : 'Chat'}
+                  </button>
+                </div>
+              )}
+              <div style={inputRowStyle}>
+                <textarea
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void send();
+                    }
+                  }}
+                  placeholder={busy ? 'Working…' : 'Ask about your document… (Enter to send)'}
+                  rows={1}
+                  style={textareaStyle}
+                  disabled={busy}
+                  data-testid="docops-input"
+                />
+                {busy ? (
+                  <button
+                    type="button"
+                    style={sendBtnStyle(false)}
+                    onClick={stop}
+                    title="Stop"
+                    data-testid="docops-stop"
+                  >
+                    <MaterialSymbol name="close" size={16} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    style={sendBtnStyle(!inputValue.trim())}
+                    onClick={() => void send()}
+                    disabled={!inputValue.trim()}
+                    title="Send (Enter)"
+                    data-testid="docops-send"
+                  >
+                    <MaterialSymbol name="keyboard_arrow_right" size={16} />
+                  </button>
+                )}
+              </div>
             </div>
           )
         }
@@ -694,6 +1078,27 @@ export function DocOpsPanel({
                   </div>
                 );
               }
+              if (msg.kind === 'plan') {
+                return (
+                  <div key={i} style={msgPlanStyle} data-testid="docops-plan">
+                    <div style={msgPlanTitleStyle}>Plan</div>
+                    {msg.tasks.map((t) => (
+                      <div key={t.id} style={msgPlanTaskStyle}>
+                        {t.status === 'running' ? (
+                          <span style={spinnerStyle} aria-hidden="true" />
+                        ) : t.status === 'done' ? (
+                          <MaterialSymbol name="check" size={12} />
+                        ) : t.status === 'failed' ? (
+                          <MaterialSymbol name="close" size={12} />
+                        ) : (
+                          <MaterialSymbol name="radio_button_unchecked" size={12} />
+                        )}
+                        <span style={{ opacity: t.status === 'pending' ? 0.6 : 1 }}>{t.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              }
               return null;
             })}
 
@@ -701,6 +1106,13 @@ export function DocOpsPanel({
               <div style={{ ...msgAssistantStyle, opacity: 0.85 }}>
                 {streamingText}
                 <span style={spinnerStyle} aria-hidden="true" />
+              </div>
+            )}
+
+            {busy && !streamingText && (
+              <div style={msgToolStyle} aria-live="polite">
+                <span style={spinnerStyle} aria-hidden="true" />
+                <span>{thinkingLabel}</span>
               </div>
             )}
 

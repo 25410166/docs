@@ -295,6 +295,11 @@ function normaliseIntent(out: ClassifiedIntent, userMessage: string): Classified
     'outline',
     'translate',
     'findIssues',
+    // Both have registered tools and dedicated routing in pipeline.ts; without
+    // them here a correctly-classified intent is snapped back to 'chat' and the
+    // tool never runs.
+    'transformDoc',
+    'research',
     'chat',
   ];
   if (!allowed.includes(out.intent)) {

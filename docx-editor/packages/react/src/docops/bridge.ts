@@ -168,6 +168,10 @@ export class DocsBridge {
     let tableCount = 0;
     let imageCount = 0;
     const headingLevelSet = new Set<number>();
+    // Collect the document's plain text so the model can actually read it —
+    // without this, get_doc_stats returns only counts and the model has no
+    // content to summarize / answer questions about (it hallucinates).
+    const textParts: string[] = [];
 
     view.state.doc.descendants((node) => {
       if (node.type.name === 'paragraph') {
@@ -176,7 +180,10 @@ export class DocsBridge {
         node.forEach((child) => {
           if (child.isText) text += child.text ?? '';
         });
-        if (text.trim()) wordCount += text.trim().split(/\s+/).length;
+        if (text.trim()) {
+          wordCount += text.trim().split(/\s+/).length;
+          textParts.push(text);
+        }
 
         const level = node.attrs.outlineLevel as number | null;
         const styleId = node.attrs.styleId as string | null;
@@ -193,6 +200,16 @@ export class DocsBridge {
       }
     });
 
+    // Cap the returned text so a long document can't overflow the local
+    // model's context window. ~14k chars ≈ 3.5k tokens, well within the
+    // 8k-token worker context alongside the prompt + generation.
+    const MAX_TEXT_CHARS = 14000;
+    const fullText = textParts.join('\n');
+    const text =
+      fullText.length > MAX_TEXT_CHARS
+        ? fullText.slice(0, MAX_TEXT_CHARS) + '\n…[document truncated]'
+        : fullText;
+
     return {
       ok: true,
       data: {
@@ -203,6 +220,7 @@ export class DocsBridge {
         headingLevels: Array.from(headingLevelSet)
           .sort()
           .map((l) => l + 1),
+        text,
       },
     };
   }
