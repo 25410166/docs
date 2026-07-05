@@ -197,6 +197,14 @@ const msgPlanTitleStyle: CSSProperties = {
   marginBottom: 2,
 };
 
+const planPendingDotStyle: CSSProperties = {
+  width: 10,
+  height: 10,
+  borderRadius: '50%',
+  border: '1.5px solid var(--doc-text-muted, #9aa0a6)',
+  flexShrink: 0,
+};
+
 const msgPlanTaskStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -1030,6 +1038,7 @@ export function DocOpsPanel({
                     onClick={() => setAgentMode((v) => !v)}
                     style={agentToggleStyle(agentMode)}
                     data-testid="docops-agent-toggle"
+                    aria-pressed={agentMode}
                     title={
                       agentMode
                         ? 'Agent mode — plans, executes, and reviews multi-step tasks'
@@ -1037,7 +1046,7 @@ export function DocOpsPanel({
                     }
                     disabled={busy}
                   >
-                    <MaterialSymbol name="smart_toy" size={13} />
+                    <MaterialSymbol name="auto_awesome" size={13} />
                     {agentMode ? 'Agent' : 'Chat'}
                   </button>
                   {agentMode && (
@@ -1048,7 +1057,7 @@ export function DocOpsPanel({
                       data-testid="docops-mcp-add"
                       title="Connect an external MCP server; its tools join the agent"
                     >
-                      <MaterialSymbol name="hub" size={13} />
+                      <MaterialSymbol name="link" size={13} />
                       MCP
                     </button>
                   )}
@@ -1063,7 +1072,7 @@ export function DocOpsPanel({
                       ) : s.status === 'connected' ? (
                         <MaterialSymbol name="check_circle" size={12} />
                       ) : (
-                        <MaterialSymbol name="error" size={12} />
+                        <MaterialSymbol name="close" size={12} />
                       )}
                       <span title={s.error ?? s.url}>
                         {s.url.replace(/^https?:\/\//, '')}
@@ -1266,7 +1275,7 @@ export function DocOpsPanel({
                         ) : t.status === 'failed' ? (
                           <MaterialSymbol name="close" size={12} />
                         ) : (
-                          <MaterialSymbol name="radio_button_unchecked" size={12} />
+                          <span style={planPendingDotStyle} aria-hidden="true" />
                         )}
                         <span style={{ opacity: t.status === 'pending' ? 0.6 : 1 }}>{t.title}</span>
                       </div>
