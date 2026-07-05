@@ -20,14 +20,30 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { RightDockPanel } from '../components/RightDockPanel';
 import { MaterialSymbol } from '../components/ui/Icons';
 import type { DocsBridge } from './bridge';
-import { DOCOPS_CATALOG, runAgent, type AgentEvent, type AgentTask } from '@casualoffice/docops';
-import { createAgentRegistry, transportLlm } from './agentRuntime';
+import {
+  DOCOPS_CATALOG,
+  runAgent,
+  type AgentEvent,
+  type AgentTask,
+  type McpClient,
+  type ToolSource,
+} from '@casualoffice/docops';
+import { createAgentRegistry, createMcpClient, transportLlm } from './agentRuntime';
 import {
   DirectTransport,
   type DocOpsTransport,
   type LlmCallPayload,
   type ToolExecutor,
 } from './transport';
+
+interface McpServerState {
+  id: string;
+  url: string;
+  status: 'connecting' | 'connected' | 'error';
+  toolCount: number;
+  source: McpClient | null;
+  error?: string;
+}
 
 // ── LLM wire types (messages-API shape) ───────────────────────────────────
 
@@ -207,6 +223,62 @@ const agentToggleStyle = (active: boolean): CSSProperties => ({
   background: active ? 'var(--doc-primary, #1a73e8)' : 'var(--doc-surface-sunken, #f8f9fa)',
   border: `1px solid ${active ? 'var(--doc-primary, #1a73e8)' : 'var(--doc-border-light)'}`,
 });
+
+const mcpAddBtnStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  fontSize: 11.5,
+  fontWeight: 600,
+  padding: '2px 8px',
+  borderRadius: 999,
+  cursor: 'pointer',
+  color: 'var(--doc-text-muted)',
+  background: 'var(--doc-surface-sunken, #f8f9fa)',
+  border: '1px solid var(--doc-border-light)',
+  marginLeft: 6,
+};
+
+const mcpSectionStyle: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 6,
+  padding: '4px 12px 0',
+};
+
+const mcpChipStyle = (status: 'connecting' | 'connected' | 'error'): CSSProperties => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  fontSize: 11,
+  padding: '2px 6px',
+  borderRadius: 6,
+  color: status === 'error' ? 'var(--doc-danger, #c62828)' : 'var(--doc-text-muted)',
+  background: 'var(--doc-surface-sunken, #f8f9fa)',
+  border: '1px solid var(--doc-border-light)',
+});
+
+const mcpRemoveStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  background: 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  padding: 0,
+  color: 'inherit',
+  opacity: 0.7,
+};
+
+const mcpInputStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 200,
+  fontSize: 12,
+  padding: '4px 8px',
+  borderRadius: 6,
+  border: '1px solid var(--doc-border-light)',
+  background: 'var(--doc-surface, #fff)',
+  color: 'var(--doc-text)',
+};
 
 const inputRowStyle: CSSProperties = {
   display: 'flex',
@@ -390,6 +462,50 @@ export function DocOpsPanel({
   // Opt-in via the toggle; only available when the panel drives the loop
   // (Direct/Desktop, not collab where the server owns the loop).
   const [agentMode, setAgentMode] = useState(false);
+  // External MCP servers whose tools join the agent's registry.
+  const [mcpServers, setMcpServers] = useState<McpServerState[]>([]);
+  const [mcpUrlDraft, setMcpUrlDraft] = useState('');
+  const [showMcpAdd, setShowMcpAdd] = useState(false);
+
+  const connectMcp = useCallback(
+    async (rawUrl: string) => {
+      const url = rawUrl.trim();
+      if (!url) return;
+      const id = `mcp:${url}`;
+      if (mcpServers.some((s) => s.id === id)) return;
+      const client = createMcpClient(url, id);
+      setMcpServers((prev) => [
+        ...prev,
+        { id, url, status: 'connecting', toolCount: 0, source: client },
+      ]);
+      setMcpUrlDraft('');
+      setShowMcpAdd(false);
+      try {
+        const tools = await client.listTools();
+        setMcpServers((prev) =>
+          prev.map((s) =>
+            s.id === id ? { ...s, status: 'connected', toolCount: tools.length } : s
+          )
+        );
+      } catch (err) {
+        setMcpServers((prev) =>
+          prev.map((s) =>
+            s.id === id
+              ? { ...s, status: 'error', error: err instanceof Error ? err.message : String(err) }
+              : s
+          )
+        );
+      }
+    },
+    [mcpServers]
+  );
+
+  const removeMcp = useCallback((id: string) => {
+    setMcpServers((prev) => {
+      prev.find((s) => s.id === id)?.source?.close();
+      return prev.filter((s) => s.id !== id);
+    });
+  }, []);
   // Label for the "thinking" row shown while the (non-streaming) model runs,
   // so the user sees progress between click and reply.
   const [thinkingLabel, setThinkingLabel] = useState('Thinking…');
@@ -503,7 +619,10 @@ export function DocOpsPanel({
           // The panel-driven agent decomposes the goal, runs each sub-task
           // through the tool loop, and reflects. Built-in DocOps tools plus any
           // external MCP tools flow through one ToolRegistry.
-          const registry = createAgentRegistry(bridge);
+          const mcpSources = mcpServers
+            .filter((s) => s.status === 'connected' && s.source)
+            .map((s) => s.source as ToolSource);
+          const registry = createAgentRegistry(bridge, mcpSources);
           const llm = transportLlm(transport, { model: MODEL, apiKey: apiKey || undefined });
           const result = await runAgent(
             text,
@@ -678,6 +797,7 @@ export function DocOpsPanel({
       updateLastToolStep,
       agentMode,
       handleAgentEvent,
+      mcpServers,
     ]
   );
 
@@ -920,6 +1040,61 @@ export function DocOpsPanel({
                     <MaterialSymbol name="smart_toy" size={13} />
                     {agentMode ? 'Agent' : 'Chat'}
                   </button>
+                  {agentMode && (
+                    <button
+                      type="button"
+                      onClick={() => setShowMcpAdd((v) => !v)}
+                      style={mcpAddBtnStyle}
+                      data-testid="docops-mcp-add"
+                      title="Connect an external MCP server; its tools join the agent"
+                    >
+                      <MaterialSymbol name="hub" size={13} />
+                      MCP
+                    </button>
+                  )}
+                </div>
+              )}
+              {agentMode && !transport.drivesLoop && (mcpServers.length > 0 || showMcpAdd) && (
+                <div style={mcpSectionStyle} data-testid="docops-mcp-section">
+                  {mcpServers.map((s) => (
+                    <div key={s.id} style={mcpChipStyle(s.status)}>
+                      {s.status === 'connecting' ? (
+                        <span style={spinnerStyle} aria-hidden="true" />
+                      ) : s.status === 'connected' ? (
+                        <MaterialSymbol name="check_circle" size={12} />
+                      ) : (
+                        <MaterialSymbol name="error" size={12} />
+                      )}
+                      <span title={s.error ?? s.url}>
+                        {s.url.replace(/^https?:\/\//, '')}
+                        {s.status === 'connected' ? ` · ${s.toolCount} tools` : ''}
+                        {s.status === 'error' ? ' · failed' : ''}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeMcp(s.id)}
+                        style={mcpRemoveStyle}
+                        aria-label="Remove MCP server"
+                      >
+                        <MaterialSymbol name="close" size={11} />
+                      </button>
+                    </div>
+                  ))}
+                  {showMcpAdd && (
+                    <input
+                      value={mcpUrlDraft}
+                      onChange={(e) => setMcpUrlDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void connectMcp(mcpUrlDraft);
+                        }
+                      }}
+                      placeholder="https://mcp.example.com/rpc  (Enter to connect)"
+                      style={mcpInputStyle}
+                      data-testid="docops-mcp-input"
+                    />
+                  )}
                 </div>
               )}
               <div style={inputRowStyle}>
