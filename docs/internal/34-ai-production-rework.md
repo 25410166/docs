@@ -1,6 +1,6 @@
 # 34 — Local-AI production rework: two surfaces, formatting-preserving edits, reliable tool-calling
 
-Status: **in progress** (2026-07-05).
+Status: **P0 bug-bar shipped; feature work continued in §6 → north-star doc 36** (updated 2026-07-06). See §6 for the completion log + the docs↔sheet parity matrix.
 
 **Web** (`document` @ `feat/desktop-native-ai-panel`, not pushed): `9ba7a07` P0 quick wins (error surfacing, tool_use history balance, worker-crash rejection, shared `API_KEY_STORAGE`, transformDoc/research routing); `64a201d` P0-A first-cut (desktop Ask-AI preserves formatting via `rewriteFragmentWith` — unit-proven).
 
@@ -146,3 +146,53 @@ Rust: grammar fuzz (100 seeds → zero `unknown`/parse-fail), per-tool integrati
 2. **Cloud fallback → never leave device.** Drop the silent Anthropic fallback once a local model is loaded; local-only stays local; worker auto-restarts. (P0-5)
 3. **Model floor → require ≥1.5B for the DocOps panel** (Q5_K_M/Q6_K); 0.5B for inline rewrite/summarize only. (P2-10)
 4. **Web AI path → collab-server proxy** (key never reaches browser). Deferred behind the desktop-first bug-bar; when built it removes the need for the CORS header + plaintext-key storage. (P0-4)
+
+---
+
+## 6. Completion log (updated 2026-07-06)
+
+The P0 bug-bar is shipped; the effort then continued into agentic/MCP/RAG and the
+north-star objectives. This section is the source of truth for what landed;
+`36-ai-north-star.md` holds the forward objectives (O1–O5).
+
+### P0 bug-bar — shipped
+- **P0-A formatting-nuke** ✅ `rewriteFragmentWith` (formatting-preserving LCS-style apply).
+- **P0-B loading state** ✅ streaming/thinking indicators + Stop.
+- **P0-2 drop `<tool_call>` XML on the API path** ✅ (agent executor uses native tool_use).
+- **P0-3 strip dangling `tool_use`** ✅ (panel loop drops unmatched blocks).
+- **P0-4 real errors + Retry** ✅ `friendlyLlmError` + MCP Retry/Connect. _(CORS/collab web-proxy — deferred, §5.4.)_
+- **P0-5 no silent local→cloud egress** ✅ egress guard + worker auto-restart.
+- **P0-6 token-budget / `TOO_LARGE` before decode** ✅ — and superseded by RAG (get_doc_stats no longer dumps the doc).
+- **P0-7 reject non-catalog tools** ✅ (registry returns a structured error).
+- **P0-8 reject pending on worker crash** ✅.
+- **P0-9 worker `ready` handshake** ✅.
+- **P0-10 single `API_KEY_STORAGE`** ✅. **P0-11 unified desktop detection** ✅ (+ DesktopTransport now single-round `drivesLoop=false`, which also made the agent reachable on the local model).
+- **P1** — multibyte/CJK decode, dead-worker false-success, empty-output state, multi-tool-call handling, cancellable inference: ✅ shipped.
+
+### Deferred (tracked, not done)
+- **P0-1 grammar-constrained local decoding** — `grammar_lazy` aborts the worker in this llama build; gated behind `AI_WORKER_GRAMMAR`. Revisit on a llama-cpp bump.
+- **Web AI via collab proxy** (CORS + key-never-in-browser) — §5.4.
+- **MCP server** (expose the editor to external agents) — north-star O5, via collab.
+- **On-device visual verification** — the O2 Folder-button dialog/chip + the O3 agent smoke test (need the live app + a 7B model).
+
+### Beyond the bug-bar — agentic · MCP · RAG · north-star
+- **Agentic** — plan→execute→reflect hardened: no false success (zero-tool = failed), native tools, `create_document` excluded from sub-tasks, structured reflection + dedup, planner grounding, repeated-call loop-guard.
+- **MCP** — client + connect external servers, streaming-SSE transport, session headers, pagination, persistence + auth token, untrusted-output labeling.
+- **RAG** — BM25 `search_document`/`search_sheet` (no more full-doc dump), + on-device workspace RAG (`search_workspace`, folder indexing, citations).
+- **O1** — user-selectable 7B/8B local models + RAM-based recommendation (shared desktop catalog → serves both editors).
+- **O2** — on-device workspace RAG, code-complete both editors (only visual verify pending).
+
+### Docs ↔ Sheets parity (2026-07-06)
+
+| Capability | Docs | Sheets | PRs |
+|---|---|---|---|
+| Formatting-preserving edits | ✅ | n/a | docs (rewriteFragmentWith) |
+| Within-file RAG | ✅ `search_document` | ✅ `search_sheet` | docs #242 · sheets #267 |
+| Workspace RAG + Folder button | ✅ | ✅ | docs #251/252/255/256 · sheets #274 · desktop #76/77/78 |
+| Agentic (plan→execute→reflect) | ✅ | ✅ | docs #236/243/248/253 · sheets #263/272/273 |
+| Agent reachable on local model | ✅ | ✅ (was already `drivesLoop=false`) | docs #246 |
+| MCP (client, SSE, persist, auth, untrusted) | ✅ | ✅ | docs #240/244/247/249 · sheets #268/270/271 |
+| Data-quality safety | n/a | ✅ numeric coercion / `get_workbook_info` | sheets #265/266 |
+| 7B/8B local model + RAM-recommend (O1) | ✅ shared | ✅ shared | desktop #75 |
+
+**Parity: achieved.** Both editors are at O1 + O2 code-complete with matched agentic/MCP/RAG surfaces. The only outstanding items are the deferred list above (grammar, web-proxy, MCP server) and on-device visual verification.

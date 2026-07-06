@@ -1,6 +1,6 @@
 # 35 — Agentic AI + real MCP for DocOps
 
-Status: **in progress** (2026-07-05). Owner-directed: the DocOps AI must be genuinely **agentic** (autonomous plan → execute → reflect), not just an MCP-shaped tool surface, and expose/consume tools over the **real Model Context Protocol**. Builds on the tool catalog in `@casualoffice/docops` and the panel loop in `DocOpsPanel.tsx`. Sibling of the production-rework plan in [34](34-ai-production-rework.md).
+Status: **shipped, both editors** (updated 2026-07-06). Agentic plan→execute→reflect + real MCP **client** landed and hardened across docs and sheets — completion log + docs↔sheet parity matrix in [34 §6](34-ai-production-rework.md#6-completion-log-updated-2026-07-06); forward objectives in [36 (north star)](36-ai-north-star.md). **Deferred:** the MCP **server** (expose the editor's tools to external agents) → north-star O5, via the collab server. Owner-directed: the DocOps AI must be genuinely **agentic** (autonomous plan → execute → reflect), not just an MCP-shaped tool surface. Builds on the tool catalog in `@casualoffice/docops` and the panel loop in `DocOpsPanel.tsx`.
 
 ## Starting point (what existed)
 
