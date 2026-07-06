@@ -51,6 +51,7 @@ import {
 } from 'react';
 
 import { DocxEditor, type DocxEditorProps, type DocxEditorRef } from './DocxEditor';
+import { PresenceCluster } from './PresenceCluster';
 import { createDocOpsTransport } from '../docops';
 import { createEmptyDocument } from '@eigenpal/docx-core/utils';
 import type { Document } from '@eigenpal/docx-core/types/document';
@@ -125,6 +126,13 @@ export interface CasualEditorProps {
    * disconnects). Drive uses this to render the presence avatars.
    */
   onCollabState?: (state: CollabState) => void;
+  /**
+   * Share action for the collab presence cluster. When set (and
+   * collab is active), the title-bar PresenceCluster renders a
+   * Share button that invokes this. Omit to hide the button — the
+   * wrapper never invents a share backend.
+   */
+  onShare?: () => void;
   /** Custom render override for the loading state. Default is a centered "Loading…" string. */
   renderLoading?: () => ReactNode;
   /** Custom render override for the error state. */
@@ -177,6 +185,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       onError,
       onAutosaveState,
       onCollabState,
+      onShare,
       renderLoading,
       renderError,
       signing,
@@ -267,6 +276,24 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       [collabState]
     );
 
+    // Live presence in the title bar — avatar stack + room-status badge
+    // (+ optional Share). Only mounted when collab is active, so standalone
+    // docs keep the plain title bar. Fed by the same peers + status the ref
+    // exposes via collabPeers()/collabStatus().
+    const renderCollabPresence = collabState
+      ? () => (
+          <PresenceCluster
+            peers={collabState.peers.map((p) => ({
+              name: p.name,
+              color: p.color,
+              active: true,
+            }))}
+            status={collabState.status}
+            onShare={onShare}
+          />
+        )
+      : undefined;
+
     // ---------------------------------------------------------------
     // Autosave — opt-in via autosave={true}
     // ---------------------------------------------------------------
@@ -328,6 +355,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
         onSave={onSave}
         onSelectionChange={onSelectionChange}
         onError={onError}
+        renderTitleBarRight={renderCollabPresence}
         docopsTransport={createDocOpsTransport({ collabWsUrl: backendUrl, room: docId })}
         {...docxEditorProps}
       />
