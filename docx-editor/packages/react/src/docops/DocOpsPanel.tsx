@@ -40,6 +40,22 @@ import {
   type LlmCallPayload,
   type ToolExecutor,
 } from './transport';
+import { setWorkspaceDocs } from './workspaceStore';
+
+/** The desktop shell exposes Tauri's invoke on the top-level window; returns it
+ *  when running inside Casual Desktop, else null (web / iframe). */
+function desktopInvoke():
+  | ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>)
+  | null {
+  const inv = (
+    window as {
+      __TAURI__?: {
+        core?: { invoke?: (c: string, a?: Record<string, unknown>) => Promise<unknown> };
+      };
+    }
+  ).__TAURI__?.core?.invoke;
+  return typeof inv === 'function' ? inv : null;
+}
 
 interface McpServerState {
   id: string;
@@ -504,6 +520,39 @@ export function DocOpsPanel({
   const [mcpUrlDraft, setMcpUrlDraft] = useState('');
   const [mcpTokenDraft, setMcpTokenDraft] = useState('');
   const [showMcpAdd, setShowMcpAdd] = useState(false);
+
+  // On-device workspace RAG (desktop only): { count, folder } once a local
+  // folder is indexed; null otherwise. 'indexing' while the picker/read runs.
+  const [workspace, setWorkspace] = useState<{ count: number; folder: string } | null>(null);
+  const [indexingWorkspace, setIndexingWorkspace] = useState(false);
+  const canIndexWorkspace = !!desktopInvoke();
+
+  const indexWorkspace = useCallback(async () => {
+    const invoke = desktopInvoke();
+    if (!invoke || indexingWorkspace) return;
+    setIndexingWorkspace(true);
+    try {
+      const folder = (await invoke('pick_workspace_folder')) as string | null;
+      if (!folder) return; // dismissed
+      const docs = (await invoke('read_workspace_folder', { path: folder })) as {
+        id: string;
+        name: string;
+        text: string;
+      }[];
+      setWorkspaceDocs(docs);
+      const folderName = folder.split(/[\\/]/).pop() || folder;
+      setWorkspace(docs.length ? { count: docs.length, folder: folderName } : null);
+    } catch {
+      /* dialog cancelled or read failed — leave the current workspace as-is */
+    } finally {
+      setIndexingWorkspace(false);
+    }
+  }, [indexingWorkspace]);
+
+  const clearWorkspaceFolder = useCallback(() => {
+    setWorkspaceDocs([]);
+    setWorkspace(null);
+  }, []);
 
   const connectMcp = useCallback(
     async (rawUrl: string, rawToken?: string, persist = true) => {
@@ -1148,6 +1197,31 @@ export function DocOpsPanel({
                       MCP
                     </button>
                   )}
+                  {canIndexWorkspace &&
+                    (workspace ? (
+                      <button
+                        type="button"
+                        onClick={clearWorkspaceFolder}
+                        style={mcpAddBtnStyle}
+                        data-testid="docops-workspace-chip"
+                        title={`${workspace.count} file${workspace.count === 1 ? '' : 's'} from "${workspace.folder}" indexed for the AI. Click to clear.`}
+                      >
+                        <MaterialSymbol name="folder" size={13} />
+                        {workspace.count} indexed
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={indexWorkspace}
+                        style={mcpAddBtnStyle}
+                        disabled={indexingWorkspace}
+                        data-testid="docops-workspace-add"
+                        title="Index a local folder so the AI can search and cite across your files — on-device"
+                      >
+                        <MaterialSymbol name="folder" size={13} />
+                        {indexingWorkspace ? 'Indexing…' : 'Folder'}
+                      </button>
+                    ))}
                 </div>
               )}
               {agentMode && !transport.drivesLoop && (mcpServers.length > 0 || showMcpAdd) && (
