@@ -34,7 +34,11 @@ export default defineConfig({
     '**/e2e/tests/visual-regression.spec.ts',
   ],
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // 3 retries in CI: a handful of specs are inherently timing-flaky (documented
+  // in CLAUDE.md — formatting.spec.ts bold/italic toggle, Yjs 2-client sync).
+  // Playwright only re-runs the FAILED test, so this doesn't slow the happy path
+  // but stops a single unlucky flake from failing the whole shard.
+  retries: process.env.CI ? 3 : 0,
   // CI shards the suite across 4 runners; on a 2-vCPU GitHub runner, running
   // 4 workers PER shard oversubscribed the CPU 2x, so every test ran slow and
   // blew the 5s assertion timeout — and the slowness was consistent, so even
