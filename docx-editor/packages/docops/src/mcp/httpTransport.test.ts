@@ -87,7 +87,9 @@ describe('HttpMcpTransport ↔ McpServer over HTTP', () => {
         inner.method === 'initialize'
           ? { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: {} }
           : { tools: [] };
-      return new Response(JSON.stringify({ jsonrpc: '2.0', id: inner.id, result }), { status: 200 });
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: inner.id, result }), {
+        status: 200,
+      });
     }) as unknown as typeof fetch;
 
     const transport = new HttpMcpTransport('https://mcp.example.com/rpc', {

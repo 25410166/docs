@@ -78,7 +78,11 @@ export class HttpMcpTransport implements JsonRpcTransport {
     const target = this.proxyUrl ?? this.url;
     const reqHeaders: Record<string, string> = this.proxyUrl
       ? { 'content-type': 'application/json' }
-      : { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...mcpHeaders };
+      : {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          ...mcpHeaders,
+        };
     const reqBody = this.proxyUrl
       ? JSON.stringify({ url: this.url, headers: mcpHeaders, body: message })
       : message;
