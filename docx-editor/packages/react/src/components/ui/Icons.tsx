@@ -835,6 +835,14 @@ export function IconNoteAdd(props: IconProps) {
   );
 }
 
+export function IconFolder(props: IconProps) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z" />
+    </SvgIcon>
+  );
+}
+
 export function IconContentCut(props: IconProps) {
   return (
     <SvgIcon {...props}>
@@ -1066,6 +1074,7 @@ const iconMap: Record<string, React.ComponentType<IconProps>> = {
   auto_awesome: IconAgentSparkle,
   // File menu — `tune` and `settings` already registered above
   note_add: IconNoteAdd,
+  folder: IconFolder,
   // Edit menu — clipboard ops
   content_cut: IconContentCut,
   content_copy: IconContentCopy,
