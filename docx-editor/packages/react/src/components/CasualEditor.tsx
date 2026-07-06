@@ -47,6 +47,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 
@@ -65,6 +66,7 @@ import {
   type CollabStatus,
 } from '../collab/useCollab';
 import { commentsFromMap, observeComments, writeCommentsToMap } from '../collab/commentSync';
+import { ReconnectBanner } from '../collab/ReconnectBanner';
 import {
   useFileSourceAutoSave,
   type UseFileSourceAutoSaveReturn,
@@ -333,19 +335,35 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       />
     );
 
-    // Without an active signing session, return the editor alone.
-    if (!signing) return editor;
-
-    // With a signing session, wrap the editor in a SigningProvider
-    // and render the SigningPane alongside. The provider captures
-    // the current document bytes so the eventual `onComplete`
-    // payload carries the right base buffer.
-    return (
+    // Without an active signing session, the content is the editor
+    // alone; otherwise wrap it in a SigningProvider and render the
+    // SigningPane alongside. The provider captures the current
+    // document bytes so the eventual `onComplete` payload carries the
+    // right base buffer.
+    const content = !signing ? (
+      editor
+    ) : (
       <SigningProvider session={signing} documentBytes={loadState.buffer}>
         {editor}
         <SigningPane banner={signing.banner} />
       </SigningProvider>
     );
+
+    // In collab mode, show the default reconnecting/offline banner
+    // above the editor whenever the session isn't connected. Hosts
+    // that render their own indicator can ignore it — the strip only
+    // appears while degraded. Standalone/connected renders unchanged
+    // so existing (non-collab) host layouts keep the editor as root.
+    if (collabState && collabState.status !== 'connected') {
+      return (
+        <div style={bannerLayoutStyle}>
+          <ReconnectBanner status={collabState.status} />
+          <div style={bannerBodyStyle}>{content}</div>
+        </div>
+      );
+    }
+
+    return content;
   }
 );
 
@@ -382,6 +400,23 @@ function useCollabSafe(args: {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   return useCollab({ backend: args.backend, room: args.room, user: args.user });
 }
+
+// Flex-column wrapper used only when the reconnect banner is visible,
+// so the strip sits above a full-height editor body. Applied lazily
+// (collab + degraded) to avoid changing the DOM for the common case.
+const bannerLayoutStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  height: '100%',
+  minHeight: 0,
+};
+
+const bannerBodyStyle: CSSProperties = {
+  flex: '1 1 auto',
+  minHeight: 0,
+  display: 'flex',
+  flexDirection: 'column',
+};
 
 function blankDoc(): Document {
   return createEmptyDocument();

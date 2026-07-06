@@ -52,6 +52,11 @@ export {
   type CasualEditorRef,
 } from './components/CasualEditor';
 
+// ReconnectBanner — default reconnecting/offline strip, driven by a
+// CollabStatus. CasualEditor renders it automatically in collab mode;
+// exported for hosts that compose their own layout.
+export { ReconnectBanner } from './collab/ReconnectBanner';
+
 // CasualEditorIframe — iframe-mounting variant of CasualEditor.
 // Doc 16 in the parent repo. Use this for hosts that need CSS / React
 // runtime isolation (most consumers; Drive in particular). The
