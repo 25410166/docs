@@ -436,7 +436,10 @@ export class DocsBridge {
 
     view.state.doc.descendants((node, pos) => {
       if (matches.length >= limit) return false;
-      if (node.type.name !== 'paragraph') return;
+      // Match any textblock (paragraphs, headings, list items, …) so find_text
+      // is consistent with get_block, which also keys on isTextblock. The old
+      // paragraph-only check silently missed text in other block types.
+      if (!node.isTextblock) return;
 
       let text = '';
       node.forEach((child) => {
