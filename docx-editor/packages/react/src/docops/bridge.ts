@@ -72,10 +72,25 @@ export class DocsBridge {
   // until a workspace is provided, so search_workspace degrades gracefully.
   private workspace: WorkspaceIndex | null = null;
 
+  // Display name of the human who triggered the current AI action. Used to
+  // attribute AI-authored mutations (tracked changes, comments) so co-editors
+  // can tell who ran the AI — e.g. "Alice via AI" instead of an anonymous bot.
+  private aiUser: string | null = null;
+
   constructor(
     private readonly getView: () => EditorView | null,
     private readonly getActions: () => DocsBridgeActions | null = () => null
   ) {}
+
+  /** Set the human whose AI actions are attributed (host-driven; see aiUser). */
+  setAiAuthor(user: string | null): void {
+    this.aiUser = user && user.trim() ? user.trim() : null;
+  }
+
+  /** Author label for AI-triggered mutations: "<user> via AI", or "AI" when unknown. */
+  private aiAuthor(): string {
+    return this.aiUser ? `${this.aiUser} via AI` : 'AI';
+  }
 
   /** Replace the indexed workspace (host-driven; files stay on the machine). */
   setWorkspaceDocs(docs: WorkspaceDoc[]): void {
@@ -520,7 +535,7 @@ export class DocsBridge {
       return { ok: false, code: 'VALIDATION', message: 'paraId is required.', retryable: false };
     }
 
-    const success = actions.proposeChange({ paraId, search, replaceWith, author: 'DocOps AI' });
+    const success = actions.proposeChange({ paraId, search, replaceWith, author: this.aiAuthor() });
     if (!success) {
       return {
         ok: false,
@@ -578,7 +593,7 @@ export class DocsBridge {
       };
     }
 
-    const commentId = actions.addComment({ paraId, text, author: 'DocOps AI', search });
+    const commentId = actions.addComment({ paraId, text, author: this.aiAuthor(), search });
     if (commentId == null) {
       return {
         ok: false,
@@ -728,7 +743,7 @@ export class DocsBridge {
       };
     }
 
-    const success = actions.rewriteSelection({ newText, author: 'DocOps AI' });
+    const success = actions.rewriteSelection({ newText, author: this.aiAuthor() });
     if (!success) {
       return {
         ok: false,
@@ -758,7 +773,7 @@ export class DocsBridge {
       };
     }
 
-    const success = actions.deleteParagraphs({ paraIds, author: 'DocOps AI' });
+    const success = actions.deleteParagraphs({ paraIds, author: this.aiAuthor() });
     if (!success) {
       return {
         ok: false,
@@ -795,7 +810,7 @@ export class DocsBridge {
       paraId,
       text,
       styleId,
-      author: 'DocOps AI',
+      author: this.aiAuthor(),
     });
     if (!success) {
       return {
