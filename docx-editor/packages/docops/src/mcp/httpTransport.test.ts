@@ -75,6 +75,36 @@ describe('HttpMcpTransport ↔ McpServer over HTTP', () => {
     expect(tools).toHaveLength(1);
   });
 
+  it('routes through the proxy URL, wrapping the target url + body', async () => {
+    let sawUrl = '';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let sawEnvelope: any = null;
+    const fetchImpl = (async (u: string, init: { body?: string }) => {
+      sawUrl = u;
+      sawEnvelope = JSON.parse(String(init.body));
+      const inner = JSON.parse(sawEnvelope.body);
+      const result =
+        inner.method === 'initialize'
+          ? { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: {} }
+          : { tools: [] };
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: inner.id, result }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const transport = new HttpMcpTransport('https://mcp.example.com/rpc', {
+      proxyUrl: 'https://collab.test/api/mcp-proxy',
+      headers: { Authorization: 'Bearer t' },
+      fetchImpl,
+    });
+    await new McpClient(transport, { id: 'mcp:proxied' }).listTools();
+
+    // Requests hit the PROXY, carrying the real target url + the JSON-RPC body +
+    // the auth header for the proxy to forward.
+    expect(sawUrl).toBe('https://collab.test/api/mcp-proxy');
+    expect(sawEnvelope.url).toBe('https://mcp.example.com/rpc');
+    expect(typeof sawEnvelope.body).toBe('string');
+    expect(sawEnvelope.headers.Authorization).toBe('Bearer t');
+  });
+
   it('reads a streaming text/event-stream body incrementally (chunked)', async () => {
     const prov = provider([]);
     let reply = '';
