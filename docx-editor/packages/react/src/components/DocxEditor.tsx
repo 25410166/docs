@@ -2795,6 +2795,11 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       () => docsBridgeActionsRef.current
     );
   }
+  // Attribute AI-triggered mutations to the human who ran them (e.g. "Alice
+  // via AI") rather than an anonymous bot, mirroring the human `author` prop.
+  useEffect(() => {
+    docsBridgeRef.current?.setAiAuthor(author);
+  }, [author]);
 
   // Right-side panel mutex. Google Docs / Microsoft Word only ever
   // expose ONE right-edge panel at a time (Comments XOR Outline,
