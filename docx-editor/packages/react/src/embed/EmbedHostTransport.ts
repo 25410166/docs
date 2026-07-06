@@ -27,6 +27,7 @@ import {
   type CommandSetThemeData,
   type CommandSetLocaleData,
   type CommandSetViewModeData,
+  type CommandSetWorkspaceData,
   type EditorHelloData,
   type HostHelloData,
   type LoadRequestData,
@@ -108,6 +109,12 @@ export class EmbedHostTransport {
   /** Tell the editor to switch chrome density without re-mounting. */
   sendSetViewMode(data: CommandSetViewModeData): void {
     this.post('casual.command.set.viewmode', data);
+  }
+
+  /** Populate the editor's on-device workspace index for RAG across the user's
+   *  local folder. The host extracts plain text from each file first. */
+  sendSetWorkspace(data: CommandSetWorkspaceData): void {
+    this.post('casual.command.set.workspace', data);
   }
 
   sendSetReadOnly(data: CommandSetReadOnlyData): void {

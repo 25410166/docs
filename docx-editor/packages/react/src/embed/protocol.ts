@@ -134,6 +134,13 @@ export interface CommandSetViewModeData {
   viewMode: 'preview' | 'editor';
 }
 
+/** Host → editor: populate the on-device workspace index for RAG across the
+ *  user's local folder. The host extracts plain text from each file and sends
+ *  it here; nothing leaves the machine. Empty `docs` clears the workspace. */
+export interface CommandSetWorkspaceData {
+  docs: { id: string; name: string; text: string }[];
+}
+
 // ---------------------------------------------------------------
 // Errors (editor → host fatal signals)
 // ---------------------------------------------------------------

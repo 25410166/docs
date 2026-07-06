@@ -346,6 +346,18 @@ Update theme / locale at runtime. Editor re-renders.
 Move keyboard focus into the editor — useful when the host renders
 custom chrome that captures focus.
 
+### `command.set.workspace` (host → editor)
+
+Populate the editor's on-device workspace index for RAG across the user's
+local folder. The host extracts plain text from each local file and sends it;
+the AI's `search_workspace` tool then retrieves + cites across all of them.
+Nothing leaves the machine. Empty `docs` clears the workspace.
+
+```
+{ type: 'casual.command.set.workspace', app: 'docs', v: 1,
+  data: { docs: [{ id: '/path/a.docx', name: 'a.docx', text: '…' }] } }
+```
+
 ---
 
 ## Binary payloads

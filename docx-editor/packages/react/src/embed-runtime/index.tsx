@@ -33,6 +33,7 @@ import { CasualEditor } from '../components/CasualEditor';
 import { EmbedTransport } from '../embed/EmbedTransport';
 import { createIframeFileSource } from '../embed/IframeFileSource';
 import type { CasualApp } from '../embed/protocol';
+import { setWorkspaceDocs } from '../docops/workspaceStore';
 
 /** Parsed shape of the iframe URL — what `mountEmbedded()` reads
  *  before the host's `casual.hello` arrives. */
@@ -163,6 +164,11 @@ export function mountEmbedded(opts: MountEmbeddedOptions): void {
     onCommandSetViewMode: ({ viewMode }) => {
       opts.root.setAttribute('data-view-mode', viewMode);
       render(viewMode);
+    },
+    // On-device workspace RAG: the host pushes plain text extracted from the
+    // user's local folder into the shared workspace index the AI searches.
+    onCommandSetWorkspace: ({ docs }) => {
+      setWorkspaceDocs(docs);
     },
   });
 }
