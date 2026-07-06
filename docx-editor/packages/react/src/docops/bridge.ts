@@ -21,6 +21,7 @@ import {
   type RetrievalChunk,
   type WorkspaceDoc,
 } from '@casualoffice/docops';
+import { getSharedWorkspace } from './workspaceStore';
 
 /**
  * Subset of DocxEditorRef exposed to the bridge for mutation operations.
@@ -85,7 +86,7 @@ export class DocsBridge {
 
   /** True when a local workspace has been indexed (gates the search_workspace tool). */
   hasWorkspace(): boolean {
-    return !!this.workspace && this.workspace.size > 0;
+    return (!!this.workspace && this.workspace.size > 0) || !!getSharedWorkspace();
   }
 
   clearWorkspace(): void {
@@ -352,7 +353,10 @@ export class DocsBridge {
    * the best passages with the source file for each, so the model can cite them.
    */
   private searchWorkspace(args: Record<string, unknown>): DocOpsResult {
-    if (!this.workspace || this.workspace.size === 0) {
+    // Prefer a workspace set directly on this bridge; otherwise use the shared
+    // process-level workspace the host populates (embed command / desktop).
+    const ws = this.workspace && this.workspace.size > 0 ? this.workspace : getSharedWorkspace();
+    if (!ws) {
       return {
         ok: false,
         code: 'UNSUPPORTED',
@@ -365,7 +369,7 @@ export class DocsBridge {
       return { ok: false, code: 'VALIDATION', message: 'query is required.', retryable: false };
     }
     const k = typeof args.k === 'number' ? Math.min(Math.max(Math.floor(args.k), 1), 8) : 6;
-    const result = this.workspace.search(query, k);
+    const result = ws.search(query, k);
     return {
       ok: true,
       data: {

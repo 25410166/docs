@@ -32,6 +32,7 @@ import {
   type CommandSetThemeData,
   type CommandSetLocaleData,
   type CommandSetViewModeData,
+  type CommandSetWorkspaceData,
   type CasualErrorData,
   type SignatureRequestData,
   type SignatureRequestAckData,
@@ -66,6 +67,8 @@ export interface EmbedTransportHandlers {
   onCommandSetLocale?: (data: CommandSetLocaleData) => void | Promise<void>;
   /** Host → editor: switch chrome density (preview ↔ editor). */
   onCommandSetViewMode?: (data: CommandSetViewModeData) => void | Promise<void>;
+  /** Host → editor: populate the on-device workspace index for RAG. */
+  onCommandSetWorkspace?: (data: CommandSetWorkspaceData) => void | Promise<void>;
   onCommandFocus?: () => void | Promise<void>;
   onCommandSave?: () => void | Promise<void>;
   onCommandLoad?: () => void | Promise<void>;
@@ -222,6 +225,9 @@ export class EmbedTransport {
         return;
       case 'casual.command.set.viewmode':
         await this.handlers.onCommandSetViewMode?.(env.data as CommandSetViewModeData);
+        return;
+      case 'casual.command.set.workspace':
+        await this.handlers.onCommandSetWorkspace?.(env.data as CommandSetWorkspaceData);
         return;
       case 'casual.command.focus':
         await this.handlers.onCommandFocus?.();
