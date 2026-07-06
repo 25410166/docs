@@ -39,9 +39,10 @@ export function bridgeToolSource(bridge: DocsBridge): ToolSource {
 export function createMcpClient(
   url: string,
   id: string,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
+  proxyUrl?: string
 ): McpClient {
-  return new McpClient(new HttpMcpTransport(url, { headers }), { id });
+  return new McpClient(new HttpMcpTransport(url, { headers, proxyUrl }), { id });
 }
 
 /**

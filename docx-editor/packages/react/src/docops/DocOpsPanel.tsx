@@ -561,10 +561,15 @@ export function DocOpsPanel({
       const id = `mcp:${url}`;
       if (mcpServers.some((s) => s.id === id)) return;
       const token = rawToken?.trim();
+      // On the web, browsers can't reach most external MCP servers (no CORS), so
+      // route through the same-origin collab proxy. On desktop the Tauri webview
+      // fetches cross-origin freely, so connect directly.
+      const proxyUrl = desktopInvoke() ? undefined : '/api/mcp-proxy';
       const client = createMcpClient(
         url,
         id,
-        token ? { Authorization: `Bearer ${token}` } : undefined
+        token ? { Authorization: `Bearer ${token}` } : undefined,
+        proxyUrl
       );
       setMcpServers((prev) => [
         ...prev,
