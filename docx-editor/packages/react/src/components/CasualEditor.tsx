@@ -139,6 +139,17 @@ export interface CasualEditorProps {
    */
   ai?: DocxEditorProps['ai'];
   /**
+   * Per-control feature-flag map (docs#272). Forwarded to the underlying
+   * `DocxEditor.features` — hides/disables toolbar controls by id.
+   */
+  features?: DocxEditorProps['features'];
+  /**
+   * Host editor extensions (docs#273) — add or replace ProseMirror behavior.
+   * Forwarded to `DocxEditor.editorExtensions`; composes with the wrapper's own
+   * collab plugins.
+   */
+  editorExtensions?: DocxEditorProps['editorExtensions'];
+  /**
    * Fires whenever a tick lands — host can render its own
    * "Saved 2 min ago" indicator without subscribing to the
    * underlying hook.
@@ -212,6 +223,8 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       onSelectionChange,
       onError,
       ai,
+      features,
+      editorExtensions,
       onAutosaveState,
       onCollabState,
       onShare,
@@ -395,6 +408,8 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
         onSave={onSave}
         onSelectionChange={onSelectionChange}
         onError={onError}
+        features={features}
+        editorExtensions={editorExtensions}
         renderTitleBarRight={renderCollabPresence}
         docopsTransport={createDocOpsTransport({ collabWsUrl: backendUrl, room: docId })}
         ai={ai}

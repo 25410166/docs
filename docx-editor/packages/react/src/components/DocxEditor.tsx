@@ -452,6 +452,13 @@ import {
 // Paginated editor
 import { PagedEditor, type PagedEditorRef, DEFAULT_PAGE_WIDTH } from '../paged-editor/PagedEditor';
 import { createEditorEventBus } from './editorEventBus';
+import {
+  DisabledFeaturesContext,
+  disabledFeatureSet,
+  isFeatureEnabled,
+  type FeatureMap,
+} from './features';
+import { resolveEditorExtensionPlugins, type EditorExtension } from './editorExtensions';
 
 // Plugin API types
 import type { RenderedDomContext } from '../plugin-api/types';
@@ -559,8 +566,20 @@ export interface DocxEditorProps {
   versionBackend?: ServerVersionBackend;
   /** Callback when fonts are loaded */
   onFontsLoaded?: () => void;
-  /** External ProseMirror plugins (from PluginHost) */
+  /**
+   * Low-level ProseMirror plugin escape hatch (from PluginHost / collab wiring
+   * such as `ySyncPlugin`). Composes with {@link editorExtensions} — both are
+   * merged into the plugin stack. Prefer `editorExtensions` for host behavior;
+   * keep this for raw plugin arrays.
+   */
   externalPlugins?: import('prosemirror-state').Plugin[];
+  /**
+   * Host editor extensions (docs#273, doc 38 §5–6) — a SuperDoc-style way to
+   * ADD or REPLACE ProseMirror behavior without forking. Each extension
+   * contributes raw plugins; extensions sharing a `name` collapse to the last
+   * (override). Layered on top of {@link externalPlugins}.
+   */
+  editorExtensions?: EditorExtension[];
   /**
    * When true, the editor treats the `document` prop as a schema seed only and
    * does not load it into ProseMirror on mount. Content is expected to come from
@@ -625,27 +644,56 @@ export interface DocxEditorProps {
    */
   chrome?: 'none' | 'minimal' | 'full';
   /**
+   * Per-control on/off map (docs#272, doc 38 §5a) — the shared shape the sister
+   * sheet SDK uses. Each key is a control id (see `DOCX_FEATURE_IDS`); `false`
+   * hides that control, an omitted key defaults to enabled, and `features` only
+   * applies when `chrome` is shown. This supersedes the scattered `show*`
+   * booleans: the coarse `show*` props (`showToolbar`, `showStatusBar`,
+   * `showPanelRail`, `showZoomControl`, `showPrintButton`, `showOutline`,
+   * `showRuler`) still work as deprecated shortcuts, but when both target the
+   * same region, `features` wins. Individual toolbar buttons (`bold`, `italic`,
+   * …) are hidden by id; full command-veto is a follow-up (buttons are removed
+   * from the UI today).
+   */
+  features?: FeatureMap;
+  /**
    * Called once, after the editor mounts and finishes loading its initial
    * document, with the imperative API (the same object exposed via `ref`).
    * Mirrors the sheet SDK's `onReady(api)` handshake so hosts get a single
    * "ready" signal instead of polling the ref.
    */
   onReady?: (api: DocxEditorRef) => void;
-  /** Whether to show toolbar (default: true, or per `chrome` preset) */
+  /**
+   * Whether to show toolbar (default: true, or per `chrome` preset).
+   * @deprecated Use `features={{ toolbar: false }}` (doc 38 §5a). Still honored,
+   * but `features` wins when both are set.
+   */
   showToolbar?: boolean;
-  /** Whether to show the right-edge PanelRail (default: true). Set to
-   *  `false` when embedding the editor as a read-only preview so the
-   *  Outline / Comments / History toggles don't render. */
+  /**
+   * Whether to show the right-edge PanelRail (default: true). Set to `false`
+   * when embedding the editor as a read-only preview so the Outline / Comments
+   * / History toggles don't render.
+   * @deprecated Use `features={{ panelRail: false }}`. `features` wins.
+   */
   showPanelRail?: boolean;
-  /** Whether to show the bottom status bar (default: true) */
+  /**
+   * Whether to show the bottom status bar (default: true).
+   * @deprecated Use `features={{ statusBar: false }}`. `features` wins.
+   */
   showStatusBar?: boolean;
-  /** Whether to show zoom control (default: true) */
+  /**
+   * Whether to show zoom control (default: true).
+   * @deprecated Use `features={{ zoomControl: false }}`. `features` wins.
+   */
   showZoomControl?: boolean;
   /** Whether to show page margin guides/boundaries (default: false) */
   showMarginGuides?: boolean;
   /** Color for margin guides (default: '#c0c0c0') */
   marginGuideColor?: string;
-  /** Whether to show horizontal ruler (default: false) */
+  /**
+   * Whether to show horizontal ruler (default: false).
+   * @deprecated Use `features={{ ruler: false }}`. `features` wins.
+   */
   showRuler?: boolean;
   /** Unit for ruler display (default: 'inch') */
   rulerUnit?: 'inch' | 'cm';
@@ -668,7 +716,11 @@ export interface DocxEditorProps {
   placeholder?: ReactNode;
   /** Loading indicator */
   loadingIndicator?: ReactNode;
-  /** Whether to show the document outline sidebar (default: false) */
+  /**
+   * Whether to show the document outline sidebar (default: false).
+   * @deprecated Hide the outline with `features={{ outline: false }}`.
+   * `features` wins when disabling.
+   */
   showOutline?: boolean;
   /** Whether to show the floating outline toggle button (default: true) */
   showOutlineButton?: boolean;
@@ -685,7 +737,10 @@ export interface DocxEditorProps {
    * @example fontFamilies={[{ name: 'Roboto', fontFamily: 'Roboto, sans-serif', category: 'sans-serif' }]}
    */
   fontFamilies?: ReadonlyArray<string | FontOption>;
-  /** Whether to show print button in toolbar (default: true) */
+  /**
+   * Whether to show print button in toolbar (default: true).
+   * @deprecated Use `features={{ printButton: false }}`. `features` wins.
+   */
   showPrintButton?: boolean;
   /** Print options for print preview */
   printOptions?: PrintOptions;
@@ -1824,6 +1879,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     onFontsLoaded: onFontsLoadedCallback,
     theme,
     chrome,
+    features,
     onReady,
     // `chrome` sets the default UI level; an explicit show* prop still wins
     // (destructuring defaults only apply when the prop is undefined). No
@@ -1867,6 +1923,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     comments: commentsProp,
     onCommentsChange,
     externalPlugins,
+    editorExtensions,
     externalContent = false,
     footnoteSync,
     endnoteSync,
@@ -1988,7 +2045,20 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // (and any other chrome) without TDZ errors. The keydown handler +
   // chrome conditionals further below consume the same state.
   const [focusMode, setFocusMode] = useState(false);
-  const showRulerEffective = (showRulerLocal ?? showRuler) && !focusMode;
+  const showRulerEffective =
+    (showRulerLocal ?? showRuler) && !focusMode && isFeatureEnabled(features, 'ruler', true);
+
+  // Feature-flag map (docs#272). `features[id]` wins over the deprecated `show*`
+  // shortcut for the same region; omitted keys fall back to the `show*` prop
+  // (which already encodes the `chrome` preset). `disabledFeatures` drives
+  // per-button hiding via context.
+  const disabledFeatures = useMemo(() => disabledFeatureSet(features), [features]);
+  const showToolbarEffective = isFeatureEnabled(features, 'toolbar', showToolbar);
+  const showPanelRailEffective = isFeatureEnabled(features, 'panelRail', showPanelRail);
+  const showStatusBarEffective = isFeatureEnabled(features, 'statusBar', showStatusBar);
+  const showZoomControlEffective = isFeatureEnabled(features, 'zoomControl', showZoomControl);
+  const showPrintButtonEffective = isFeatureEnabled(features, 'printButton', showPrintButton);
+  const showOutlineEffective = showOutline && isFeatureEnabled(features, 'outline', true);
   // Paint format (format painter) — when set, the next non-empty
   // selection will receive these marks. Esc cancels. Toolbar button
   // toggles between idle/armed.
@@ -2467,14 +2537,27 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const mentionPlugin = useMemo(() => createMentionPlugin(), []);
 
   const allExternalPlugins = useMemo(
-    () => [
+    () =>
+      // Host `editorExtensions` (docs#273) layer on top of the built-ins and the
+      // low-level `externalPlugins` escape hatch — a single merged plugin stack.
+      resolveEditorExtensionPlugins(
+        [
+          suggestionPlugin,
+          markdownHeadingPlugin,
+          findHighlightPlugin,
+          mentionPlugin,
+          ...(externalPlugins ?? []),
+        ],
+        editorExtensions
+      ),
+    [
       suggestionPlugin,
       markdownHeadingPlugin,
       findHighlightPlugin,
       mentionPlugin,
-      ...(externalPlugins ?? []),
-    ],
-    [suggestionPlugin, markdownHeadingPlugin, findHighlightPlugin, mentionPlugin, externalPlugins]
+      externalPlugins,
+      editorExtensions,
+    ]
   );
 
   // Refs
@@ -9611,494 +9694,504 @@ body { background: white; }
     <LocaleProvider i18n={i18n}>
       <ErrorProvider>
         <ErrorBoundary onError={handleEditorError}>
-          <div
-            ref={containerRef}
-            className={`ep-root docx-editor ${className}`}
-            style={containerStyle}
-            data-testid="docx-editor"
-          >
-            {/* Main content area */}
-            <div style={mainContentStyle}>
-              {/* Wrapper for toolbar + scroll container + outline overlay */}
-              <div
-                style={{
-                  position: 'relative',
-                  flex: 1,
-                  minHeight: 0,
-                  minWidth: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                }}
-              >
-                {/* Toolbar - above the scroll container so scrollbar doesn't extend behind it */}
-                {/* Hide toolbar only when readOnly prop is explicitly set (not from viewing mode) */}
-                {/* Focus mode (Phase 5) also hides toolbar for distraction-free writing. */}
-                {showToolbar && !readOnlyProp && !focusMode && (
-                  <div ref={toolbarRefCallback} className="z-50 flex flex-col gap-0 flex-shrink-0">
-                    <EditorToolbar
-                      // When the agent panel is open, round the toolbar's
-                      // bottom-right corner so it mirrors the panel's top-left.
-                      // The radius transition (inline style on the inner div)
-                      // makes opening / closing ease instead of snap.
-                      className={agentPanelOpen ? 'rounded-br-2xl' : undefined}
-                      style={{
-                        transition: 'border-radius var(--doc-anim-slow)',
-                      }}
-                      currentFormatting={state.selectionFormatting}
-                      onFormat={handleFormat}
-                      onUndo={undoActiveEditor}
-                      onRedo={redoActiveEditor}
-                      canUndo={canUndoActiveEditor}
-                      canRedo={canRedoActiveEditor}
-                      disabled={readOnly}
-                      documentStyles={history.state?.package.styles?.styles}
-                      theme={history.state?.package.theme || theme}
-                      showPrintButton={showPrintButton}
-                      fontFamilies={fontFamilies}
-                      onPrint={handleDirectPrint}
-                      onOpen={handleOpenDocument}
-                      onSave={handleDownloadDocument}
-                      onMakeCopy={handleMakeCopy}
-                      onEmailAsAttachment={handleEmailAsAttachment}
-                      onOpenVersionHistory={() => {
-                        if (!showVersionHistory) handleToggleVersionHistory();
-                      }}
-                      onNew={onNew}
-                      showZoomControl={showZoomControl}
-                      zoom={state.zoom}
-                      onZoomChange={handleZoomChange}
-                      onRefocusEditor={focusActiveEditor}
-                      onInsertTable={handleInsertTable}
-                      showTableInsert={true}
-                      onInsertImage={handleInsertImageClick}
-                      onInsertPageBreak={handleInsertPageBreak}
-                      onInsertSectionBreak={handleInsertSectionBreak}
-                      onInsertField={handleInsertField}
-                      onInsertTOC={handleInsertTOC}
-                      onOpenBookmarks={() => setBookmarksDialogOpen(true)}
-                      onOpenCharacterSpacing={handleOpenCharacterSpacing}
-                      onOpenParagraphDialog={handleOpenParagraphDialog}
-                      onOpenBordersShading={handleOpenBordersShading}
-                      onAddComment={handleStartAddComment}
-                      onPaintFormat={handleTogglePaintFormat}
-                      paintFormatArmed={paintFormatMarks != null}
-                      onInsertHorizontalRule={handleInsertHorizontalRule}
-                      onInsertFootnote={handleInsertFootnote}
-                      onOpenInsertSymbol={handleOpenInsertSymbol}
-                      onToggleShowRuler={handleToggleShowRuler}
-                      rulerVisible={showRulerEffective}
-                      onToggleShowFormattingMarks={handleToggleShowFormattingMarks}
-                      showFormattingMarks={showFormattingMarks}
-                      onToggleOutline={handleToggleOutline}
-                      outlineVisible={showOutline}
-                      imageContext={state.pmImageContext}
-                      onImageWrapType={handleImageWrapType}
-                      onImageTransform={handleImageTransform}
-                      onOpenImageProperties={handleOpenImageProperties}
-                      onPageSetup={handleOpenPageSetup}
-                      onFileProperties={handleOpenFileProperties}
-                      onOpenWordCount={handleOpenWordCount}
-                      // Voice typing hidden — Web Speech API is
-                      // inconsistent across browsers. Re-enable when
-                      // we standardize on a backend.
-                      onExportPdf={handleExportPdf}
-                      onExportOdt={handleExportOdt}
-                      onExportMd={handleExportMd}
-                      onReportBug={handleReportBug}
-                      onShowAbout={handleShowAbout}
-                      onOpenCommandPalette={() => setShowCommandPalette(true)}
-                      onOpenKeyboardShortcuts={() => setShowKeyboardShortcuts(true)}
-                      onOpenPreferences={() => setShowPreferences(true)}
-                      onOpenWatermark={() => setShowWatermarkDialog(true)}
-                      onOpenAccessibility={handleOpenAccessibility}
-                      onOpenBuildingBlocks={handleOpenBuildingBlocks}
-                      onConvertSelectionToTable={handleConvertSelectionToTable}
-                      onConvertTableToText={
-                        state.pmTableContext?.isInTable ? handleConvertTableToText : undefined
-                      }
-                      onOpenDictionary={handleOpenDictionary}
-                      // LLM-stack entry points hidden: onOpenTranslate,
-                      // onTranslateDocument, onOpenWritingAssistant,
-                      // onOpenExplore. WebLLM inference blocks the main
-                      // thread on long docs; until that lands a yielding
-                      // path, these surfaces stay off. Re-wire with the
-                      // existing handlers when ready.
-                      onToggleSpellcheck={handleToggleSpellcheck}
-                      spellcheckEnabled={spellOn}
-                      onToggleGrammar={handleToggleGrammar}
-                      grammarEnabled={grammarOn}
-                      onOpenCitations={handleOpenCitations}
-                      onInsertShape={handleInsertShape}
-                      onInsertTextBox={handleInsertTextBox}
-                      onSetColorTheme={handleSetColorTheme}
-                      colorTheme={colorTheme}
-                      isDirty={isDirty}
-                      isSaving={isSaving}
-                      tableContext={state.pmTableContext}
-                      onTableAction={handleTableAction}
+          <DisabledFeaturesContext.Provider value={disabledFeatures}>
+            <div
+              ref={containerRef}
+              className={`ep-root docx-editor ${className}`}
+              style={containerStyle}
+              data-testid="docx-editor"
+            >
+              {/* Main content area */}
+              <div style={mainContentStyle}>
+                {/* Wrapper for toolbar + scroll container + outline overlay */}
+                <div
+                  style={{
+                    position: 'relative',
+                    flex: 1,
+                    minHeight: 0,
+                    minWidth: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
+                  {/* Toolbar - above the scroll container so scrollbar doesn't extend behind it */}
+                  {/* Hide toolbar only when readOnly prop is explicitly set (not from viewing mode) */}
+                  {/* Focus mode (Phase 5) also hides toolbar for distraction-free writing. */}
+                  {showToolbarEffective && !readOnlyProp && !focusMode && (
+                    <div
+                      ref={toolbarRefCallback}
+                      className="z-50 flex flex-col gap-0 flex-shrink-0"
                     >
-                      <EditorToolbar.TitleBar>
-                        {renderLogo && <EditorToolbar.Logo>{renderLogo()}</EditorToolbar.Logo>}
-                        {documentName !== undefined && (
-                          <EditorToolbar.DocumentName
-                            value={documentName}
-                            onChange={onDocumentNameChange}
-                            editable={documentNameEditable}
-                          />
-                        )}
-                        {renderTitleBarRight && (
-                          <EditorToolbar.TitleBarRight>
-                            {renderTitleBarRight()}
-                          </EditorToolbar.TitleBarRight>
-                        )}
-                        <EditorToolbar.MenuBar />
-                      </EditorToolbar.TitleBar>
-                      <EditorToolbar.FormattingBar>{toolbarChildren}</EditorToolbar.FormattingBar>
-                    </EditorToolbar>
-                  </div>
-                )}
+                      <EditorToolbar
+                        // When the agent panel is open, round the toolbar's
+                        // bottom-right corner so it mirrors the panel's top-left.
+                        // The radius transition (inline style on the inner div)
+                        // makes opening / closing ease instead of snap.
+                        className={agentPanelOpen ? 'rounded-br-2xl' : undefined}
+                        style={{
+                          transition: 'border-radius var(--doc-anim-slow)',
+                        }}
+                        currentFormatting={state.selectionFormatting}
+                        onFormat={handleFormat}
+                        onUndo={undoActiveEditor}
+                        onRedo={redoActiveEditor}
+                        canUndo={canUndoActiveEditor}
+                        canRedo={canRedoActiveEditor}
+                        disabled={readOnly}
+                        documentStyles={history.state?.package.styles?.styles}
+                        theme={history.state?.package.theme || theme}
+                        showPrintButton={showPrintButtonEffective}
+                        fontFamilies={fontFamilies}
+                        onPrint={handleDirectPrint}
+                        onOpen={handleOpenDocument}
+                        onSave={handleDownloadDocument}
+                        onMakeCopy={handleMakeCopy}
+                        onEmailAsAttachment={handleEmailAsAttachment}
+                        onOpenVersionHistory={() => {
+                          if (!showVersionHistory) handleToggleVersionHistory();
+                        }}
+                        onNew={onNew}
+                        showZoomControl={showZoomControlEffective}
+                        zoom={state.zoom}
+                        onZoomChange={handleZoomChange}
+                        onRefocusEditor={focusActiveEditor}
+                        onInsertTable={handleInsertTable}
+                        showTableInsert={true}
+                        onInsertImage={handleInsertImageClick}
+                        onInsertPageBreak={handleInsertPageBreak}
+                        onInsertSectionBreak={handleInsertSectionBreak}
+                        onInsertField={handleInsertField}
+                        onInsertTOC={handleInsertTOC}
+                        onOpenBookmarks={() => setBookmarksDialogOpen(true)}
+                        onOpenCharacterSpacing={handleOpenCharacterSpacing}
+                        onOpenParagraphDialog={handleOpenParagraphDialog}
+                        onOpenBordersShading={handleOpenBordersShading}
+                        onAddComment={handleStartAddComment}
+                        onPaintFormat={handleTogglePaintFormat}
+                        paintFormatArmed={paintFormatMarks != null}
+                        onInsertHorizontalRule={handleInsertHorizontalRule}
+                        onInsertFootnote={handleInsertFootnote}
+                        onOpenInsertSymbol={handleOpenInsertSymbol}
+                        onToggleShowRuler={handleToggleShowRuler}
+                        rulerVisible={showRulerEffective}
+                        onToggleShowFormattingMarks={handleToggleShowFormattingMarks}
+                        showFormattingMarks={showFormattingMarks}
+                        onToggleOutline={handleToggleOutline}
+                        outlineVisible={showOutlineEffective}
+                        imageContext={state.pmImageContext}
+                        onImageWrapType={handleImageWrapType}
+                        onImageTransform={handleImageTransform}
+                        onOpenImageProperties={handleOpenImageProperties}
+                        onPageSetup={handleOpenPageSetup}
+                        onFileProperties={handleOpenFileProperties}
+                        onOpenWordCount={handleOpenWordCount}
+                        // Voice typing hidden — Web Speech API is
+                        // inconsistent across browsers. Re-enable when
+                        // we standardize on a backend.
+                        onExportPdf={handleExportPdf}
+                        onExportOdt={handleExportOdt}
+                        onExportMd={handleExportMd}
+                        onReportBug={handleReportBug}
+                        onShowAbout={handleShowAbout}
+                        onOpenCommandPalette={() => setShowCommandPalette(true)}
+                        onOpenKeyboardShortcuts={() => setShowKeyboardShortcuts(true)}
+                        onOpenPreferences={() => setShowPreferences(true)}
+                        onOpenWatermark={() => setShowWatermarkDialog(true)}
+                        onOpenAccessibility={handleOpenAccessibility}
+                        onOpenBuildingBlocks={handleOpenBuildingBlocks}
+                        onConvertSelectionToTable={handleConvertSelectionToTable}
+                        onConvertTableToText={
+                          state.pmTableContext?.isInTable ? handleConvertTableToText : undefined
+                        }
+                        onOpenDictionary={handleOpenDictionary}
+                        // LLM-stack entry points hidden: onOpenTranslate,
+                        // onTranslateDocument, onOpenWritingAssistant,
+                        // onOpenExplore. WebLLM inference blocks the main
+                        // thread on long docs; until that lands a yielding
+                        // path, these surfaces stay off. Re-wire with the
+                        // existing handlers when ready.
+                        onToggleSpellcheck={handleToggleSpellcheck}
+                        spellcheckEnabled={spellOn}
+                        onToggleGrammar={handleToggleGrammar}
+                        grammarEnabled={grammarOn}
+                        onOpenCitations={handleOpenCitations}
+                        onInsertShape={handleInsertShape}
+                        onInsertTextBox={handleInsertTextBox}
+                        onSetColorTheme={handleSetColorTheme}
+                        colorTheme={colorTheme}
+                        isDirty={isDirty}
+                        isSaving={isSaving}
+                        tableContext={state.pmTableContext}
+                        onTableAction={handleTableAction}
+                      >
+                        <EditorToolbar.TitleBar>
+                          {renderLogo && <EditorToolbar.Logo>{renderLogo()}</EditorToolbar.Logo>}
+                          {documentName !== undefined && (
+                            <EditorToolbar.DocumentName
+                              value={documentName}
+                              onChange={onDocumentNameChange}
+                              editable={documentNameEditable}
+                            />
+                          )}
+                          {renderTitleBarRight && (
+                            <EditorToolbar.TitleBarRight>
+                              {renderTitleBarRight()}
+                            </EditorToolbar.TitleBarRight>
+                          )}
+                          <EditorToolbar.MenuBar />
+                        </EditorToolbar.TitleBar>
+                        <EditorToolbar.FormattingBar>{toolbarChildren}</EditorToolbar.FormattingBar>
+                      </EditorToolbar>
+                    </div>
+                  )}
 
-                {editingMode === 'suggesting' && (
-                  <SuggestingModeBanner onSwitchToEditing={() => setEditingMode('editing')} />
-                )}
+                  {editingMode === 'suggesting' && (
+                    <SuggestingModeBanner onSwitchToEditing={() => setEditingMode('editing')} />
+                  )}
 
-                {/* Autosave restore prompt — shown at mount when an autosave
+                  {/* Autosave restore prompt — shown at mount when an autosave
                     record exists from the last session. Hidden on desktop:
                     the Tauri shell owns crash recovery via sidecar files and
                     shows its own restore UI. IndexedDB autosave is also
                     disabled on desktop (see onDesktop guard above). */}
-                {!(window as { __deskApp__?: { isDesktop?: boolean } }).__deskApp__?.isDesktop && (
-                  <AutosaveRestoreBanner
-                    onRestore={(buf, name) => {
-                      void loadBuffer(buf);
-                      onDocumentNameChange?.(name);
-                    }}
-                  />
-                )}
+                  {!(window as { __deskApp__?: { isDesktop?: boolean } }).__deskApp__
+                    ?.isDesktop && (
+                    <AutosaveRestoreBanner
+                      onRestore={(buf, name) => {
+                        void loadBuffer(buf);
+                        onDocumentNameChange?.(name);
+                      }}
+                    />
+                  )}
 
-                {/* Below-toolbar horizontal row: scroll container + the floating
+                  {/* Below-toolbar horizontal row: scroll container + the floating
                     PanelRail. position:relative anchors the rail's absolute
                     positioning so it floats over the top-right of the editor
                     body (not the toolbar) without taking flex space. */}
-                <div
-                  style={{
-                    display: 'flex',
-                    flex: 1,
-                    minHeight: 0,
-                    minWidth: 0,
-                    flexDirection: 'row',
-                    position: 'relative',
-                  }}
-                >
-                  {/* Viewport-height column: holds the scroll container plus the
+                  <div
+                    style={{
+                      display: 'flex',
+                      flex: 1,
+                      minHeight: 0,
+                      minWidth: 0,
+                      flexDirection: 'row',
+                      position: 'relative',
+                    }}
+                  >
+                    {/* Viewport-height column: holds the scroll container plus the
                       portaled version-preview overlay, so the preview banner pins
                       to the viewport instead of scrolling with the document. */}
-                  <div
-                    ref={editorColumnRef}
-                    style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex' }}
-                  >
-                    {/* Editor container - this is the scroll container (toolbar is above, not inside) */}
                     <div
-                      ref={scrollContainerRef}
-                      style={editorContainerStyle}
-                      onMouseDown={(e) => {
-                        // Click in the grey gutter around the page → collapse any
-                        // expanded sidebar card. Clicks on the doc body already
-                        // collapse via the cursor-mark detector; clicks inside the
-                        // sidebar are user interactions with the card itself.
-                        const target = e.target as HTMLElement;
-                        if (
-                          target.closest('.paged-editor__pages') ||
-                          target.closest('.docx-unified-sidebar') ||
-                          target.closest('.docx-comment-margin-markers')
-                        ) {
-                          return;
-                        }
-                        setExpandedSidebarItem(null);
-                      }}
+                      ref={editorColumnRef}
+                      style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex' }}
                     >
-                      {/* Horizontal Ruler - inside the scroll container so it
+                      {/* Editor container - this is the scroll container (toolbar is above, not inside) */}
+                      <div
+                        ref={scrollContainerRef}
+                        style={editorContainerStyle}
+                        onMouseDown={(e) => {
+                          // Click in the grey gutter around the page → collapse any
+                          // expanded sidebar card. Clicks on the doc body already
+                          // collapse via the cursor-mark detector; clicks inside the
+                          // sidebar are user interactions with the card itself.
+                          const target = e.target as HTMLElement;
+                          if (
+                            target.closest('.paged-editor__pages') ||
+                            target.closest('.docx-unified-sidebar') ||
+                            target.closest('.docx-comment-margin-markers')
+                          ) {
+                            return;
+                          }
+                          setExpandedSidebarItem(null);
+                        }}
+                      >
+                        {/* Horizontal Ruler - inside the scroll container so it
                       scrolls horizontally with the doc, sticky-top so it stays
                       visible during vertical scroll. min-width keeps the ruler
                       and the page area on the same horizontal axis when the
                       viewport is too narrow to fit page + outline + sidebar. */}
-                      {showRulerEffective && !versionPreview && (
-                        <div
-                          className="flex justify-center py-1 flex-shrink-0 bg-doc-bg"
-                          style={{
-                            position: 'sticky',
-                            top: 0,
-                            // Must sit above the inline header/footer editor
-                            // (Z_INDEX.hfInlineEditor) so the ruler stays readable
-                            // when the HF editor is active near the viewport top.
-                            zIndex: Z_INDEX.ruler,
-                            // Disable ruler interaction while the HF editor is
-                            // open — dragging indent/margin markers would update
-                            // the body PM but not the frozen painted header that
-                            // syncBoxPositions() reads, causing position drift.
-                            pointerEvents: hfEditPosition ? 'none' : undefined,
-                            opacity: hfEditPosition ? 0.5 : 1,
-                            // paddingRight biases the centered ruler so it tracks
-                            // the page when the comments sidebar (translateX)
-                            // shifts the page left. Outline doesn't bias here —
-                            // the page stays centered until minLayoutWidth forces
-                            // horizontal scroll, and the ruler centers with it.
-                            paddingLeft: 20,
-                            paddingRight: 20 + (sidebarOpen ? SIDEBAR_DOCUMENT_SHIFT * 2 : 0),
-                            minWidth: minLayoutWidth,
-                            transition: 'padding var(--doc-anim-slow)',
-                          }}
-                        >
-                          <HorizontalRuler
-                            sectionProps={history.state?.package.document?.finalSectionProperties}
-                            zoom={state.zoom}
-                            unit={rulerUnit}
-                            editable={!readOnly && !hfEditPosition}
-                            onLeftMarginChange={handleLeftMarginChange}
-                            onRightMarginChange={handleRightMarginChange}
-                            indentLeft={state.paragraphIndentLeft}
-                            indentRight={state.paragraphIndentRight}
-                            onIndentLeftChange={handleIndentLeftChange}
-                            onIndentRightChange={handleIndentRightChange}
-                            showFirstLineIndent={true}
-                            firstLineIndent={state.paragraphFirstLineIndent}
-                            hangingIndent={state.paragraphHangingIndent}
-                            onFirstLineIndentChange={handleFirstLineIndentChange}
-                            tabStops={state.paragraphTabs}
-                            onTabStopRemove={handleTabStopRemove}
-                            onDragStateChange={(d) => {
-                              marginDraggingRef.current = d;
+                        {showRulerEffective && !versionPreview && (
+                          <div
+                            className="flex justify-center py-1 flex-shrink-0 bg-doc-bg"
+                            style={{
+                              position: 'sticky',
+                              top: 0,
+                              // Must sit above the inline header/footer editor
+                              // (Z_INDEX.hfInlineEditor) so the ruler stays readable
+                              // when the HF editor is active near the viewport top.
+                              zIndex: Z_INDEX.ruler,
+                              // Disable ruler interaction while the HF editor is
+                              // open — dragging indent/margin markers would update
+                              // the body PM but not the frozen painted header that
+                              // syncBoxPositions() reads, causing position drift.
+                              pointerEvents: hfEditPosition ? 'none' : undefined,
+                              opacity: hfEditPosition ? 0.5 : 1,
+                              // paddingRight biases the centered ruler so it tracks
+                              // the page when the comments sidebar (translateX)
+                              // shifts the page left. Outline doesn't bias here —
+                              // the page stays centered until minLayoutWidth forces
+                              // horizontal scroll, and the ruler centers with it.
+                              paddingLeft: 20,
+                              paddingRight: 20 + (sidebarOpen ? SIDEBAR_DOCUMENT_SHIFT * 2 : 0),
+                              minWidth: minLayoutWidth,
+                              transition: 'padding var(--doc-anim-slow)',
                             }}
-                          />
-                        </div>
-                      )}
-                      {/* Editor content wrapper. min-width matches the ruler so
+                          >
+                            <HorizontalRuler
+                              sectionProps={history.state?.package.document?.finalSectionProperties}
+                              zoom={state.zoom}
+                              unit={rulerUnit}
+                              editable={!readOnly && !hfEditPosition}
+                              onLeftMarginChange={handleLeftMarginChange}
+                              onRightMarginChange={handleRightMarginChange}
+                              indentLeft={state.paragraphIndentLeft}
+                              indentRight={state.paragraphIndentRight}
+                              onIndentLeftChange={handleIndentLeftChange}
+                              onIndentRightChange={handleIndentRightChange}
+                              showFirstLineIndent={true}
+                              firstLineIndent={state.paragraphFirstLineIndent}
+                              hangingIndent={state.paragraphHangingIndent}
+                              onFirstLineIndentChange={handleFirstLineIndentChange}
+                              tabStops={state.paragraphTabs}
+                              onTabStopRemove={handleTabStopRemove}
+                              onDragStateChange={(d) => {
+                                marginDraggingRef.current = d;
+                              }}
+                            />
+                          </div>
+                        )}
+                        {/* Editor content wrapper. min-width matches the ruler so
                       the page and ruler scroll horizontally as a single unit
                       when the viewport is too narrow to fit them. When the
                       outline is open, min-width grows to keep the centered
                       page clear of the panel — but on wide viewports the
                       page stays put (centered, or translated left by the
                       comments sidebar) instead of shifting. */}
-                      <div
-                        style={{
-                          display: 'flex',
-                          flex: 1,
-                          minHeight: 0,
-                          position: 'relative',
-                          minWidth: minLayoutWidth,
-                        }}
-                      >
-                        {/* Editor content area */}
                         <div
-                          ref={editorContentRef}
                           style={{
-                            position: 'relative',
+                            display: 'flex',
                             flex: 1,
-                            minWidth: 0,
+                            minHeight: 0,
+                            position: 'relative',
+                            minWidth: minLayoutWidth,
                           }}
-                          onMouseDown={(e) => {
-                            // Focus editor when clicking on the background area (not the editor itself)
-                            // Using mouseDown for immediate response before focus can be lost
-                            if (e.target === e.currentTarget) {
-                              e.preventDefault();
-                              pagedEditorRef.current?.focus();
-                            }
-                          }}
-                          onContextMenu={handleEditorContextMenu}
                         >
-                          {/* Vertical Ruler - hangs off the left edge of the
+                          {/* Editor content area */}
+                          <div
+                            ref={editorContentRef}
+                            style={{
+                              position: 'relative',
+                              flex: 1,
+                              minWidth: 0,
+                            }}
+                            onMouseDown={(e) => {
+                              // Focus editor when clicking on the background area (not the editor itself)
+                              // Using mouseDown for immediate response before focus can be lost
+                              if (e.target === e.currentTarget) {
+                                e.preventDefault();
+                                pagedEditorRef.current?.focus();
+                              }
+                            }}
+                            onContextMenu={handleEditorContextMenu}
+                          >
+                            {/* Vertical Ruler - hangs off the left edge of the
                           centered page (Google Docs style) instead of floating
                           against the content area's far-left edge. It reuses the
                           horizontal ruler's centering (same padding + sidebar
                           bias) so a page-width spacer lands exactly under the
                           page, and the ruler is pinned to that spacer's left
                           edge. */}
-                          {showRulerEffective && !readOnlyProp && (
-                            <div
-                              style={{
-                                position: 'absolute',
-                                left: 0,
-                                right: 0,
-                                top: 0,
-                                // Above the inline HF editor (Z_INDEX.hfInlineEditor)
-                                // so it stays readable on horizontal scroll.
-                                zIndex: Z_INDEX.ruler,
-                                // Must match `.paged-editor__pages` padding-top in
-                                // editor.css (24 viewport + 24 pages container).
-                                // That padding scales with zoom, so the ruler's
-                                // top offset has to scale too or it drifts off the
-                                // page top at non-100% zoom.
-                                paddingTop: 48 * state.zoom,
-                                // Same horizontal centering as the horizontal ruler
-                                // so the vertical ruler tracks the centered page
-                                // (and its comment-sidebar bias).
-                                paddingLeft: 20,
-                                paddingRight: 20 + (sidebarOpen ? SIDEBAR_DOCUMENT_SHIFT * 2 : 0),
-                                display: 'flex',
-                                justifyContent: 'center',
-                                // Only the ruler itself is interactive; the wrapper
-                                // must not swallow clicks over the gutter/page.
-                                pointerEvents: 'none',
-                                transition: 'padding var(--doc-anim-slow)',
-                              }}
-                            >
-                              {/* Invisible page-width spacer; the ruler is pinned
-                              to its left edge (right: 100%) so it sits just left
-                              of the page. */}
+                            {showRulerEffective && !readOnlyProp && (
                               <div
                                 style={{
-                                  width: pageWidthPx * state.zoom,
-                                  flexShrink: 0,
-                                  position: 'relative',
+                                  position: 'absolute',
+                                  left: 0,
+                                  right: 0,
+                                  top: 0,
+                                  // Above the inline HF editor (Z_INDEX.hfInlineEditor)
+                                  // so it stays readable on horizontal scroll.
+                                  zIndex: Z_INDEX.ruler,
+                                  // Must match `.paged-editor__pages` padding-top in
+                                  // editor.css (24 viewport + 24 pages container).
+                                  // That padding scales with zoom, so the ruler's
+                                  // top offset has to scale too or it drifts off the
+                                  // page top at non-100% zoom.
+                                  paddingTop: 48 * state.zoom,
+                                  // Same horizontal centering as the horizontal ruler
+                                  // so the vertical ruler tracks the centered page
+                                  // (and its comment-sidebar bias).
+                                  paddingLeft: 20,
+                                  paddingRight: 20 + (sidebarOpen ? SIDEBAR_DOCUMENT_SHIFT * 2 : 0),
+                                  display: 'flex',
+                                  justifyContent: 'center',
+                                  // Only the ruler itself is interactive; the wrapper
+                                  // must not swallow clicks over the gutter/page.
+                                  pointerEvents: 'none',
+                                  transition: 'padding var(--doc-anim-slow)',
                                 }}
                               >
+                                {/* Invisible page-width spacer; the ruler is pinned
+                              to its left edge (right: 100%) so it sits just left
+                              of the page. */}
                                 <div
                                   style={{
-                                    position: 'absolute',
-                                    right: '100%',
-                                    top: 0,
-                                    marginRight: 6,
-                                    pointerEvents: 'auto',
+                                    width: pageWidthPx * state.zoom,
+                                    flexShrink: 0,
+                                    position: 'relative',
                                   }}
                                 >
-                                  <VerticalRuler
-                                    // Live section props (NOT initialSectionProperties):
-                                    // margin drags write to finalSectionProperties, and the
-                                    // horizontal ruler reads the same. initialSectionProperties
-                                    // resolves to sections[0].properties for docs that have a
-                                    // section, which the drag never updates — so the top/bottom
-                                    // margin marker stayed pinned while the page reflowed.
-                                    sectionProps={
-                                      finalSectionProperties ?? initialSectionProperties
-                                    }
-                                    zoom={state.zoom}
-                                    unit={rulerUnit}
-                                    editable={!readOnly}
-                                    onTopMarginChange={handleTopMarginChange}
-                                    onBottomMarginChange={handleBottomMarginChange}
-                                    onDragStateChange={(d) => {
-                                      marginDraggingRef.current = d;
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      right: '100%',
+                                      top: 0,
+                                      marginRight: 6,
+                                      pointerEvents: 'auto',
                                     }}
-                                  />
+                                  >
+                                    <VerticalRuler
+                                      // Live section props (NOT initialSectionProperties):
+                                      // margin drags write to finalSectionProperties, and the
+                                      // horizontal ruler reads the same. initialSectionProperties
+                                      // resolves to sections[0].properties for docs that have a
+                                      // section, which the drag never updates — so the top/bottom
+                                      // margin marker stayed pinned while the page reflowed.
+                                      sectionProps={
+                                        finalSectionProperties ?? initialSectionProperties
+                                      }
+                                      zoom={state.zoom}
+                                      unit={rulerUnit}
+                                      editable={!readOnly}
+                                      onTopMarginChange={handleTopMarginChange}
+                                      onBottomMarginChange={handleBottomMarginChange}
+                                      onDragStateChange={(d) => {
+                                        marginDraggingRef.current = d;
+                                      }}
+                                    />
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          )}
-                          {/* Brighten highlight for the focused/expanded sidebar item */}
-                          {expandedSidebarItem && expandedSidebarItem.startsWith('comment-') && (
-                            <style>{`.paged-editor__pages [data-comment-id="${expandedSidebarItem.replace('comment-', '')}"] { background-color: rgba(255, 212, 0, 0.35) !important; border-bottom: 2px solid rgba(255, 212, 0, 0.7) !important; }`}</style>
-                          )}
-                          {expandedSidebarItem?.startsWith('tc-') &&
-                            (() => {
-                              const revId = expandedSidebarItem.split('-')[1];
-                              const tc = trackedChanges.find((c) => String(c.revisionId) === revId);
-                              const insRevId = tc?.insertionRevisionId;
-                              return (
-                                <style>{`
+                            )}
+                            {/* Brighten highlight for the focused/expanded sidebar item */}
+                            {expandedSidebarItem && expandedSidebarItem.startsWith('comment-') && (
+                              <style>{`.paged-editor__pages [data-comment-id="${expandedSidebarItem.replace('comment-', '')}"] { background-color: rgba(255, 212, 0, 0.35) !important; border-bottom: 2px solid rgba(255, 212, 0, 0.7) !important; }`}</style>
+                            )}
+                            {expandedSidebarItem?.startsWith('tc-') &&
+                              (() => {
+                                const revId = expandedSidebarItem.split('-')[1];
+                                const tc = trackedChanges.find(
+                                  (c) => String(c.revisionId) === revId
+                                );
+                                const insRevId = tc?.insertionRevisionId;
+                                return (
+                                  <style>{`
                             .paged-editor__pages .docx-insertion[data-revision-id="${insRevId ?? revId}"] { background-color: rgba(52, 168, 83, 0.2) !important; border-bottom: 2px solid #2e7d32 !important; }
                             .paged-editor__pages .docx-deletion[data-revision-id="${revId}"] { background-color: rgba(211, 47, 47, 0.2) !important; text-decoration-thickness: 2px !important; }
                           `}</style>
-                              );
-                            })()}
-                          {/* Update the selection-change impl ref on each render so
+                                );
+                              })()}
+                            {/* Update the selection-change impl ref on each render so
                             it always captures the latest closure values, while
                             the stable wrapper keeps PagedEditor memo() intact. */}
-                          {(_pagedSelectionChangeImplRef.current = (_from, _to) => {
-                            const view = pagedEditorRef.current?.getView();
-                            if (view) {
-                              const selectionState = extractSelectionState(view.state);
-                              handleSelectionChange(selectionState);
-                              const $from = view.state.selection.$from;
-                              const marks = [
-                                ...(view.state.storedMarks ?? []),
-                                ...($from.nodeAfter?.marks ?? []),
-                                ...($from.nodeBefore?.marks ?? []),
-                                ...$from.marks(),
-                              ];
-                              let cursorSidebarItem: string | null = null;
-                              for (const mark of marks) {
-                                if (mark.type.name === 'comment' && mark.attrs.commentId != null) {
-                                  const commentId = mark.attrs.commentId as number;
-                                  if (resolvedCommentIds.has(commentId)) continue;
-                                  cursorSidebarItem = `comment-${commentId}`;
-                                  break;
-                                }
-                                if (
-                                  (mark.type.name === 'insertion' ||
-                                    mark.type.name === 'deletion') &&
-                                  mark.attrs.revisionId != null
-                                ) {
-                                  const revId = String(mark.attrs.revisionId);
-                                  const prefix = `tc-${revId}-`;
-                                  let match = commentSidebarItems.find((i) =>
-                                    i.id.startsWith(prefix)
-                                  );
-                                  if (!match && revisionIdAliases) {
-                                    const aliasedId = revisionIdAliases.get(revId);
-                                    if (aliasedId) {
-                                      match = commentSidebarItems.find((i) => i.id === aliasedId);
-                                    }
-                                  }
-                                  if (match) {
-                                    cursorSidebarItem = match.id;
+                            {(_pagedSelectionChangeImplRef.current = (_from, _to) => {
+                              const view = pagedEditorRef.current?.getView();
+                              if (view) {
+                                const selectionState = extractSelectionState(view.state);
+                                handleSelectionChange(selectionState);
+                                const $from = view.state.selection.$from;
+                                const marks = [
+                                  ...(view.state.storedMarks ?? []),
+                                  ...($from.nodeAfter?.marks ?? []),
+                                  ...($from.nodeBefore?.marks ?? []),
+                                  ...$from.marks(),
+                                ];
+                                let cursorSidebarItem: string | null = null;
+                                for (const mark of marks) {
+                                  if (
+                                    mark.type.name === 'comment' &&
+                                    mark.attrs.commentId != null
+                                  ) {
+                                    const commentId = mark.attrs.commentId as number;
+                                    if (resolvedCommentIds.has(commentId)) continue;
+                                    cursorSidebarItem = `comment-${commentId}`;
                                     break;
                                   }
+                                  if (
+                                    (mark.type.name === 'insertion' ||
+                                      mark.type.name === 'deletion') &&
+                                    mark.attrs.revisionId != null
+                                  ) {
+                                    const revId = String(mark.attrs.revisionId);
+                                    const prefix = `tc-${revId}-`;
+                                    let match = commentSidebarItems.find((i) =>
+                                      i.id.startsWith(prefix)
+                                    );
+                                    if (!match && revisionIdAliases) {
+                                      const aliasedId = revisionIdAliases.get(revId);
+                                      if (aliasedId) {
+                                        match = commentSidebarItems.find((i) => i.id === aliasedId);
+                                      }
+                                    }
+                                    if (match) {
+                                      cursorSidebarItem = match.id;
+                                      break;
+                                    }
+                                  }
                                 }
+                                if (cursorSidebarItem) setShowCommentsSidebar(true);
+                                setExpandedSidebarItem(cursorSidebarItem);
+                              } else {
+                                handleSelectionChange(null);
                               }
-                              if (cursorSidebarItem) setShowCommentsSidebar(true);
-                              setExpandedSidebarItem(cursorSidebarItem);
-                            } else {
-                              handleSelectionChange(null);
-                            }
-                          }) && null}
-                          <PagedEditor
-                            ref={pagedEditorRef}
-                            document={history.state}
-                            styles={history.state?.package.styles}
-                            theme={history.state?.package.theme || theme}
-                            sectionProperties={initialSectionProperties}
-                            finalSectionProperties={finalSectionProperties}
-                            headerContent={headerContent}
-                            footerContent={footerContent}
-                            firstPageHeaderContent={firstPageHeaderContent}
-                            firstPageFooterContent={firstPageFooterContent}
-                            onHeaderFooterDoubleClick={handleHeaderFooterDoubleClick}
-                            hfEditMode={hfEditPosition}
-                            onBodyClick={handleBodyClick}
-                            zoom={state.zoom}
-                            marginDraggingRef={marginDraggingRef}
-                            wordCompat={wordCompat}
-                            showFormattingMarks={showFormattingMarks}
-                            readOnly={readOnly}
-                            extensionManager={extensionManager}
-                            contentLabel={t('editor.contentLabel')}
-                            selectionFormatting={state.selectionFormatting}
-                            onFormat={handleFormat}
-                            onZoomChange={handleZoomChange}
-                            onDocumentChange={handleDocumentChange}
-                            onSelectionChange={_pagedOnSelectionChangeStable}
-                            externalPlugins={allExternalPlugins}
-                            onReady={handlePagedEditorReady}
-                            onRenderedDomContextReady={onRenderedDomContextReady}
-                            pluginOverlays={pluginOverlays}
-                            onHyperlinkClick={handleHyperlinkClick}
-                            onContextMenu={handleContextMenu}
-                            onOpenProperties={handleOpenProperties}
-                            onResizeTextBox={handleTextBoxSetSize}
-                            onMoveTextBox={handleTextBoxSetPosition}
-                            textBoxPosOffsetH={state.pmTextBoxContext?.posOffsetH ?? null}
-                            textBoxPosOffsetV={state.pmTextBoxContext?.posOffsetV ?? null}
-                            onEditFootnote={handleEditFootnote}
-                            onEditEquation={handleEditEquation}
-                            onEditEndnote={handleEditEndnote}
-                            commentsSidebarOpen={sidebarOpen}
-                            onAnchorPositionsChange={setAnchorPositions}
-                            onTotalPagesChange={handleTotalPagesChange}
-                            resolvedCommentIds={resolvedIdsForRender}
-                            scrollContainerRef={scrollContainerRef}
-                            sidebarOverlay={
-                              <>
-                                {/* Tracked-change navigation + accept/reject
+                            }) && null}
+                            <PagedEditor
+                              ref={pagedEditorRef}
+                              document={history.state}
+                              styles={history.state?.package.styles}
+                              theme={history.state?.package.theme || theme}
+                              sectionProperties={initialSectionProperties}
+                              finalSectionProperties={finalSectionProperties}
+                              headerContent={headerContent}
+                              footerContent={footerContent}
+                              firstPageHeaderContent={firstPageHeaderContent}
+                              firstPageFooterContent={firstPageFooterContent}
+                              onHeaderFooterDoubleClick={handleHeaderFooterDoubleClick}
+                              hfEditMode={hfEditPosition}
+                              onBodyClick={handleBodyClick}
+                              zoom={state.zoom}
+                              marginDraggingRef={marginDraggingRef}
+                              wordCompat={wordCompat}
+                              showFormattingMarks={showFormattingMarks}
+                              readOnly={readOnly}
+                              extensionManager={extensionManager}
+                              contentLabel={t('editor.contentLabel')}
+                              selectionFormatting={state.selectionFormatting}
+                              onFormat={handleFormat}
+                              onZoomChange={handleZoomChange}
+                              onDocumentChange={handleDocumentChange}
+                              onSelectionChange={_pagedOnSelectionChangeStable}
+                              externalPlugins={allExternalPlugins}
+                              onReady={handlePagedEditorReady}
+                              onRenderedDomContextReady={onRenderedDomContextReady}
+                              pluginOverlays={pluginOverlays}
+                              onHyperlinkClick={handleHyperlinkClick}
+                              onContextMenu={handleContextMenu}
+                              onOpenProperties={handleOpenProperties}
+                              onResizeTextBox={handleTextBoxSetSize}
+                              onMoveTextBox={handleTextBoxSetPosition}
+                              textBoxPosOffsetH={state.pmTextBoxContext?.posOffsetH ?? null}
+                              textBoxPosOffsetV={state.pmTextBoxContext?.posOffsetV ?? null}
+                              onEditFootnote={handleEditFootnote}
+                              onEditEquation={handleEditEquation}
+                              onEditEndnote={handleEditEndnote}
+                              commentsSidebarOpen={sidebarOpen}
+                              onAnchorPositionsChange={setAnchorPositions}
+                              onTotalPagesChange={handleTotalPagesChange}
+                              resolvedCommentIds={resolvedIdsForRender}
+                              scrollContainerRef={scrollContainerRef}
+                              sidebarOverlay={
+                                <>
+                                  {/* Tracked-change navigation + accept/reject
                                   controls. Surfaced whenever ANY tracked
                                   change exists in the doc — gating on
                                   `editingMode === 'suggesting'` hid the bar
@@ -10107,108 +10200,108 @@ body { background: white; }
                                   way to act on them. The bar now shows for
                                   the union of user-typed suggestions and
                                   AI-staged ones. */}
-                                {trackedChanges.length > 0 && (
-                                  <div
-                                    style={{
-                                      position: 'absolute',
-                                      top: 6,
-                                      right: 12,
-                                      display: 'flex',
-                                      gap: 4,
-                                      padding: '4px 6px',
-                                      background: 'var(--doc-surface, white)',
-                                      border: '1px solid var(--doc-border)',
-                                      borderRadius: 6,
-                                      boxShadow: 'var(--doc-shadow, 0 2px 6px rgba(0,0,0,0.1))',
-                                      zIndex: 50,
-                                      fontSize: 12,
-                                    }}
-                                    data-testid="tracked-changes-action-bar"
-                                  >
-                                    <Tooltip content={t('trackedChanges.previous')}>
-                                      <button
-                                        type="button"
-                                        onClick={handlePreviousChange}
-                                        style={trackedChangesActionBtnStyle}
-                                        aria-label={t('trackedChanges.previous')}
-                                      >
-                                        <MaterialSymbol name="navigate_before" size={16} />
-                                      </button>
-                                    </Tooltip>
-                                    <Tooltip content={t('trackedChanges.next')}>
-                                      <button
-                                        type="button"
-                                        onClick={handleNextChange}
-                                        style={trackedChangesActionBtnStyle}
-                                        aria-label={t('trackedChanges.next')}
-                                      >
-                                        <MaterialSymbol name="navigate_next" size={16} />
-                                      </button>
-                                    </Tooltip>
-                                    <span
+                                  {trackedChanges.length > 0 && (
+                                    <div
                                       style={{
-                                        width: 1,
-                                        background: 'var(--doc-border)',
-                                        margin: '0 2px',
+                                        position: 'absolute',
+                                        top: 6,
+                                        right: 12,
+                                        display: 'flex',
+                                        gap: 4,
+                                        padding: '4px 6px',
+                                        background: 'var(--doc-surface, white)',
+                                        border: '1px solid var(--doc-border)',
+                                        borderRadius: 6,
+                                        boxShadow: 'var(--doc-shadow, 0 2px 6px rgba(0,0,0,0.1))',
+                                        zIndex: 50,
+                                        fontSize: 12,
                                       }}
+                                      data-testid="tracked-changes-action-bar"
+                                    >
+                                      <Tooltip content={t('trackedChanges.previous')}>
+                                        <button
+                                          type="button"
+                                          onClick={handlePreviousChange}
+                                          style={trackedChangesActionBtnStyle}
+                                          aria-label={t('trackedChanges.previous')}
+                                        >
+                                          <MaterialSymbol name="navigate_before" size={16} />
+                                        </button>
+                                      </Tooltip>
+                                      <Tooltip content={t('trackedChanges.next')}>
+                                        <button
+                                          type="button"
+                                          onClick={handleNextChange}
+                                          style={trackedChangesActionBtnStyle}
+                                          aria-label={t('trackedChanges.next')}
+                                        >
+                                          <MaterialSymbol name="navigate_next" size={16} />
+                                        </button>
+                                      </Tooltip>
+                                      <span
+                                        style={{
+                                          width: 1,
+                                          background: 'var(--doc-border)',
+                                          margin: '0 2px',
+                                        }}
+                                      />
+                                      <Tooltip content={t('trackedChanges.acceptAll')}>
+                                        <button
+                                          type="button"
+                                          onClick={handleAcceptAllChanges}
+                                          style={trackedChangesActionBtnStyle}
+                                          aria-label={t('trackedChanges.acceptAll')}
+                                          data-testid="tracked-changes-accept-all"
+                                        >
+                                          <MaterialSymbol name="done_all" size={16} />
+                                        </button>
+                                      </Tooltip>
+                                      <Tooltip content={t('trackedChanges.rejectAll')}>
+                                        <button
+                                          type="button"
+                                          onClick={handleRejectAllChanges}
+                                          style={trackedChangesActionBtnStyle}
+                                          aria-label={t('trackedChanges.rejectAll')}
+                                          data-testid="tracked-changes-reject-all"
+                                        >
+                                          <MaterialSymbol name="block" size={16} />
+                                        </button>
+                                      </Tooltip>
+                                    </div>
+                                  )}
+                                  {allSidebarItems.length > 0 && (
+                                    <UnifiedSidebar
+                                      items={allSidebarItems}
+                                      anchorPositions={anchorPositions}
+                                      renderedDomContext={pluginRenderedDomContext ?? null}
+                                      pageWidth={pageWidthPx}
+                                      zoom={state.zoom}
+                                      editorContainerRef={scrollContainerRef}
+                                      onExpandedItemChange={setExpandedSidebarItem}
+                                      activeItemId={expandedSidebarItem}
                                     />
-                                    <Tooltip content={t('trackedChanges.acceptAll')}>
-                                      <button
-                                        type="button"
-                                        onClick={handleAcceptAllChanges}
-                                        style={trackedChangesActionBtnStyle}
-                                        aria-label={t('trackedChanges.acceptAll')}
-                                        data-testid="tracked-changes-accept-all"
-                                      >
-                                        <MaterialSymbol name="done_all" size={16} />
-                                      </button>
-                                    </Tooltip>
-                                    <Tooltip content={t('trackedChanges.rejectAll')}>
-                                      <button
-                                        type="button"
-                                        onClick={handleRejectAllChanges}
-                                        style={trackedChangesActionBtnStyle}
-                                        aria-label={t('trackedChanges.rejectAll')}
-                                        data-testid="tracked-changes-reject-all"
-                                      >
-                                        <MaterialSymbol name="block" size={16} />
-                                      </button>
-                                    </Tooltip>
-                                  </div>
-                                )}
-                                {allSidebarItems.length > 0 && (
-                                  <UnifiedSidebar
-                                    items={allSidebarItems}
+                                  )}
+                                  <CommentMarginMarkers
+                                    comments={comments}
                                     anchorPositions={anchorPositions}
-                                    renderedDomContext={pluginRenderedDomContext ?? null}
-                                    pageWidth={pageWidthPx}
                                     zoom={state.zoom}
-                                    editorContainerRef={scrollContainerRef}
-                                    onExpandedItemChange={setExpandedSidebarItem}
-                                    activeItemId={expandedSidebarItem}
+                                    pageWidth={pageWidthPx}
+                                    sidebarOpen={sidebarOpen}
+                                    resolvedCommentIds={resolvedCommentIds}
+                                    onMarkerClick={() => {
+                                      setShowCommentsSidebar(true);
+                                    }}
                                   />
-                                )}
-                                <CommentMarginMarkers
-                                  comments={comments}
-                                  anchorPositions={anchorPositions}
-                                  zoom={state.zoom}
-                                  pageWidth={pageWidthPx}
-                                  sidebarOpen={sidebarOpen}
-                                  resolvedCommentIds={resolvedCommentIds}
-                                  onMarkerClick={() => {
-                                    setShowCommentsSidebar(true);
-                                  }}
-                                />
-                                {/* Version history is mounted as a flex sibling
+                                  {/* Version history is mounted as a flex sibling
                                   of the scroll container (below this block),
                                   not here — keeping it outside the scrolling
                                   area means it stays pinned to the viewport
                                   instead of riding along with document scroll. */}
-                              </>
-                            }
-                          />
+                                </>
+                              }
+                            />
 
-                          {/* Version preview overlay (Google-Docs model) — a
+                            {/* Version preview overlay (Google-Docs model) — a
                             read-only render of the selected version covering
                             the live canvas. Separate editor instance: the
                             live doc, its Yjs sync, and its undo stack are
@@ -10217,405 +10310,406 @@ body { background: white; }
                             the banner stays pinned (not riding document scroll);
                             covers only the page column, leaving the version
                             list panel visible beside it. */}
-                          {versionPreview &&
-                            editorColumnRef.current &&
-                            createPortal(
-                              <div
-                                data-testid="version-preview-overlay"
-                                style={{
-                                  position: 'absolute',
-                                  inset: 0,
-                                  zIndex: Z_INDEX.versionPreview,
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  background: 'var(--doc-canvas-bg, #f1f3f4)',
-                                }}
-                              >
+                            {versionPreview &&
+                              editorColumnRef.current &&
+                              createPortal(
                                 <div
+                                  data-testid="version-preview-overlay"
                                   style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    zIndex: Z_INDEX.versionPreview,
                                     display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 12,
-                                    padding: '8px 16px',
-                                    background: 'var(--doc-surface, #fff)',
-                                    borderBottom: '1px solid var(--doc-border, #e0e0e0)',
-                                    boxShadow: 'var(--doc-shadow, 0 1px 3px rgba(0,0,0,0.08))',
+                                    flexDirection: 'column',
+                                    background: 'var(--doc-canvas-bg, #f1f3f4)',
                                   }}
                                 >
-                                  <Tooltip content="Back to editing">
-                                    <button
-                                      type="button"
-                                      onClick={handleClosePreview}
-                                      data-testid="version-preview-back"
-                                      aria-label="Back to editing"
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 12,
+                                      padding: '8px 16px',
+                                      background: 'var(--doc-surface, #fff)',
+                                      borderBottom: '1px solid var(--doc-border, #e0e0e0)',
+                                      boxShadow: 'var(--doc-shadow, 0 1px 3px rgba(0,0,0,0.08))',
+                                    }}
+                                  >
+                                    <Tooltip content="Back to editing">
+                                      <button
+                                        type="button"
+                                        onClick={handleClosePreview}
+                                        data-testid="version-preview-back"
+                                        aria-label="Back to editing"
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 4,
+                                          padding: '4px 10px',
+                                          border: '1px solid var(--doc-border)',
+                                          borderRadius: 4,
+                                          background: 'transparent',
+                                          color: 'var(--doc-text)',
+                                          fontSize: 13,
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        <MaterialSymbol name="arrow_back" size={16} />
+                                        Back
+                                      </button>
+                                    </Tooltip>
+                                    <span style={{ fontSize: 13, color: 'var(--doc-text-muted)' }}>
+                                      Viewing{' '}
+                                      <strong style={{ color: 'var(--doc-text)' }}>
+                                        {versionPreview.name}
+                                      </strong>
+                                      {' · '}
+                                      {new Date(versionPreview.savedAt).toLocaleString()}
+                                    </span>
+                                    {/* Step between changes (Google-Docs ^ / v).
+                                      Only meaningful while a diff is shown. */}
+                                    {previewShowChanges && versionPreview.previousData != null && (
+                                      <span
+                                        style={{
+                                          marginLeft: 'auto',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 2,
+                                        }}
+                                      >
+                                        <Tooltip content="Previous change">
+                                          <button
+                                            type="button"
+                                            onClick={() => stepPreviewChange('prev')}
+                                            data-testid="version-preview-prev-change"
+                                            aria-label="Previous change"
+                                            style={PREVIEW_CHANGE_NAV_BTN_STYLE}
+                                          >
+                                            <MaterialSymbol name="keyboard_arrow_up" size={18} />
+                                          </button>
+                                        </Tooltip>
+                                        <Tooltip content="Next change">
+                                          <button
+                                            type="button"
+                                            onClick={() => stepPreviewChange('next')}
+                                            data-testid="version-preview-next-change"
+                                            aria-label="Next change"
+                                            style={PREVIEW_CHANGE_NAV_BTN_STYLE}
+                                          >
+                                            <MaterialSymbol name="keyboard_arrow_down" size={18} />
+                                          </button>
+                                        </Tooltip>
+                                      </span>
+                                    )}
+                                    <label
                                       style={{
+                                        marginLeft:
+                                          previewShowChanges && versionPreview.previousData != null
+                                            ? 8
+                                            : 'auto',
                                         display: 'inline-flex',
                                         alignItems: 'center',
-                                        gap: 4,
-                                        padding: '4px 10px',
-                                        border: '1px solid var(--doc-border)',
-                                        borderRadius: 4,
-                                        background: 'transparent',
-                                        color: 'var(--doc-text)',
+                                        gap: 6,
                                         fontSize: 13,
+                                        color: 'var(--doc-text)',
+                                        cursor: versionPreview.previousData
+                                          ? 'pointer'
+                                          : 'not-allowed',
+                                        opacity: versionPreview.previousData ? 1 : 0.5,
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={previewShowChanges}
+                                        disabled={!versionPreview.previousData}
+                                        onChange={(e) => setPreviewShowChanges(e.target.checked)}
+                                        data-testid="version-preview-show-changes"
+                                      />
+                                      Show changes
+                                    </label>
+                                    {previewShowChanges && previewDiffTooLarge && (
+                                      <span
+                                        data-testid="version-preview-diff-too-large"
+                                        title="This version is too large to compute an inline diff; showing it without change highlights."
+                                        style={{
+                                          fontSize: 12,
+                                          color: 'var(--doc-text-muted, #5f6368)',
+                                          fontStyle: 'italic',
+                                        }}
+                                      >
+                                        Too large to highlight changes
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={handleRestoreFromPreview}
+                                      data-testid="version-preview-restore"
+                                      style={{
+                                        padding: '6px 14px',
+                                        border: 'none',
+                                        borderRadius: 4,
+                                        background: 'var(--doc-primary, #1a73e8)',
+                                        color: '#fff',
+                                        fontSize: 13,
+                                        fontWeight: 600,
                                         cursor: 'pointer',
                                       }}
                                     >
-                                      <MaterialSymbol name="arrow_back" size={16} />
-                                      Back
+                                      Restore this version
                                     </button>
-                                  </Tooltip>
-                                  <span style={{ fontSize: 13, color: 'var(--doc-text-muted)' }}>
-                                    Viewing{' '}
-                                    <strong style={{ color: 'var(--doc-text)' }}>
-                                      {versionPreview.name}
-                                    </strong>
-                                    {' · '}
-                                    {new Date(versionPreview.savedAt).toLocaleString()}
-                                  </span>
-                                  {/* Step between changes (Google-Docs ^ / v).
-                                      Only meaningful while a diff is shown. */}
-                                  {previewShowChanges && versionPreview.previousData != null && (
-                                    <span
-                                      style={{
-                                        marginLeft: 'auto',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 2,
-                                      }}
-                                    >
-                                      <Tooltip content="Previous change">
-                                        <button
-                                          type="button"
-                                          onClick={() => stepPreviewChange('prev')}
-                                          data-testid="version-preview-prev-change"
-                                          aria-label="Previous change"
-                                          style={PREVIEW_CHANGE_NAV_BTN_STYLE}
-                                        >
-                                          <MaterialSymbol name="keyboard_arrow_up" size={18} />
-                                        </button>
-                                      </Tooltip>
-                                      <Tooltip content="Next change">
-                                        <button
-                                          type="button"
-                                          onClick={() => stepPreviewChange('next')}
-                                          data-testid="version-preview-next-change"
-                                          aria-label="Next change"
-                                          style={PREVIEW_CHANGE_NAV_BTN_STYLE}
-                                        >
-                                          <MaterialSymbol name="keyboard_arrow_down" size={18} />
-                                        </button>
-                                      </Tooltip>
-                                    </span>
-                                  )}
-                                  <label
-                                    style={{
-                                      marginLeft:
-                                        previewShowChanges && versionPreview.previousData != null
-                                          ? 8
-                                          : 'auto',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: 6,
-                                      fontSize: 13,
-                                      color: 'var(--doc-text)',
-                                      cursor: versionPreview.previousData
-                                        ? 'pointer'
-                                        : 'not-allowed',
-                                      opacity: versionPreview.previousData ? 1 : 0.5,
-                                    }}
+                                  </div>
+                                  <div
+                                    ref={previewScrollRef}
+                                    style={{ flex: 1, minHeight: 0, overflow: 'auto' }}
                                   >
-                                    <input
-                                      type="checkbox"
-                                      checked={previewShowChanges}
-                                      disabled={!versionPreview.previousData}
-                                      onChange={(e) => setPreviewShowChanges(e.target.checked)}
-                                      data-testid="version-preview-show-changes"
-                                    />
-                                    Show changes
-                                  </label>
-                                  {previewShowChanges && previewDiffTooLarge && (
-                                    <span
-                                      data-testid="version-preview-diff-too-large"
-                                      title="This version is too large to compute an inline diff; showing it without change highlights."
-                                      style={{
-                                        fontSize: 12,
-                                        color: 'var(--doc-text-muted, #5f6368)',
-                                        fontStyle: 'italic',
-                                      }}
-                                    >
-                                      Too large to highlight changes
-                                    </span>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={handleRestoreFromPreview}
-                                    data-testid="version-preview-restore"
-                                    style={{
-                                      padding: '6px 14px',
-                                      border: 'none',
-                                      borderRadius: 4,
-                                      background: 'var(--doc-primary, #1a73e8)',
-                                      color: '#fff',
-                                      fontSize: 13,
-                                      fontWeight: 600,
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    Restore this version
-                                  </button>
-                                </div>
-                                <div
-                                  ref={previewScrollRef}
-                                  style={{ flex: 1, minHeight: 0, overflow: 'auto' }}
+                                    {previewDocument ? (
+                                      <PagedEditor
+                                        // Remount on version / show-changes change:
+                                        // the preview doc keeps the live doc's
+                                        // metadata identity, so PagedEditor's
+                                        // same-identity guard would otherwise skip
+                                        // the swap and keep painting the old marks.
+                                        key={`${versionPreview.savedAt}-${previewShowChanges}`}
+                                        ref={previewEditorRef}
+                                        document={previewDocument}
+                                        styles={previewDocument.package.styles}
+                                        theme={previewDocument.package.theme || theme}
+                                        sectionProperties={initialSectionProperties}
+                                        finalSectionProperties={finalSectionProperties}
+                                        headerContent={headerContent}
+                                        footerContent={footerContent}
+                                        firstPageHeaderContent={firstPageHeaderContent}
+                                        firstPageFooterContent={firstPageFooterContent}
+                                        zoom={state.zoom}
+                                        wordCompat={wordCompat}
+                                        readOnly
+                                        extensionManager={extensionManager}
+                                        contentLabel="Version preview"
+                                        scrollContainerRef={previewScrollRef}
+                                      />
+                                    ) : (
+                                      <div
+                                        style={{
+                                          padding: 40,
+                                          textAlign: 'center',
+                                          color: 'var(--doc-text-muted)',
+                                          fontSize: 13,
+                                        }}
+                                      >
+                                        Preview unavailable for this version.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>,
+                                editorColumnRef.current
+                              )}
+
+                            {/* Floating "add comment" button — appears on right edge of page at selection */}
+                            {floatingCommentBtn != null && !isAddingComment && !readOnly && (
+                              <Tooltip content="Add comment" side="bottom" delayMs={300}>
+                                <button
+                                  type="button"
+                                  data-testid="floating-add-comment-button"
+                                  aria-label="Add comment"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const view = pagedEditorRef.current?.getView();
+                                    if (view) {
+                                      const { from, to } = view.state.selection;
+                                      if (from !== to) {
+                                        setCommentSelectionRange({ from, to });
+                                        const pendingMark = view.state.schema.marks.comment.create({
+                                          commentId: PENDING_COMMENT_ID,
+                                        });
+                                        const tr = view.state.tr.addMark(from, to, pendingMark);
+                                        tr.setSelection(TextSelection.create(tr.doc, to));
+                                        view.dispatch(tr);
+                                      }
+                                    }
+                                    setAddCommentYPosition(floatingCommentBtn.top);
+                                    setShowCommentsSidebar(true);
+                                    setIsAddingComment(true);
+                                    setFloatingCommentBtn(null);
+                                  }}
+                                  style={{
+                                    position: 'absolute',
+                                    top: floatingCommentBtn.top,
+                                    left: floatingCommentBtn.left,
+                                    transform: 'translate(-50%, -50%)',
+                                    zIndex: 50,
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: 6,
+                                    border: '1px solid rgba(26, 115, 232, 0.3)',
+                                    backgroundColor: 'var(--doc-surface, #fff)',
+                                    color: 'var(--doc-primary)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    boxShadow: '0 1px 3px rgba(60,64,67,0.2)',
+                                    transition:
+                                      'background-color var(--doc-anim-base), box-shadow var(--doc-anim-base)',
+                                  }}
+                                  onMouseOver={(e) => {
+                                    (e.currentTarget as HTMLButtonElement).style.backgroundColor =
+                                      'rgba(26, 115, 232, 0.08)';
+                                    (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                                      '0 1px 4px rgba(26, 115, 232, 0.3)';
+                                  }}
+                                  onMouseOut={(e) => {
+                                    (e.currentTarget as HTMLButtonElement).style.backgroundColor =
+                                      'var(--doc-surface, #fff)';
+                                    (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                                      '0 1px 3px rgba(60,64,67,0.2)';
+                                  }}
                                 >
-                                  {previewDocument ? (
-                                    <PagedEditor
-                                      // Remount on version / show-changes change:
-                                      // the preview doc keeps the live doc's
-                                      // metadata identity, so PagedEditor's
-                                      // same-identity guard would otherwise skip
-                                      // the swap and keep painting the old marks.
-                                      key={`${versionPreview.savedAt}-${previewShowChanges}`}
-                                      ref={previewEditorRef}
-                                      document={previewDocument}
-                                      styles={previewDocument.package.styles}
-                                      theme={previewDocument.package.theme || theme}
-                                      sectionProperties={initialSectionProperties}
-                                      finalSectionProperties={finalSectionProperties}
-                                      headerContent={headerContent}
-                                      footerContent={footerContent}
-                                      firstPageHeaderContent={firstPageHeaderContent}
-                                      firstPageFooterContent={firstPageFooterContent}
-                                      zoom={state.zoom}
-                                      wordCompat={wordCompat}
-                                      readOnly
-                                      extensionManager={extensionManager}
-                                      contentLabel="Version preview"
-                                      scrollContainerRef={previewScrollRef}
-                                    />
-                                  ) : (
-                                    <div
-                                      style={{
-                                        padding: 40,
-                                        textAlign: 'center',
-                                        color: 'var(--doc-text-muted)',
-                                        fontSize: 13,
-                                      }}
-                                    >
-                                      Preview unavailable for this version.
-                                    </div>
-                                  )}
-                                </div>
-                              </div>,
-                              editorColumnRef.current
+                                  <MaterialSymbol name="add_comment" size={16} />
+                                </button>
+                              </Tooltip>
                             )}
 
-                          {/* Floating "add comment" button — appears on right edge of page at selection */}
-                          {floatingCommentBtn != null && !isAddingComment && !readOnly && (
-                            <Tooltip content="Add comment" side="bottom" delayMs={300}>
-                              <button
-                                type="button"
-                                data-testid="floating-add-comment-button"
-                                aria-label="Add comment"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  const view = pagedEditorRef.current?.getView();
-                                  if (view) {
-                                    const { from, to } = view.state.selection;
-                                    if (from !== to) {
-                                      setCommentSelectionRange({ from, to });
-                                      const pendingMark = view.state.schema.marks.comment.create({
-                                        commentId: PENDING_COMMENT_ID,
-                                      });
-                                      const tr = view.state.tr.addMark(from, to, pendingMark);
-                                      tr.setSelection(TextSelection.create(tr.doc, to));
-                                      view.dispatch(tr);
+                            {/* Inline Header/Footer Editor — positioned over the target area */}
+                            {hfEditPosition &&
+                              (() => {
+                                const activeHf = hfEditIsFirstPage
+                                  ? hfEditPosition === 'header'
+                                    ? firstPageHeaderContent
+                                    : firstPageFooterContent
+                                  : hfEditPosition === 'header'
+                                    ? headerContent
+                                    : footerContent;
+                                if (!activeHf) return null;
+                                const targetEl = getHfTargetElement(hfEditPosition);
+                                const parentEl = editorContentRef.current;
+                                if (!targetEl || !parentEl) return null;
+                                return (
+                                  <InlineHeaderFooterEditor
+                                    ref={hfEditorRef}
+                                    headerFooter={activeHf}
+                                    position={hfEditPosition}
+                                    styles={history.state?.package.styles}
+                                    targetElement={targetEl}
+                                    parentElement={parentEl}
+                                    onSave={handleHeaderFooterSave}
+                                    onClose={() => setHfEditPosition(null)}
+                                    onSelectionChange={handleSelectionChange}
+                                    onRemove={handleRemoveHeaderFooter}
+                                    titlePg={
+                                      history.state?.package.document?.finalSectionProperties
+                                        ?.titlePg
                                     }
-                                  }
-                                  setAddCommentYPosition(floatingCommentBtn.top);
-                                  setShowCommentsSidebar(true);
-                                  setIsAddingComment(true);
-                                  setFloatingCommentBtn(null);
-                                }}
-                                style={{
-                                  position: 'absolute',
-                                  top: floatingCommentBtn.top,
-                                  left: floatingCommentBtn.left,
-                                  transform: 'translate(-50%, -50%)',
-                                  zIndex: 50,
-                                  width: 28,
-                                  height: 28,
-                                  borderRadius: 6,
-                                  border: '1px solid rgba(26, 115, 232, 0.3)',
-                                  backgroundColor: 'var(--doc-surface, #fff)',
-                                  color: 'var(--doc-primary)',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  boxShadow: '0 1px 3px rgba(60,64,67,0.2)',
-                                  transition:
-                                    'background-color var(--doc-anim-base), box-shadow var(--doc-anim-base)',
-                                }}
-                                onMouseOver={(e) => {
-                                  (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-                                    'rgba(26, 115, 232, 0.08)';
-                                  (e.currentTarget as HTMLButtonElement).style.boxShadow =
-                                    '0 1px 4px rgba(26, 115, 232, 0.3)';
-                                }}
-                                onMouseOut={(e) => {
-                                  (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-                                    'var(--doc-surface, #fff)';
-                                  (e.currentTarget as HTMLButtonElement).style.boxShadow =
-                                    '0 1px 3px rgba(60,64,67,0.2)';
-                                }}
-                              >
-                                <MaterialSymbol name="add_comment" size={16} />
-                              </button>
-                            </Tooltip>
-                          )}
-
-                          {/* Inline Header/Footer Editor — positioned over the target area */}
-                          {hfEditPosition &&
-                            (() => {
-                              const activeHf = hfEditIsFirstPage
-                                ? hfEditPosition === 'header'
-                                  ? firstPageHeaderContent
-                                  : firstPageFooterContent
-                                : hfEditPosition === 'header'
-                                  ? headerContent
-                                  : footerContent;
-                              if (!activeHf) return null;
-                              const targetEl = getHfTargetElement(hfEditPosition);
-                              const parentEl = editorContentRef.current;
-                              if (!targetEl || !parentEl) return null;
-                              return (
-                                <InlineHeaderFooterEditor
-                                  ref={hfEditorRef}
-                                  headerFooter={activeHf}
-                                  position={hfEditPosition}
-                                  styles={history.state?.package.styles}
-                                  targetElement={targetEl}
-                                  parentElement={parentEl}
-                                  onSave={handleHeaderFooterSave}
-                                  onClose={() => setHfEditPosition(null)}
-                                  onSelectionChange={handleSelectionChange}
-                                  onRemove={handleRemoveHeaderFooter}
-                                  titlePg={
-                                    history.state?.package.document?.finalSectionProperties?.titlePg
-                                  }
-                                  evenAndOddHeaders={
-                                    history.state?.package.document?.finalSectionProperties
-                                      ?.evenAndOddHeaders
-                                  }
-                                  onToggleTitlePg={handleToggleTitlePg}
-                                  onToggleEvenAndOdd={handleToggleEvenAndOddHeaders}
-                                  findHighlightPlugin={findHighlightPlugin}
-                                />
-                              );
-                            })()}
+                                    evenAndOddHeaders={
+                                      history.state?.package.document?.finalSectionProperties
+                                        ?.evenAndOddHeaders
+                                    }
+                                    onToggleTitlePg={handleToggleTitlePg}
+                                    onToggleEvenAndOdd={handleToggleEvenAndOddHeaders}
+                                    findHighlightPlugin={findHighlightPlugin}
+                                  />
+                                );
+                              })()}
+                          </div>
                         </div>
+                        {/* end editor flex wrapper */}
                       </div>
-                      {/* end editor flex wrapper */}
+                      {/* end scroll container */}
                     </div>
-                    {/* end scroll container */}
-                  </div>
-                  {/* end viewport-height editor column */}
+                    {/* end viewport-height editor column */}
 
-                  {/* Version history panel — flex sibling of the scroll
+                    {/* Version history panel — flex sibling of the scroll
                       container so it stays pinned to the viewport
                       instead of riding along with document scroll. The
                       page area auto-shrinks because the scroll
                       container is `flex: 1` and this column has a
                       fixed width. */}
-                  {showVersionHistory && (
-                    <VersionHistoryPanel
-                      docId={documentName?.trim() || 'Untitled'}
-                      saveNamedVersion={versionCapture.saveNamedVersion}
-                      onRestoreSnapshot={handleRestoreSnapshot}
-                      onPreviewVersion={handlePreviewVersion}
-                      onShowCurrent={handleClosePreview}
-                      isPreviewing={versionPreview != null}
-                      serverBackend={versionBackend}
-                      onRestoreServerVersion={handleRestoreServerVersion}
-                      onClose={() => setShowVersionHistory(false)}
-                    />
-                  )}
+                    {showVersionHistory && (
+                      <VersionHistoryPanel
+                        docId={documentName?.trim() || 'Untitled'}
+                        saveNamedVersion={versionCapture.saveNamedVersion}
+                        onRestoreSnapshot={handleRestoreSnapshot}
+                        onPreviewVersion={handlePreviewVersion}
+                        onShowCurrent={handleClosePreview}
+                        isPreviewing={versionPreview != null}
+                        serverBackend={versionBackend}
+                        onRestoreServerVersion={handleRestoreServerVersion}
+                        onClose={() => setShowVersionHistory(false)}
+                      />
+                    )}
 
-                  {showProperties &&
-                    (() => {
-                      // Flex sibling — IDENTICAL to VersionHistoryPanel above:
-                      // the page area auto-shrinks (flex:1 scroll container +
-                      // this fixed-width column), so it sits BESIDE the doc and
-                      // never overlaps it. Kind derived from the live selection.
-                      const propsKind: PropertiesTargetKind | null = state.pmImageContext
-                        ? 'image'
-                        : state.pmTextBoxContext
-                          ? 'textbox'
-                          : state.pmTableContext?.isInTable
-                            ? 'table'
-                            : null;
-                      return (
-                        <PropertiesPanel kind={propsKind} onClose={() => openRightPanel('none')}>
-                          {propsKind === 'image' && state.pmImageContext && (
-                            <ImagePropertiesSection
-                              wrapType={state.pmImageContext.wrapType}
-                              width={state.pmImageContext.width}
-                              height={state.pmImageContext.height}
-                              borderWidth={state.pmImageContext.borderWidth}
-                              borderColor={state.pmImageContext.borderColor}
-                              alt={state.pmImageContext.alt}
-                              distTop={state.pmImageContext.distTop}
-                              distBottom={state.pmImageContext.distBottom}
-                              distLeft={state.pmImageContext.distLeft}
-                              distRight={state.pmImageContext.distRight}
-                              onSetWrap={handleImageWrapType}
-                              onSetSize={handleImageSetSize}
-                              onTransform={handleImageTransform}
-                              onSetBorder={handleImageSetBorder}
-                              onSetAlt={handleImageSetAlt}
-                              onSetDist={handleImageSetDist}
-                            />
-                          )}
-                          {propsKind === 'table' && (
-                            <TablePropertiesSection
-                              onAction={handleTableAction}
-                              theme={history.state?.package.theme || theme}
-                              borderColorHex={resolveColorToHex(
-                                state.pmTableContext?.cellBorderColor,
-                                history.state?.package.theme || theme
-                              )}
-                              cellBackgroundColor={state.pmTableContext?.cellBackgroundColor}
-                            />
-                          )}
-                          {propsKind === 'textbox' && state.pmTextBoxContext && (
-                            <TextBoxPropertiesSection
-                              width={state.pmTextBoxContext.width}
-                              height={state.pmTextBoxContext.height}
-                              fillColor={state.pmTextBoxContext.fillColor}
-                              outlineWidth={state.pmTextBoxContext.outlineWidth}
-                              outlineColor={state.pmTextBoxContext.outlineColor}
-                              posOffsetH={state.pmTextBoxContext.posOffsetH}
-                              posOffsetV={state.pmTextBoxContext.posOffsetV}
-                              onSetSize={handleTextBoxSetSize}
-                              onSetFill={handleTextBoxSetFill}
-                              onSetOutline={handleTextBoxSetOutline}
-                              onSetPosition={handleTextBoxSetPosition}
-                            />
-                          )}
-                        </PropertiesPanel>
-                      );
-                    })()}
+                    {showProperties &&
+                      (() => {
+                        // Flex sibling — IDENTICAL to VersionHistoryPanel above:
+                        // the page area auto-shrinks (flex:1 scroll container +
+                        // this fixed-width column), so it sits BESIDE the doc and
+                        // never overlaps it. Kind derived from the live selection.
+                        const propsKind: PropertiesTargetKind | null = state.pmImageContext
+                          ? 'image'
+                          : state.pmTextBoxContext
+                            ? 'textbox'
+                            : state.pmTableContext?.isInTable
+                              ? 'table'
+                              : null;
+                        return (
+                          <PropertiesPanel kind={propsKind} onClose={() => openRightPanel('none')}>
+                            {propsKind === 'image' && state.pmImageContext && (
+                              <ImagePropertiesSection
+                                wrapType={state.pmImageContext.wrapType}
+                                width={state.pmImageContext.width}
+                                height={state.pmImageContext.height}
+                                borderWidth={state.pmImageContext.borderWidth}
+                                borderColor={state.pmImageContext.borderColor}
+                                alt={state.pmImageContext.alt}
+                                distTop={state.pmImageContext.distTop}
+                                distBottom={state.pmImageContext.distBottom}
+                                distLeft={state.pmImageContext.distLeft}
+                                distRight={state.pmImageContext.distRight}
+                                onSetWrap={handleImageWrapType}
+                                onSetSize={handleImageSetSize}
+                                onTransform={handleImageTransform}
+                                onSetBorder={handleImageSetBorder}
+                                onSetAlt={handleImageSetAlt}
+                                onSetDist={handleImageSetDist}
+                              />
+                            )}
+                            {propsKind === 'table' && (
+                              <TablePropertiesSection
+                                onAction={handleTableAction}
+                                theme={history.state?.package.theme || theme}
+                                borderColorHex={resolveColorToHex(
+                                  state.pmTableContext?.cellBorderColor,
+                                  history.state?.package.theme || theme
+                                )}
+                                cellBackgroundColor={state.pmTableContext?.cellBackgroundColor}
+                              />
+                            )}
+                            {propsKind === 'textbox' && state.pmTextBoxContext && (
+                              <TextBoxPropertiesSection
+                                width={state.pmTextBoxContext.width}
+                                height={state.pmTextBoxContext.height}
+                                fillColor={state.pmTextBoxContext.fillColor}
+                                outlineWidth={state.pmTextBoxContext.outlineWidth}
+                                outlineColor={state.pmTextBoxContext.outlineColor}
+                                posOffsetH={state.pmTextBoxContext.posOffsetH}
+                                posOffsetV={state.pmTextBoxContext.posOffsetV}
+                                onSetSize={handleTextBoxSetSize}
+                                onSetFill={handleTextBoxSetFill}
+                                onSetOutline={handleTextBoxSetOutline}
+                                onSetPosition={handleTextBoxSetPosition}
+                              />
+                            )}
+                          </PropertiesPanel>
+                        );
+                      })()}
 
-                  {/* Comments use the anchored-cards approach (UnifiedSidebar
+                    {/* Comments use the anchored-cards approach (UnifiedSidebar
                       paints a floating card next to each commented span).
                       There is intentionally no solid docked comments panel —
                       the empty-doc case is handled by a toast hint in
                       handleToggleComments. */}
 
-                  {/* AI right-side panels — laid out as flex siblings of
+                    {/* AI right-side panels — laid out as flex siblings of
                       the scroll container so they share the exact same
                       geometry as Version history (start below the
                       toolbar, end above the status bar, sit left of the
@@ -10623,323 +10717,421 @@ body { background: white; }
                       which sets the canonical RIGHT_PANEL_WIDTH so the
                       doc area shifts by a uniform amount regardless of
                       which panel the user opens. */}
-                  {aiSuggestion && (
-                    <AISuggestionPanel
-                      mode={aiSuggestion.mode}
-                      original={aiSuggestion.original}
-                      suggestion={aiSuggestion.suggestion}
-                      inferenceMs={aiSuggestion.inferenceMs}
-                      onAccept={handleAiAccept}
-                      onReject={handleAiReject}
-                      onCancel={handleAiCancel}
-                      onRetry={handleAiRetry}
-                      tones={
-                        aiSuggestion.mode === 'rewrite'
-                          ? [
-                              {
-                                id: 'polish',
-                                label: 'Polish',
-                                active: aiSuggestion.tone === 'polish',
-                              },
-                              {
-                                id: 'concise',
-                                label: 'Concise',
-                                active: aiSuggestion.tone === 'concise',
-                              },
-                              {
-                                id: 'formal',
-                                label: 'Formal',
-                                active: aiSuggestion.tone === 'formal',
-                              },
-                              {
-                                id: 'casual',
-                                label: 'Casual',
-                                active: aiSuggestion.tone === 'casual',
-                              },
-                              {
-                                id: 'shorter',
-                                label: 'Shorter',
-                                active: aiSuggestion.tone === 'shorter',
-                              },
-                              {
-                                id: 'longer',
-                                label: 'Longer',
-                                active: aiSuggestion.tone === 'longer',
-                              },
-                            ]
-                          : undefined
-                      }
-                      onTone={handleAiTone}
-                      busy={aiSuggestion.busy}
-                      error={aiSuggestion.error}
-                    />
-                  )}
+                    {aiSuggestion && (
+                      <AISuggestionPanel
+                        mode={aiSuggestion.mode}
+                        original={aiSuggestion.original}
+                        suggestion={aiSuggestion.suggestion}
+                        inferenceMs={aiSuggestion.inferenceMs}
+                        onAccept={handleAiAccept}
+                        onReject={handleAiReject}
+                        onCancel={handleAiCancel}
+                        onRetry={handleAiRetry}
+                        tones={
+                          aiSuggestion.mode === 'rewrite'
+                            ? [
+                                {
+                                  id: 'polish',
+                                  label: 'Polish',
+                                  active: aiSuggestion.tone === 'polish',
+                                },
+                                {
+                                  id: 'concise',
+                                  label: 'Concise',
+                                  active: aiSuggestion.tone === 'concise',
+                                },
+                                {
+                                  id: 'formal',
+                                  label: 'Formal',
+                                  active: aiSuggestion.tone === 'formal',
+                                },
+                                {
+                                  id: 'casual',
+                                  label: 'Casual',
+                                  active: aiSuggestion.tone === 'casual',
+                                },
+                                {
+                                  id: 'shorter',
+                                  label: 'Shorter',
+                                  active: aiSuggestion.tone === 'shorter',
+                                },
+                                {
+                                  id: 'longer',
+                                  label: 'Longer',
+                                  active: aiSuggestion.tone === 'longer',
+                                },
+                              ]
+                            : undefined
+                        }
+                        onTone={handleAiTone}
+                        busy={aiSuggestion.busy}
+                        error={aiSuggestion.error}
+                      />
+                    )}
 
-                  {/* DocOps AI panel — unlocked via the `ai` SDK prop (or the
+                    {/* DocOps AI panel — unlocked via the `ai` SDK prop (or the
                       deprecated window.__casualFeatures__.docops global).
                       Uses the Anthropic API directly (user-supplied key) with the
                       JSON DocOps IR tool catalog. No WebLLM, no server inference. */}
-                  {showDocOpsPanel && docOpsEnabled && notifyingBridge && (
-                    <DocOpsPanel
-                      bridge={notifyingBridge}
-                      onClose={() => openRightPanel('none')}
-                      transport={docOpsTransport ?? createDocOpsTransport()}
-                      maxToolRounds={docopsMaxToolRounds}
-                    />
-                  )}
+                    {showDocOpsPanel && docOpsEnabled && notifyingBridge && (
+                      <DocOpsPanel
+                        bridge={notifyingBridge}
+                        onClose={() => openRightPanel('none')}
+                        transport={docOpsTransport ?? createDocOpsTransport()}
+                        maxToolRounds={docopsMaxToolRounds}
+                      />
+                    )}
 
-                  {/* Right-edge PanelRail (X7) — always-visible activity bar
+                    {/* Right-edge PanelRail (X7) — always-visible activity bar
                     with toggles for Outline / Comments / Version history.
                     Lives inside the below-toolbar flex row so it spans only
                     the editor body's height, not the toolbar's. */}
-                  {showPanelRail && !focusMode && (
-                    <PanelRail
-                      outlineVisible={showOutline}
-                      commentsVisible={showCommentsSidebar}
-                      historyVisible={showVersionHistory}
-                      onToggleOutline={handleToggleOutline}
-                      onToggleComments={handleToggleComments}
-                      propertiesVisible={showProperties}
-                      onToggleProperties={() =>
-                        openRightPanel(showProperties ? 'none' : 'properties')
-                      }
-                      onToggleHistory={() =>
-                        openRightPanel(showVersionHistory ? 'none' : 'history')
-                      }
-                      // Writer + chat rail toggles unwired — LLM
-                      // gating. Restore: writerVisible={showWritingAssistant}
-                      //   onToggleWriter={() => openRightPanel(showWritingAssistant ? 'none' : 'writer')}
-                      //   chatVisible={showChatPanel}
-                      //   onToggleChat={() => openRightPanel(showChatPanel ? 'none' : 'chat')}
-                      docopsVisible={docOpsEnabled ? showDocOpsPanel : undefined}
-                      onToggleDocOps={
-                        docOpsEnabled
-                          ? () => openRightPanel(showDocOpsPanel ? 'none' : 'docops')
-                          : undefined
-                      }
+                    {showPanelRailEffective && !focusMode && (
+                      <PanelRail
+                        outlineVisible={showOutlineEffective}
+                        commentsVisible={showCommentsSidebar}
+                        historyVisible={showVersionHistory}
+                        onToggleOutline={handleToggleOutline}
+                        onToggleComments={handleToggleComments}
+                        propertiesVisible={showProperties}
+                        onToggleProperties={() =>
+                          openRightPanel(showProperties ? 'none' : 'properties')
+                        }
+                        onToggleHistory={() =>
+                          openRightPanel(showVersionHistory ? 'none' : 'history')
+                        }
+                        // Writer + chat rail toggles unwired — LLM
+                        // gating. Restore: writerVisible={showWritingAssistant}
+                        //   onToggleWriter={() => openRightPanel(showWritingAssistant ? 'none' : 'writer')}
+                        //   chatVisible={showChatPanel}
+                        //   onToggleChat={() => openRightPanel(showChatPanel ? 'none' : 'chat')}
+                        docopsVisible={docOpsEnabled ? showDocOpsPanel : undefined}
+                        onToggleDocOps={
+                          docOpsEnabled
+                            ? () => openRightPanel(showDocOpsPanel ? 'none' : 'docops')
+                            : undefined
+                        }
+                      />
+                    )}
+                  </div>
+                  {/* end below-toolbar flex row */}
+
+                  {showStatusBarEffective && !readOnlyProp && !focusMode && (
+                    <StatusBar
+                      currentPage={scrollPageInfo.currentPage}
+                      totalPages={scrollPageInfo.totalPages}
+                      wordCount={wordCount}
+                      charCount={charCount}
+                      docText={docPlainText}
+                      zoom={state.zoom}
+                      onZoomChange={handleZoomChange}
                     />
                   )}
-                </div>
-                {/* end below-toolbar flex row */}
 
-                {showStatusBar && !readOnlyProp && !focusMode && (
-                  <StatusBar
-                    currentPage={scrollPageInfo.currentPage}
-                    totalPages={scrollPageInfo.totalPages}
-                    wordCount={wordCount}
-                    charCount={charCount}
-                    docText={docPlainText}
-                    zoom={state.zoom}
-                    onZoomChange={handleZoomChange}
-                  />
-                )}
-
-                {/* Focus mode signature bar — pinned to the viewport
+                  {/* Focus mode signature bar — pinned to the viewport
                     bottom-center, fades on idle, replaces the entire
                     chrome stack while focusMode is on. */}
-                <FocusModeBar wordCount={wordCount ?? 0} isActive={focusMode} />
+                  <FocusModeBar wordCount={wordCount ?? 0} isActive={focusMode} />
 
-                {/* Floating page indicator next to the scrollbar */}
-                {scrollPageInfo.totalPages > 1 && (
-                  <PageIndicator
-                    currentPage={scrollPageInfo.currentPage}
-                    totalPages={scrollPageInfo.totalPages}
-                    visible={scrollPageInfo.visible}
-                  />
-                )}
+                  {/* Floating page indicator next to the scrollbar */}
+                  {scrollPageInfo.totalPages > 1 && (
+                    <PageIndicator
+                      currentPage={scrollPageInfo.currentPage}
+                      totalPages={scrollPageInfo.totalPages}
+                      visible={scrollPageInfo.visible}
+                    />
+                  )}
 
-                {/* Document outline sidebar — absolutely positioned, doesn't scroll */}
-                {showOutline && (
-                  <DocumentOutline
-                    headings={outlineHeadings}
-                    activeIndex={activeOutlineIndex}
-                    onHeadingClick={handleHeadingInfoClick}
-                    onClose={() => setShowOutline(false)}
-                    topOffset={toolbarHeight}
-                    scrollLeft={editorScrollLeft}
-                  />
-                )}
+                  {/* Document outline sidebar — absolutely positioned, doesn't scroll */}
+                  {showOutlineEffective && (
+                    <DocumentOutline
+                      headings={outlineHeadings}
+                      activeIndex={activeOutlineIndex}
+                      onHeadingClick={handleHeadingInfoClick}
+                      onClose={() => setShowOutline(false)}
+                      topOffset={toolbarHeight}
+                      scrollLeft={editorScrollLeft}
+                    />
+                  )}
 
-                {/* Unified sidebar (comments + plugin items) rendered inside PagedEditor via sidebarOverlay prop */}
+                  {/* Unified sidebar (comments + plugin items) rendered inside PagedEditor via sidebarOverlay prop */}
 
-                {/* Outline now lives in the right-edge PanelRail —
+                  {/* Outline now lives in the right-edge PanelRail —
                     the floating button shipped before the rail existed
                     and is redundant. `showOutlineButton` is retained as
                     a prop for hosts that explicitly turn the entire
                     panel system off; the rail respects it via the
                     onToggleOutline plumbing in the host. */}
-              </div>
-              {/* end wrapper for scroll container + outline */}
+                </div>
+                {/* end wrapper for scroll container + outline */}
 
-              {/* Agent panel (right-side dock) — always mounted when the
+                {/* Agent panel (right-side dock) — always mounted when the
                   prop is set so chat state survives close/reopen.
                   `closed={!agentPanelOpen}` triggers the slide / fade. */}
-              {agentPanel && (
-                <AgentPanel
-                  title={agentPanel.title}
-                  icon={agentPanel.icon}
-                  defaultWidth={agentPanel.defaultWidth}
-                  minWidth={agentPanel.minWidth}
-                  maxWidth={agentPanel.maxWidth}
-                  onClose={() => setAgentPanelOpen(false)}
-                  closed={!agentPanelOpen}
-                >
-                  {agentPanel.render({ close: () => setAgentPanelOpen(false) })}
-                </AgentPanel>
-              )}
-            </div>
+                {agentPanel && (
+                  <AgentPanel
+                    title={agentPanel.title}
+                    icon={agentPanel.icon}
+                    defaultWidth={agentPanel.defaultWidth}
+                    minWidth={agentPanel.minWidth}
+                    maxWidth={agentPanel.maxWidth}
+                    onClose={() => setAgentPanelOpen(false)}
+                    closed={!agentPanelOpen}
+                  >
+                    {agentPanel.render({ close: () => setAgentPanelOpen(false) })}
+                  </AgentPanel>
+                )}
+              </div>
 
-            {/* Hyperlink popup (Google Docs-style) */}
-            <HyperlinkPopup
-              data={hyperlinkPopupData}
-              onNavigate={handleHyperlinkPopupNavigate}
-              onCopy={handleHyperlinkPopupCopy}
-              onEdit={handleHyperlinkPopupEdit}
-              onRemove={handleHyperlinkPopupRemove}
-              onClose={handleHyperlinkPopupClose}
-              readOnly={readOnly}
-            />
+              {/* Hyperlink popup (Google Docs-style) */}
+              <HyperlinkPopup
+                data={hyperlinkPopupData}
+                onNavigate={handleHyperlinkPopupNavigate}
+                onCopy={handleHyperlinkPopupCopy}
+                onEdit={handleHyperlinkPopupEdit}
+                onRemove={handleHyperlinkPopupRemove}
+                onClose={handleHyperlinkPopupClose}
+                readOnly={readOnly}
+              />
 
-            {/* Right-click context menu */}
-            <TextContextMenu
-              isOpen={contextMenu.isOpen}
-              position={contextMenu.position}
-              hasSelection={contextMenu.hasSelection}
-              isEditable={!readOnly}
-              items={contextMenuItems}
-              onAction={handleContextMenuAction}
-              onClose={handleContextMenuClose}
-            />
+              {/* Right-click context menu */}
+              <TextContextMenu
+                isOpen={contextMenu.isOpen}
+                position={contextMenu.position}
+                hasSelection={contextMenu.hasSelection}
+                isEditable={!readOnly}
+                items={contextMenuItems}
+                onAction={handleContextMenuAction}
+                onClose={handleContextMenuClose}
+              />
 
-            {/* Spell-check suggestions menu — shown only when the right-
+              {/* Spell-check suggestions menu — shown only when the right-
                 click landed on a misspelled-word decoration. */}
-            {spellMenu && (
-              <SpellSuggestionsMenu
-                isOpen={true}
-                position={{ x: spellMenu.x, y: spellMenu.y }}
-                word={spellMenu.word}
-                suggestions={spellMenu.suggestions}
-                onPick={handlePickSpellSuggestion}
-                onIgnore={handleIgnoreSpell}
-                onAddToDictionary={handleAddToDictionarySpell}
-                onClose={() => setSpellMenu(null)}
-              />
-            )}
+              {spellMenu && (
+                <SpellSuggestionsMenu
+                  isOpen={true}
+                  position={{ x: spellMenu.x, y: spellMenu.y }}
+                  word={spellMenu.word}
+                  suggestions={spellMenu.suggestions}
+                  onPick={handlePickSpellSuggestion}
+                  onIgnore={handleIgnoreSpell}
+                  onAddToDictionary={handleAddToDictionarySpell}
+                  onClose={() => setSpellMenu(null)}
+                />
+              )}
 
-            {/* Grammar fix menu — opens when a right-click landed on a
+              {/* Grammar fix menu — opens when a right-click landed on a
                 `.grammar-error` decoration. */}
-            {grammarMenu && (
-              <GrammarSuggestionsMenu
-                isOpen={true}
-                position={{ x: grammarMenu.x, y: grammarMenu.y }}
-                message={grammarMenu.message}
-                replacements={grammarMenu.replacements}
-                onPick={handlePickGrammarFix}
-                onClose={() => setGrammarMenu(null)}
+              {grammarMenu && (
+                <GrammarSuggestionsMenu
+                  isOpen={true}
+                  position={{ x: grammarMenu.x, y: grammarMenu.y }}
+                  message={grammarMenu.message}
+                  replacements={grammarMenu.replacements}
+                  onPick={handlePickGrammarFix}
+                  onClose={() => setGrammarMenu(null)}
+                />
+              )}
+
+              {/* Image-specific right-click menu — layout options + text actions */}
+              <ImageContextMenu
+                isOpen={imageContextMenu.isOpen}
+                position={imageContextMenu.position}
+                currentWrapType={imageContextMenu.currentWrapType}
+                currentCssFloat={imageContextMenu.currentCssFloat}
+                onApplyLayout={handleImageWrapApply}
+                textActions={imageContextMenuTextActions}
+                onTextAction={handleContextMenuAction}
+                onClose={imageContextMenu.closeMenu}
               />
-            )}
 
-            {/* Image-specific right-click menu — layout options + text actions */}
-            <ImageContextMenu
-              isOpen={imageContextMenu.isOpen}
-              position={imageContextMenu.position}
-              currentWrapType={imageContextMenu.currentWrapType}
-              currentCssFloat={imageContextMenu.currentCssFloat}
-              onApplyLayout={handleImageWrapApply}
-              textActions={imageContextMenuTextActions}
-              onTextAction={handleContextMenuAction}
-              onClose={imageContextMenu.closeMenu}
-            />
-
-            {/* Inline AI preview popover — staged proposal from a chat
+              {/* Inline AI preview popover — staged proposal from a chat
                 tool (insertTable, future rewrite/outline/translate)
                 with Replace / Insert below / Try again / Discard. Per
                 research §3 + §1, AI output never enters the doc body
                 without explicit accept. */}
-            {activeProposal && (
-              <InlinePreviewPopover
-                proposal={activeProposal}
-                getView={() => getActiveEditorView() ?? null}
-                onReplace={() => {
-                  const view = getActiveEditorView();
-                  if (!view || !activeProposal.replaceRange) {
-                    setActiveProposal(null);
-                    return;
-                  }
-                  const { from, to } = activeProposal.replaceRange;
-                  if (activeProposal.asTrackedChange) {
-                    // Same tracked-change path the AISuggestionPanel
-                    // uses — original range becomes a `deletion` mark
-                    // (red strikethrough) and the new fragment lands
-                    // after `to` with `insertion` marks (green
-                    // underline). User accepts/rejects via the doc-
-                    // body review bar.
-                    applyRewriteAsSuggestion({
-                      view,
-                      from,
-                      to,
-                      replacement: activeProposal.fragment,
-                    });
-                  } else {
-                    const tr = view.state.tr.replaceWith(from, to, activeProposal.fragment);
-                    view.dispatch(tr);
-                  }
-                  view.focus();
-                  setActiveProposal(null);
-                }}
-                onInsertBelow={() => {
-                  const view = getActiveEditorView();
-                  if (!view) {
-                    setActiveProposal(null);
-                    return;
-                  }
-                  // Walk up to the nearest block boundary so the
-                  // fragment lands as a sibling, not inside an inline.
-                  const { $from } = view.state.selection;
-                  let insertPos = $from.pos;
-                  for (let d = $from.depth; d > 0; d--) {
-                    const node = $from.node(d);
-                    if (node.type.name === 'paragraph' || node.type.name === 'table') {
-                      insertPos = $from.after(d);
-                      break;
+              {activeProposal && (
+                <InlinePreviewPopover
+                  proposal={activeProposal}
+                  getView={() => getActiveEditorView() ?? null}
+                  onReplace={() => {
+                    const view = getActiveEditorView();
+                    if (!view || !activeProposal.replaceRange) {
+                      setActiveProposal(null);
+                      return;
                     }
-                  }
-                  if (activeProposal.asTrackedChange) {
-                    applyFragmentAsSuggestion({
-                      view,
-                      at: insertPos,
-                      fragment: activeProposal.fragment,
-                    });
-                  } else {
-                    const tr = view.state.tr.insert(insertPos, activeProposal.fragment);
-                    view.dispatch(tr);
-                  }
-                  view.focus();
-                  setActiveProposal(null);
-                }}
-                busy={proposalBusy}
-                onTryAgain={(refinePrompt) => {
+                    const { from, to } = activeProposal.replaceRange;
+                    if (activeProposal.asTrackedChange) {
+                      // Same tracked-change path the AISuggestionPanel
+                      // uses — original range becomes a `deletion` mark
+                      // (red strikethrough) and the new fragment lands
+                      // after `to` with `insertion` marks (green
+                      // underline). User accepts/rejects via the doc-
+                      // body review bar.
+                      applyRewriteAsSuggestion({
+                        view,
+                        from,
+                        to,
+                        replacement: activeProposal.fragment,
+                      });
+                    } else {
+                      const tr = view.state.tr.replaceWith(from, to, activeProposal.fragment);
+                      view.dispatch(tr);
+                    }
+                    view.focus();
+                    setActiveProposal(null);
+                  }}
+                  onInsertBelow={() => {
+                    const view = getActiveEditorView();
+                    if (!view) {
+                      setActiveProposal(null);
+                      return;
+                    }
+                    // Walk up to the nearest block boundary so the
+                    // fragment lands as a sibling, not inside an inline.
+                    const { $from } = view.state.selection;
+                    let insertPos = $from.pos;
+                    for (let d = $from.depth; d > 0; d--) {
+                      const node = $from.node(d);
+                      if (node.type.name === 'paragraph' || node.type.name === 'table') {
+                        insertPos = $from.after(d);
+                        break;
+                      }
+                    }
+                    if (activeProposal.asTrackedChange) {
+                      applyFragmentAsSuggestion({
+                        view,
+                        at: insertPos,
+                        fragment: activeProposal.fragment,
+                      });
+                    } else {
+                      const tr = view.state.tr.insert(insertPos, activeProposal.fragment);
+                      view.dispatch(tr);
+                    }
+                    view.focus();
+                    setActiveProposal(null);
+                  }}
+                  busy={proposalBusy}
+                  onTryAgain={(refinePrompt) => {
+                    const view = getActiveEditorView();
+                    if (!view) return;
+                    const schema = view.state.schema;
+                    // Combine the original prompt with the refine
+                    // instruction. The classifier re-routes to the same
+                    // intent because the original intent verb is still
+                    // first; the refine line tunes the result.
+                    const combined = lastProposalPrompt
+                      ? `${lastProposalPrompt}\n\nRefine: ${refinePrompt}`
+                      : refinePrompt;
+                    setProposalBusy(true);
+                    void runPipeline(
+                      {
+                        message: combined,
+                        includeDocContext: true,
+                        includeSelection: !!activeProposal.replaceRange,
+                      },
+                      {
+                        getDocText: () =>
+                          view.state.doc.textBetween(0, view.state.doc.content.size, '\n', '\n'),
+                        getSelectionText: () => {
+                          const { from, to } = view.state.selection;
+                          if (from === to) return '';
+                          return view.state.doc.textBetween(from, to, '\n', ' ');
+                        },
+                        getView: () => view,
+                        schema,
+                      }
+                    )
+                      .then((result) => {
+                        if (result.kind === 'proposal') {
+                          setActiveProposal(result);
+                          setLastProposalPrompt(combined);
+                        } else if (result.kind === 'chat') {
+                          toast.message(result.text);
+                        } else {
+                          toast.error(result.message);
+                        }
+                      })
+                      .catch((err) => {
+                        toast.error(`Refine failed: ${(err as Error).message}`);
+                      })
+                      .finally(() => setProposalBusy(false));
+                  }}
+                  onDiscard={() => setActiveProposal(null)}
+                />
+              )}
+
+              {/* Selection-anchored Ask AI — Notion / Word Rewrite
+                pattern from research §1, §2b, §3. Shows the "Ask AI"
+                pill above the selection start when there's text
+                selected AND an LLM is loaded. Submit runs the pipeline
+                with the user's free-form prompt; the resulting
+                proposal goes into the inline preview popover (same
+                surface as chat-driven proposals). */}
+              <SelectionAskAi
+                isOpen={hasTextSelection && aiEnabled && !aiSuggestion && !showDocOpsPanel}
+                getView={() => getActiveEditorView() ?? null}
+                busy={askAiBusy}
+                onDismiss={() => setHasTextSelection(false)}
+                onSubmit={(promptText, capturedSelectionText) => {
                   const view = getActiveEditorView();
                   if (!view) return;
                   const schema = view.state.schema;
-                  // Combine the original prompt with the refine
-                  // instruction. The classifier re-routes to the same
-                  // intent because the original intent verb is still
-                  // first; the refine line tunes the result.
-                  const combined = lastProposalPrompt
-                    ? `${lastProposalPrompt}\n\nRefine: ${refinePrompt}`
-                    : refinePrompt;
-                  setProposalBusy(true);
+
+                  // Desktop: the WebLLM pipeline is unavailable. Route the
+                  // free-form instruction to the native model and surface the
+                  // result as an accept/reject suggestion over the selection.
+                  if (isDesktopShell()) {
+                    const { from, to } = view.state.selection;
+                    const selText =
+                      capturedSelectionText ||
+                      (from !== to ? view.state.doc.textBetween(from, to, '\n', ' ') : '');
+                    setAskAiBusy(true);
+                    const system =
+                      'You are a writing assistant inside a document editor. The user selected some text and gave an instruction. Apply the instruction to the selected text and return ONLY the resulting replacement text — no preamble, no quotation marks, no commentary.';
+                    const userMsg = `Instruction: ${promptText}\n\nSelected text:\n${selText}`;
+                    void callNativeText(system, userMsg, { maxTokens: 1024 })
+                      .then((raw) => {
+                        const text = stripModelPreamble(raw).trim();
+                        if (!text) {
+                          toast.error('The model returned an empty response.');
+                          return;
+                        }
+                        aiFragmentRef.current = markdownToFragment(text, schema);
+                        setAiSuggestion({
+                          mode: 'rewrite',
+                          from,
+                          to,
+                          original: selText,
+                          suggestion: text,
+                          inferenceMs: null,
+                          tone: 'polish',
+                          busy: false,
+                          error: null,
+                        });
+                      })
+                      .catch((err) => toast.error(`AI request failed: ${(err as Error).message}`))
+                      .finally(() => setAskAiBusy(false));
+                    return;
+                  }
+
+                  setAskAiBusy(true);
                   void runPipeline(
                     {
-                      message: combined,
-                      includeDocContext: true,
-                      includeSelection: !!activeProposal.replaceRange,
+                      message: promptText,
+                      includeDocContext: false,
+                      includeSelection: true,
                     },
                     {
                       getDocText: () =>
                         view.state.doc.textBetween(0, view.state.doc.content.size, '\n', '\n'),
+                      // Prefer the snapshot taken when the pill opened —
+                      // by submit time the textarea has focus and the
+                      // editor's selection may be collapsed (or look
+                      // like it is). Falls back to a live read for any
+                      // code path that didn't capture.
                       getSelectionText: () => {
+                        if (capturedSelectionText) return capturedSelectionText;
                         const { from, to } = view.state.selection;
                         if (from === to) return '';
                         return view.state.doc.textBetween(from, to, '\n', ' ');
@@ -10951,963 +11143,869 @@ body { background: white; }
                     .then((result) => {
                       if (result.kind === 'proposal') {
                         setActiveProposal(result);
-                        setLastProposalPrompt(combined);
+                        setLastProposalPrompt(promptText);
                       } else if (result.kind === 'chat') {
+                        // Surface short chat replies as a toast — the
+                        // user invoked from selection, not from chat, so
+                        // routing back into the chat history would be
+                        // jarring.
                         toast.message(result.text);
                       } else {
                         toast.error(result.message);
                       }
                     })
                     .catch((err) => {
-                      toast.error(`Refine failed: ${(err as Error).message}`);
+                      toast.error(`AI request failed: ${(err as Error).message}`);
                     })
-                    .finally(() => setProposalBusy(false));
-                }}
-                onDiscard={() => setActiveProposal(null)}
-              />
-            )}
-
-            {/* Selection-anchored Ask AI — Notion / Word Rewrite
-                pattern from research §1, §2b, §3. Shows the "Ask AI"
-                pill above the selection start when there's text
-                selected AND an LLM is loaded. Submit runs the pipeline
-                with the user's free-form prompt; the resulting
-                proposal goes into the inline preview popover (same
-                surface as chat-driven proposals). */}
-            <SelectionAskAi
-              isOpen={hasTextSelection && aiEnabled && !aiSuggestion && !showDocOpsPanel}
-              getView={() => getActiveEditorView() ?? null}
-              busy={askAiBusy}
-              onDismiss={() => setHasTextSelection(false)}
-              onSubmit={(promptText, capturedSelectionText) => {
-                const view = getActiveEditorView();
-                if (!view) return;
-                const schema = view.state.schema;
-
-                // Desktop: the WebLLM pipeline is unavailable. Route the
-                // free-form instruction to the native model and surface the
-                // result as an accept/reject suggestion over the selection.
-                if (isDesktopShell()) {
-                  const { from, to } = view.state.selection;
-                  const selText =
-                    capturedSelectionText ||
-                    (from !== to ? view.state.doc.textBetween(from, to, '\n', ' ') : '');
-                  setAskAiBusy(true);
-                  const system =
-                    'You are a writing assistant inside a document editor. The user selected some text and gave an instruction. Apply the instruction to the selected text and return ONLY the resulting replacement text — no preamble, no quotation marks, no commentary.';
-                  const userMsg = `Instruction: ${promptText}\n\nSelected text:\n${selText}`;
-                  void callNativeText(system, userMsg, { maxTokens: 1024 })
-                    .then((raw) => {
-                      const text = stripModelPreamble(raw).trim();
-                      if (!text) {
-                        toast.error('The model returned an empty response.');
-                        return;
-                      }
-                      aiFragmentRef.current = markdownToFragment(text, schema);
-                      setAiSuggestion({
-                        mode: 'rewrite',
-                        from,
-                        to,
-                        original: selText,
-                        suggestion: text,
-                        inferenceMs: null,
-                        tone: 'polish',
-                        busy: false,
-                        error: null,
-                      });
-                    })
-                    .catch((err) => toast.error(`AI request failed: ${(err as Error).message}`))
                     .finally(() => setAskAiBusy(false));
-                  return;
-                }
-
-                setAskAiBusy(true);
-                void runPipeline(
-                  {
-                    message: promptText,
-                    includeDocContext: false,
-                    includeSelection: true,
-                  },
-                  {
-                    getDocText: () =>
-                      view.state.doc.textBetween(0, view.state.doc.content.size, '\n', '\n'),
-                    // Prefer the snapshot taken when the pill opened —
-                    // by submit time the textarea has focus and the
-                    // editor's selection may be collapsed (or look
-                    // like it is). Falls back to a live read for any
-                    // code path that didn't capture.
-                    getSelectionText: () => {
-                      if (capturedSelectionText) return capturedSelectionText;
-                      const { from, to } = view.state.selection;
-                      if (from === to) return '';
-                      return view.state.doc.textBetween(from, to, '\n', ' ');
-                    },
-                    getView: () => view,
-                    schema,
-                  }
-                )
-                  .then((result) => {
-                    if (result.kind === 'proposal') {
-                      setActiveProposal(result);
-                      setLastProposalPrompt(promptText);
-                    } else if (result.kind === 'chat') {
-                      // Surface short chat replies as a toast — the
-                      // user invoked from selection, not from chat, so
-                      // routing back into the chat history would be
-                      // jarring.
-                      toast.message(result.text);
-                    } else {
-                      toast.error(result.message);
-                    }
-                  })
-                  .catch((err) => {
-                    toast.error(`AI request failed: ${(err as Error).message}`);
-                  })
-                  .finally(() => setAskAiBusy(false));
-              }}
-            />
-
-            {/* @-mention popover */}
-            <MentionPopover
-              visible={mentionPopover.visible}
-              anchor={mentionPopover.anchor}
-              suggestions={mentionSuggestions}
-              query={mentionPopover.query}
-              onPick={handlePickMention}
-              onDismiss={() => setMentionPopover({ visible: false, anchor: null, query: '' })}
-            />
-
-            {/* Toast notifications */}
-            <Toaster position="bottom-right" />
-
-            {/* Lazy-loaded dialogs — only fetched when first opened */}
-            <Suspense fallback={null}>
-              {findReplace.state.isOpen && (
-                <FindReplaceDialog
-                  isOpen={findReplace.state.isOpen}
-                  onClose={() => {
-                    findReplace.close();
-                    setFindHighlights([], 0);
-                  }}
-                  onFind={handleFind}
-                  onFindNext={handleFindNext}
-                  onFindPrevious={handleFindPrevious}
-                  onReplace={handleReplace}
-                  onReplaceAll={handleReplaceAll}
-                  initialSearchText={findReplace.state.searchText}
-                  replaceMode={findReplace.state.replaceMode}
-                  currentResult={findResultRef.current}
-                />
-              )}
-              {hyperlinkDialog.state.isOpen && (
-                <HyperlinkDialog
-                  isOpen={hyperlinkDialog.state.isOpen}
-                  onClose={hyperlinkDialog.close}
-                  onSubmit={handleHyperlinkSubmit}
-                  onRemove={hyperlinkDialog.state.isEditing ? handleHyperlinkRemove : undefined}
-                  initialData={hyperlinkDialog.state.initialData}
-                  selectedText={hyperlinkDialog.state.selectedText}
-                  isEditing={hyperlinkDialog.state.isEditing}
-                />
-              )}
-              {tablePropsOpen && (
-                <TablePropertiesDialog
-                  isOpen={tablePropsOpen}
-                  onClose={() => setTablePropsOpen(false)}
-                  onApply={(props) => {
-                    const view = getActiveEditorView();
-                    if (view) {
-                      setTableProperties(props)(view.state, view.dispatch);
-                    }
-                  }}
-                  currentProps={
-                    state.pmTableContext?.table?.attrs as Record<string, unknown> | undefined
-                  }
-                />
-              )}
-              {bookmarksDialogOpen && (
-                <BookmarksDialog
-                  isOpen={bookmarksDialogOpen}
-                  onClose={() => setBookmarksDialogOpen(false)}
-                  bookmarks={(() => {
-                    const list: Array<{ paraId: string; name: string }> = [];
-                    const view = pagedEditorRef.current?.getView();
-                    const doc = view?.state.doc;
-                    if (!doc) return list;
-                    doc.descendants((node) => {
-                      if (node.type.name !== 'paragraph') return;
-                      const paraId = node.attrs.paraId as string | undefined;
-                      const bms = node.attrs.bookmarks as
-                        | Array<{ id: number; name: string }>
-                        | undefined;
-                      if (!bms || !paraId) return;
-                      for (const bm of bms) list.push({ paraId, name: bm.name });
-                      return false;
-                    });
-                    return list;
-                  })()}
-                  onGoTo={(paraId) => {
-                    pagedEditorRef.current?.scrollToParaId(paraId);
-                  }}
-                  onAdd={(name) => {
-                    const view = getActiveEditorView();
-                    if (!view) return;
-                    const { $from } = view.state.selection;
-                    let paraNode = $from.parent;
-                    for (let d = $from.depth; d > 0 && paraNode.type.name !== 'paragraph'; d--) {
-                      paraNode = $from.node(d - 1);
-                    }
-                    if (paraNode.type.name !== 'paragraph') return;
-                    const existing =
-                      (paraNode.attrs.bookmarks as Array<{ id: number; name: string }> | null) ??
-                      [];
-                    if (existing.some((b) => b.name === name)) return;
-                    const nextId =
-                      existing.reduce((m, b) => Math.max(m, b.id), 0) +
-                      Math.floor(Math.random() * 1000) +
-                      1;
-                    setParagraphAttrs({
-                      bookmarks: [...existing, { id: nextId, name }],
-                    })(view.state, view.dispatch);
-                    focusActiveEditor();
-                  }}
-                  onDelete={(entry) => {
-                    const view = getActiveEditorView();
-                    if (!view) return;
-                    let targetPos: number | null = null;
-                    let targetNode: ReturnType<typeof view.state.doc.nodeAt> | null = null;
-                    view.state.doc.descendants((node, pos) => {
-                      if (targetPos !== null) return false;
-                      if (node.type.name !== 'paragraph') return;
-                      if (node.attrs.paraId === entry.paraId) {
-                        targetPos = pos;
-                        targetNode = node;
-                      }
-                      return false;
-                    });
-                    if (targetPos === null || !targetNode) return;
-                    const existing =
-                      ((targetNode as { attrs: Record<string, unknown> }).attrs.bookmarks as Array<{
-                        id: number;
-                        name: string;
-                      }> | null) ?? [];
-                    const next = existing.filter((b) => b.name !== entry.name);
-                    const tr = view.state.tr.setNodeMarkup(targetPos, undefined, {
-                      ...(targetNode as { attrs: Record<string, unknown> }).attrs,
-                      bookmarks: next.length > 0 ? next : null,
-                    });
-                    view.dispatch(tr);
-                    focusActiveEditor();
-                  }}
-                />
-              )}
-              {characterSpacingDialogOpen && (
-                <CharacterSpacingDialog
-                  isOpen={characterSpacingDialogOpen}
-                  onClose={() => setCharacterSpacingDialogOpen(false)}
-                  initialValue={characterSpacingInitial}
-                  onSubmit={handleSubmitCharacterSpacing}
-                />
-              )}
-              {insertSymbolOpen && (
-                <InsertSymbolDialog
-                  isOpen={insertSymbolOpen}
-                  onClose={() => setInsertSymbolOpen(false)}
-                  onInsert={handleInsertSymbol}
-                />
-              )}
-              {bordersShadingOpen && (
-                <BordersAndShadingDialog
-                  isOpen={bordersShadingOpen}
-                  onClose={() => setBordersShadingOpen(false)}
-                  initialValue={bordersShadingInitial}
-                  onSubmit={handleSubmitBordersShading}
-                />
-              )}
-              {paragraphDialogOpen && (
-                <CustomSpacingDialog
-                  isOpen={paragraphDialogOpen}
-                  onClose={() => setParagraphDialogOpen(false)}
-                  initialValue={{
-                    lineSpacingRule: 'auto',
-                    lineSpacing: state.selectionFormatting.lineSpacing ?? 240,
-                    spaceBefore: state.selectionFormatting.spaceBefore ?? 0,
-                    spaceAfter: state.selectionFormatting.spaceAfter ?? 0,
-                    contextualSpacing: false,
-                    keepNext: false,
-                    keepLines: false,
-                    widowControl: true,
-                    pageBreakBefore: false,
-                  }}
-                  onChange={(v) => {
-                    const view = getActiveEditorView();
-                    if (!view) return;
-                    setParagraphAttrs({
-                      lineSpacing: v.lineSpacing || null,
-                      lineSpacingRule: v.lineSpacingRule,
-                      spaceBefore: v.spaceBefore || null,
-                      spaceAfter: v.spaceAfter || null,
-                      contextualSpacing: v.contextualSpacing,
-                      keepNext: v.keepNext,
-                      keepLines: v.keepLines,
-                      widowControl: v.widowControl,
-                      pageBreakBefore: v.pageBreakBefore,
-                    })(view.state, view.dispatch);
-                  }}
-                />
-              )}
-              {splitCellDialogState.isOpen && (
-                <SplitCellDialog
-                  isOpen={splitCellDialogState.isOpen}
-                  onClose={handleSplitCellDialogClose}
-                  onApply={handleSplitCellDialogApply}
-                  initialRows={splitCellDialogState.initialRows}
-                  initialCols={splitCellDialogState.initialCols}
-                  minRows={splitCellDialogState.minRows}
-                  minCols={splitCellDialogState.minCols}
-                />
-              )}
-              {imagePositionOpen && (
-                <ImagePositionDialog
-                  isOpen={imagePositionOpen}
-                  onClose={() => setImagePositionOpen(false)}
-                  onApply={handleApplyImagePosition}
-                />
-              )}
-              {noteEdit && (
-                <FootnoteEditDialog
-                  initialText={noteEdit.text}
-                  title={
-                    noteEdit.kind === 'endnote'
-                      ? t('footnote.editEndnoteTitle')
-                      : t('footnote.editTitle')
-                  }
-                  onCancel={() => setNoteEdit(null)}
-                  onApply={(t) => handleApplyNoteEdit(noteEdit.kind, noteEdit.id, t)}
-                />
-              )}
-
-              {imagePropsOpen && (
-                <ImagePropertiesDialog
-                  isOpen={imagePropsOpen}
-                  onClose={() => setImagePropsOpen(false)}
-                  onApply={handleApplyImageProperties}
-                  currentData={
-                    state.pmImageContext
-                      ? {
-                          alt: state.pmImageContext.alt ?? undefined,
-                          borderWidth: state.pmImageContext.borderWidth ?? undefined,
-                          borderColor: state.pmImageContext.borderColor ?? undefined,
-                          borderStyle: state.pmImageContext.borderStyle ?? undefined,
-                        }
-                      : undefined
-                  }
-                />
-              )}
-              {showPageSetup && (
-                <PageSetupDialog
-                  isOpen={showPageSetup}
-                  onClose={() => setShowPageSetup(false)}
-                  onApply={handlePageSetupApply}
-                  currentProps={history.state?.package.document?.finalSectionProperties}
-                  currentPageColor={
-                    history.state?.package.document?.background?.color?.rgb
-                      ? `#${history.state.package.document.background.color.rgb}`
-                      : undefined
-                  }
-                  onPageColorChange={handlePageColorChange}
-                />
-              )}
-              {footnotePropsOpen && (
-                <FootnotePropertiesDialog
-                  isOpen={footnotePropsOpen}
-                  onClose={() => setFootnotePropsOpen(false)}
-                  onApply={handleApplyFootnoteProperties}
-                  footnotePr={history.state?.package.document?.finalSectionProperties?.footnotePr}
-                  endnotePr={history.state?.package.document?.finalSectionProperties?.endnotePr}
-                />
-              )}
-              {showFileProperties && (
-                <FilePropertiesDialog
-                  isOpen={showFileProperties}
-                  onClose={() => setShowFileProperties(false)}
-                  fileName={documentName}
-                  sizeBytes={loadedSizeRef.current ?? undefined}
-                  current={history.state?.package?.properties}
-                  onApply={(edits) => handleApplyFileProperties(edits as Record<string, string>)}
-                />
-              )}
-              {showWordCount && (
-                <WordCountDialog
-                  isOpen={showWordCount}
-                  onClose={() => setShowWordCount(false)}
-                  stats={{
-                    words: wordCount ?? 0,
-                    characters: charCountWithSpaces ?? 0,
-                    charactersNoSpaces: charCount ?? 0,
-                    paragraphs: paragraphCount ?? 0,
-                    pages: scrollPageInfo.totalPages,
-                  }}
-                />
-              )}
-              <VoiceTypingIndicator
-                isListening={voiceTyping.isListening}
-                interimText={voiceTyping.interimText}
-                error={voiceTyping.error}
-                onStop={voiceTyping.stop}
+                }}
               />
-              {showAbout && <AboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />}
-              {showKeyboardShortcuts && (
-                <KeyboardShortcutsDialog
-                  isOpen={showKeyboardShortcuts}
-                  onClose={() => setShowKeyboardShortcuts(false)}
+
+              {/* @-mention popover */}
+              <MentionPopover
+                visible={mentionPopover.visible}
+                anchor={mentionPopover.anchor}
+                suggestions={mentionSuggestions}
+                query={mentionPopover.query}
+                onPick={handlePickMention}
+                onDismiss={() => setMentionPopover({ visible: false, anchor: null, query: '' })}
+              />
+
+              {/* Toast notifications */}
+              <Toaster position="bottom-right" />
+
+              {/* Lazy-loaded dialogs — only fetched when first opened */}
+              <Suspense fallback={null}>
+                {findReplace.state.isOpen && (
+                  <FindReplaceDialog
+                    isOpen={findReplace.state.isOpen}
+                    onClose={() => {
+                      findReplace.close();
+                      setFindHighlights([], 0);
+                    }}
+                    onFind={handleFind}
+                    onFindNext={handleFindNext}
+                    onFindPrevious={handleFindPrevious}
+                    onReplace={handleReplace}
+                    onReplaceAll={handleReplaceAll}
+                    initialSearchText={findReplace.state.searchText}
+                    replaceMode={findReplace.state.replaceMode}
+                    currentResult={findResultRef.current}
+                  />
+                )}
+                {hyperlinkDialog.state.isOpen && (
+                  <HyperlinkDialog
+                    isOpen={hyperlinkDialog.state.isOpen}
+                    onClose={hyperlinkDialog.close}
+                    onSubmit={handleHyperlinkSubmit}
+                    onRemove={hyperlinkDialog.state.isEditing ? handleHyperlinkRemove : undefined}
+                    initialData={hyperlinkDialog.state.initialData}
+                    selectedText={hyperlinkDialog.state.selectedText}
+                    isEditing={hyperlinkDialog.state.isEditing}
+                  />
+                )}
+                {tablePropsOpen && (
+                  <TablePropertiesDialog
+                    isOpen={tablePropsOpen}
+                    onClose={() => setTablePropsOpen(false)}
+                    onApply={(props) => {
+                      const view = getActiveEditorView();
+                      if (view) {
+                        setTableProperties(props)(view.state, view.dispatch);
+                      }
+                    }}
+                    currentProps={
+                      state.pmTableContext?.table?.attrs as Record<string, unknown> | undefined
+                    }
+                  />
+                )}
+                {bookmarksDialogOpen && (
+                  <BookmarksDialog
+                    isOpen={bookmarksDialogOpen}
+                    onClose={() => setBookmarksDialogOpen(false)}
+                    bookmarks={(() => {
+                      const list: Array<{ paraId: string; name: string }> = [];
+                      const view = pagedEditorRef.current?.getView();
+                      const doc = view?.state.doc;
+                      if (!doc) return list;
+                      doc.descendants((node) => {
+                        if (node.type.name !== 'paragraph') return;
+                        const paraId = node.attrs.paraId as string | undefined;
+                        const bms = node.attrs.bookmarks as
+                          | Array<{ id: number; name: string }>
+                          | undefined;
+                        if (!bms || !paraId) return;
+                        for (const bm of bms) list.push({ paraId, name: bm.name });
+                        return false;
+                      });
+                      return list;
+                    })()}
+                    onGoTo={(paraId) => {
+                      pagedEditorRef.current?.scrollToParaId(paraId);
+                    }}
+                    onAdd={(name) => {
+                      const view = getActiveEditorView();
+                      if (!view) return;
+                      const { $from } = view.state.selection;
+                      let paraNode = $from.parent;
+                      for (let d = $from.depth; d > 0 && paraNode.type.name !== 'paragraph'; d--) {
+                        paraNode = $from.node(d - 1);
+                      }
+                      if (paraNode.type.name !== 'paragraph') return;
+                      const existing =
+                        (paraNode.attrs.bookmarks as Array<{ id: number; name: string }> | null) ??
+                        [];
+                      if (existing.some((b) => b.name === name)) return;
+                      const nextId =
+                        existing.reduce((m, b) => Math.max(m, b.id), 0) +
+                        Math.floor(Math.random() * 1000) +
+                        1;
+                      setParagraphAttrs({
+                        bookmarks: [...existing, { id: nextId, name }],
+                      })(view.state, view.dispatch);
+                      focusActiveEditor();
+                    }}
+                    onDelete={(entry) => {
+                      const view = getActiveEditorView();
+                      if (!view) return;
+                      let targetPos: number | null = null;
+                      let targetNode: ReturnType<typeof view.state.doc.nodeAt> | null = null;
+                      view.state.doc.descendants((node, pos) => {
+                        if (targetPos !== null) return false;
+                        if (node.type.name !== 'paragraph') return;
+                        if (node.attrs.paraId === entry.paraId) {
+                          targetPos = pos;
+                          targetNode = node;
+                        }
+                        return false;
+                      });
+                      if (targetPos === null || !targetNode) return;
+                      const existing =
+                        ((targetNode as { attrs: Record<string, unknown> }).attrs
+                          .bookmarks as Array<{
+                          id: number;
+                          name: string;
+                        }> | null) ?? [];
+                      const next = existing.filter((b) => b.name !== entry.name);
+                      const tr = view.state.tr.setNodeMarkup(targetPos, undefined, {
+                        ...(targetNode as { attrs: Record<string, unknown> }).attrs,
+                        bookmarks: next.length > 0 ? next : null,
+                      });
+                      view.dispatch(tr);
+                      focusActiveEditor();
+                    }}
+                  />
+                )}
+                {characterSpacingDialogOpen && (
+                  <CharacterSpacingDialog
+                    isOpen={characterSpacingDialogOpen}
+                    onClose={() => setCharacterSpacingDialogOpen(false)}
+                    initialValue={characterSpacingInitial}
+                    onSubmit={handleSubmitCharacterSpacing}
+                  />
+                )}
+                {insertSymbolOpen && (
+                  <InsertSymbolDialog
+                    isOpen={insertSymbolOpen}
+                    onClose={() => setInsertSymbolOpen(false)}
+                    onInsert={handleInsertSymbol}
+                  />
+                )}
+                {bordersShadingOpen && (
+                  <BordersAndShadingDialog
+                    isOpen={bordersShadingOpen}
+                    onClose={() => setBordersShadingOpen(false)}
+                    initialValue={bordersShadingInitial}
+                    onSubmit={handleSubmitBordersShading}
+                  />
+                )}
+                {paragraphDialogOpen && (
+                  <CustomSpacingDialog
+                    isOpen={paragraphDialogOpen}
+                    onClose={() => setParagraphDialogOpen(false)}
+                    initialValue={{
+                      lineSpacingRule: 'auto',
+                      lineSpacing: state.selectionFormatting.lineSpacing ?? 240,
+                      spaceBefore: state.selectionFormatting.spaceBefore ?? 0,
+                      spaceAfter: state.selectionFormatting.spaceAfter ?? 0,
+                      contextualSpacing: false,
+                      keepNext: false,
+                      keepLines: false,
+                      widowControl: true,
+                      pageBreakBefore: false,
+                    }}
+                    onChange={(v) => {
+                      const view = getActiveEditorView();
+                      if (!view) return;
+                      setParagraphAttrs({
+                        lineSpacing: v.lineSpacing || null,
+                        lineSpacingRule: v.lineSpacingRule,
+                        spaceBefore: v.spaceBefore || null,
+                        spaceAfter: v.spaceAfter || null,
+                        contextualSpacing: v.contextualSpacing,
+                        keepNext: v.keepNext,
+                        keepLines: v.keepLines,
+                        widowControl: v.widowControl,
+                        pageBreakBefore: v.pageBreakBefore,
+                      })(view.state, view.dispatch);
+                    }}
+                  />
+                )}
+                {splitCellDialogState.isOpen && (
+                  <SplitCellDialog
+                    isOpen={splitCellDialogState.isOpen}
+                    onClose={handleSplitCellDialogClose}
+                    onApply={handleSplitCellDialogApply}
+                    initialRows={splitCellDialogState.initialRows}
+                    initialCols={splitCellDialogState.initialCols}
+                    minRows={splitCellDialogState.minRows}
+                    minCols={splitCellDialogState.minCols}
+                  />
+                )}
+                {imagePositionOpen && (
+                  <ImagePositionDialog
+                    isOpen={imagePositionOpen}
+                    onClose={() => setImagePositionOpen(false)}
+                    onApply={handleApplyImagePosition}
+                  />
+                )}
+                {noteEdit && (
+                  <FootnoteEditDialog
+                    initialText={noteEdit.text}
+                    title={
+                      noteEdit.kind === 'endnote'
+                        ? t('footnote.editEndnoteTitle')
+                        : t('footnote.editTitle')
+                    }
+                    onCancel={() => setNoteEdit(null)}
+                    onApply={(t) => handleApplyNoteEdit(noteEdit.kind, noteEdit.id, t)}
+                  />
+                )}
+
+                {imagePropsOpen && (
+                  <ImagePropertiesDialog
+                    isOpen={imagePropsOpen}
+                    onClose={() => setImagePropsOpen(false)}
+                    onApply={handleApplyImageProperties}
+                    currentData={
+                      state.pmImageContext
+                        ? {
+                            alt: state.pmImageContext.alt ?? undefined,
+                            borderWidth: state.pmImageContext.borderWidth ?? undefined,
+                            borderColor: state.pmImageContext.borderColor ?? undefined,
+                            borderStyle: state.pmImageContext.borderStyle ?? undefined,
+                          }
+                        : undefined
+                    }
+                  />
+                )}
+                {showPageSetup && (
+                  <PageSetupDialog
+                    isOpen={showPageSetup}
+                    onClose={() => setShowPageSetup(false)}
+                    onApply={handlePageSetupApply}
+                    currentProps={history.state?.package.document?.finalSectionProperties}
+                    currentPageColor={
+                      history.state?.package.document?.background?.color?.rgb
+                        ? `#${history.state.package.document.background.color.rgb}`
+                        : undefined
+                    }
+                    onPageColorChange={handlePageColorChange}
+                  />
+                )}
+                {footnotePropsOpen && (
+                  <FootnotePropertiesDialog
+                    isOpen={footnotePropsOpen}
+                    onClose={() => setFootnotePropsOpen(false)}
+                    onApply={handleApplyFootnoteProperties}
+                    footnotePr={history.state?.package.document?.finalSectionProperties?.footnotePr}
+                    endnotePr={history.state?.package.document?.finalSectionProperties?.endnotePr}
+                  />
+                )}
+                {showFileProperties && (
+                  <FilePropertiesDialog
+                    isOpen={showFileProperties}
+                    onClose={() => setShowFileProperties(false)}
+                    fileName={documentName}
+                    sizeBytes={loadedSizeRef.current ?? undefined}
+                    current={history.state?.package?.properties}
+                    onApply={(edits) => handleApplyFileProperties(edits as Record<string, string>)}
+                  />
+                )}
+                {showWordCount && (
+                  <WordCountDialog
+                    isOpen={showWordCount}
+                    onClose={() => setShowWordCount(false)}
+                    stats={{
+                      words: wordCount ?? 0,
+                      characters: charCountWithSpaces ?? 0,
+                      charactersNoSpaces: charCount ?? 0,
+                      paragraphs: paragraphCount ?? 0,
+                      pages: scrollPageInfo.totalPages,
+                    }}
+                  />
+                )}
+                <VoiceTypingIndicator
+                  isListening={voiceTyping.isListening}
+                  interimText={voiceTyping.interimText}
+                  error={voiceTyping.error}
+                  onStop={voiceTyping.stop}
                 />
-              )}
-              {showPreferences && (
-                <PreferencesDialog
-                  isOpen={showPreferences}
-                  onClose={() => setShowPreferences(false)}
-                  preferences={preferences}
-                  onChange={handlePreferenceChange}
-                />
-              )}
-              {showWatermarkDialog && (
-                <WatermarkDialog
-                  isOpen={showWatermarkDialog}
-                  onClose={() => setShowWatermarkDialog(false)}
-                  current={history.state?.package.document.watermark}
-                  onApply={handleWatermarkChange}
-                />
-              )}
-              {showEquationDialog && (
-                <EquationDialog
-                  isOpen={showEquationDialog}
-                  onClose={() => setShowEquationDialog(false)}
-                  onInsert={handleInsertEquation}
-                  initialLatex={equationInitial.latex}
-                  initialDisplay={equationInitial.display}
-                />
-              )}
-              {showAccessibility && (
-                <AccessibilityDialog
-                  isOpen={showAccessibility}
-                  onClose={() => setShowAccessibility(false)}
-                  issues={accessibilityIssues}
-                  onGoto={handleAccessibilityGoto}
-                />
-              )}
-              {showBuildingBlocks && (
-                <BuildingBlocksDialog
-                  isOpen={showBuildingBlocks}
-                  onClose={() => setShowBuildingBlocks(false)}
-                  blocks={buildingBlocks}
-                  pendingPreview={pendingBuildingBlock?.preview ?? null}
-                  onSaveSelection={handleSaveBuildingBlock}
-                  onInsert={handleInsertBuildingBlock}
-                  onDelete={handleDeleteBuildingBlock}
-                />
-              )}
-              {showDictionary && (
-                <DictionaryDialog
-                  isOpen={showDictionary}
-                  onClose={() => setShowDictionary(false)}
-                  initialWord={dictionaryWord}
-                />
-              )}
-              {showTranslate && (
-                <TranslateDialog
-                  isOpen={showTranslate}
-                  onClose={() => setShowTranslate(false)}
-                  initialText={translateText}
-                  onReplace={translateRange ? handleTranslateReplace : undefined}
-                />
-              )}
-              {showTranslateDocument && (
-                <TranslateDocumentDialog
-                  isOpen={showTranslateDocument}
-                  onClose={() => setShowTranslateDocument(false)}
-                  documentName={documentName ?? 'Untitled'}
-                  getView={() => getActiveEditorView() ?? null}
-                  onSave={() => handleSave({ selective: false })}
-                  onExport={onExport}
-                  renderPreview={(buffer) => (
-                    <DocxEditorAsPreview
-                      documentBuffer={buffer}
-                      readOnly
-                      showToolbar={false}
-                      showStatusBar={false}
-                      showZoomControl={false}
-                      showRuler={false}
-                      showOutlineButton={false}
-                      showPanelRail={false}
-                    />
-                  )}
-                />
-              )}
-              {/* WritingAssistantSheet + ChatPanel moved into the
+                {showAbout && (
+                  <AboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />
+                )}
+                {showKeyboardShortcuts && (
+                  <KeyboardShortcutsDialog
+                    isOpen={showKeyboardShortcuts}
+                    onClose={() => setShowKeyboardShortcuts(false)}
+                  />
+                )}
+                {showPreferences && (
+                  <PreferencesDialog
+                    isOpen={showPreferences}
+                    onClose={() => setShowPreferences(false)}
+                    preferences={preferences}
+                    onChange={handlePreferenceChange}
+                  />
+                )}
+                {showWatermarkDialog && (
+                  <WatermarkDialog
+                    isOpen={showWatermarkDialog}
+                    onClose={() => setShowWatermarkDialog(false)}
+                    current={history.state?.package.document.watermark}
+                    onApply={handleWatermarkChange}
+                  />
+                )}
+                {showEquationDialog && (
+                  <EquationDialog
+                    isOpen={showEquationDialog}
+                    onClose={() => setShowEquationDialog(false)}
+                    onInsert={handleInsertEquation}
+                    initialLatex={equationInitial.latex}
+                    initialDisplay={equationInitial.display}
+                  />
+                )}
+                {showAccessibility && (
+                  <AccessibilityDialog
+                    isOpen={showAccessibility}
+                    onClose={() => setShowAccessibility(false)}
+                    issues={accessibilityIssues}
+                    onGoto={handleAccessibilityGoto}
+                  />
+                )}
+                {showBuildingBlocks && (
+                  <BuildingBlocksDialog
+                    isOpen={showBuildingBlocks}
+                    onClose={() => setShowBuildingBlocks(false)}
+                    blocks={buildingBlocks}
+                    pendingPreview={pendingBuildingBlock?.preview ?? null}
+                    onSaveSelection={handleSaveBuildingBlock}
+                    onInsert={handleInsertBuildingBlock}
+                    onDelete={handleDeleteBuildingBlock}
+                  />
+                )}
+                {showDictionary && (
+                  <DictionaryDialog
+                    isOpen={showDictionary}
+                    onClose={() => setShowDictionary(false)}
+                    initialWord={dictionaryWord}
+                  />
+                )}
+                {showTranslate && (
+                  <TranslateDialog
+                    isOpen={showTranslate}
+                    onClose={() => setShowTranslate(false)}
+                    initialText={translateText}
+                    onReplace={translateRange ? handleTranslateReplace : undefined}
+                  />
+                )}
+                {showTranslateDocument && (
+                  <TranslateDocumentDialog
+                    isOpen={showTranslateDocument}
+                    onClose={() => setShowTranslateDocument(false)}
+                    documentName={documentName ?? 'Untitled'}
+                    getView={() => getActiveEditorView() ?? null}
+                    onSave={() => handleSave({ selective: false })}
+                    onExport={onExport}
+                    renderPreview={(buffer) => (
+                      <DocxEditorAsPreview
+                        documentBuffer={buffer}
+                        readOnly
+                        showToolbar={false}
+                        showStatusBar={false}
+                        showZoomControl={false}
+                        showRuler={false}
+                        showOutlineButton={false}
+                        showPanelRail={false}
+                      />
+                    )}
+                  />
+                )}
+                {/* WritingAssistantSheet + ChatPanel moved into the
                   below-toolbar flex row so they share geometry with
                   VersionHistoryPanel — see ~L7927. */}
-              {showExplore && (
-                <ExploreDialog
-                  isOpen={showExplore}
-                  onClose={() => setShowExplore(false)}
-                  initialQuery={exploreQuery}
-                  onCite={handleExploreCite}
-                />
-              )}
-              {showCitations && (
-                <CitationsDialog
-                  isOpen={showCitations}
-                  onClose={() => setShowCitations(false)}
-                  citations={citations}
-                  onAdd={handleAddCitation}
-                  onDelete={handleDeleteCitation}
-                  onInsert={handleInsertCitation}
-                />
-              )}
-              {showCommandPalette && (
-                <CommandPaletteDialog
-                  isOpen={showCommandPalette}
-                  onClose={() => setShowCommandPalette(false)}
-                  items={[
-                    ...(onNew
-                      ? [
-                          {
-                            id: 'file.new',
-                            label: 'New document',
-                            path: 'File',
-                            shortcut: '⌘N',
-                            run: onNew,
-                          },
-                        ]
-                      : []),
-                    {
-                      id: 'file.open',
-                      label: 'Open…',
-                      path: 'File',
-                      shortcut: '⌘O',
-                      run: handleOpenDocument,
-                    },
-                    {
-                      id: 'file.save',
-                      label: 'Save (download .docx)',
-                      path: 'File',
-                      shortcut: '⌘S',
-                      run: handleDownloadDocument,
-                    },
-                    {
-                      id: 'file.print',
-                      label: 'Print',
-                      path: 'File',
-                      shortcut: '⌘P',
-                      run: handleDirectPrint,
-                    },
-                    {
-                      id: 'file.export.pdf',
-                      label: 'Export as PDF',
-                      path: 'File · Export',
-                      run: handleExportPdf,
-                    },
-                    {
-                      id: 'file.export.odt',
-                      label: 'Export as ODT',
-                      path: 'File · Export',
-                      run: handleExportOdt,
-                    },
-                    {
-                      id: 'file.export.md',
-                      label: 'Export as Markdown',
-                      path: 'File · Export',
-                      run: handleExportMd,
-                    },
-                    {
-                      id: 'file.pageSetup',
-                      label: 'Page Setup…',
-                      path: 'File',
-                      run: handleOpenPageSetup,
-                    },
-                    {
-                      id: 'file.properties',
-                      label: 'Properties…',
-                      path: 'File',
-                      run: handleOpenFileProperties,
-                    },
-                    {
-                      id: 'file.makeCopy',
-                      label: 'Make a copy',
-                      path: 'File',
-                      run: handleMakeCopy,
-                    },
-                    {
-                      id: 'file.email',
-                      label: 'Email as attachment…',
-                      path: 'File',
-                      run: handleEmailAsAttachment,
-                    },
-                    {
-                      // Discoverability: version history exists in the side rail,
-                      // but Google-Docs muscle memory looks for it in File. Open
-                      // (not toggle) so picking it from the menu always reveals it.
-                      id: 'file.versionHistory',
-                      label: 'Version history',
-                      path: 'File',
-                      run: () => {
-                        if (!showVersionHistory) handleToggleVersionHistory();
+                {showExplore && (
+                  <ExploreDialog
+                    isOpen={showExplore}
+                    onClose={() => setShowExplore(false)}
+                    initialQuery={exploreQuery}
+                    onCite={handleExploreCite}
+                  />
+                )}
+                {showCitations && (
+                  <CitationsDialog
+                    isOpen={showCitations}
+                    onClose={() => setShowCitations(false)}
+                    citations={citations}
+                    onAdd={handleAddCitation}
+                    onDelete={handleDeleteCitation}
+                    onInsert={handleInsertCitation}
+                  />
+                )}
+                {showCommandPalette && (
+                  <CommandPaletteDialog
+                    isOpen={showCommandPalette}
+                    onClose={() => setShowCommandPalette(false)}
+                    items={[
+                      ...(onNew
+                        ? [
+                            {
+                              id: 'file.new',
+                              label: 'New document',
+                              path: 'File',
+                              shortcut: '⌘N',
+                              run: onNew,
+                            },
+                          ]
+                        : []),
+                      {
+                        id: 'file.open',
+                        label: 'Open…',
+                        path: 'File',
+                        shortcut: '⌘O',
+                        run: handleOpenDocument,
                       },
-                    },
+                      {
+                        id: 'file.save',
+                        label: 'Save (download .docx)',
+                        path: 'File',
+                        shortcut: '⌘S',
+                        run: handleDownloadDocument,
+                      },
+                      {
+                        id: 'file.print',
+                        label: 'Print',
+                        path: 'File',
+                        shortcut: '⌘P',
+                        run: handleDirectPrint,
+                      },
+                      {
+                        id: 'file.export.pdf',
+                        label: 'Export as PDF',
+                        path: 'File · Export',
+                        run: handleExportPdf,
+                      },
+                      {
+                        id: 'file.export.odt',
+                        label: 'Export as ODT',
+                        path: 'File · Export',
+                        run: handleExportOdt,
+                      },
+                      {
+                        id: 'file.export.md',
+                        label: 'Export as Markdown',
+                        path: 'File · Export',
+                        run: handleExportMd,
+                      },
+                      {
+                        id: 'file.pageSetup',
+                        label: 'Page Setup…',
+                        path: 'File',
+                        run: handleOpenPageSetup,
+                      },
+                      {
+                        id: 'file.properties',
+                        label: 'Properties…',
+                        path: 'File',
+                        run: handleOpenFileProperties,
+                      },
+                      {
+                        id: 'file.makeCopy',
+                        label: 'Make a copy',
+                        path: 'File',
+                        run: handleMakeCopy,
+                      },
+                      {
+                        id: 'file.email',
+                        label: 'Email as attachment…',
+                        path: 'File',
+                        run: handleEmailAsAttachment,
+                      },
+                      {
+                        // Discoverability: version history exists in the side rail,
+                        // but Google-Docs muscle memory looks for it in File. Open
+                        // (not toggle) so picking it from the menu always reveals it.
+                        id: 'file.versionHistory',
+                        label: 'Version history',
+                        path: 'File',
+                        run: () => {
+                          if (!showVersionHistory) handleToggleVersionHistory();
+                        },
+                      },
 
-                    {
-                      id: 'edit.find',
-                      label: 'Find',
-                      path: 'Edit',
-                      shortcut: '⌘F',
-                      run: () => findReplace.openFind(''),
-                    },
-                    {
-                      id: 'edit.findReplace',
-                      label: 'Find and Replace',
-                      path: 'Edit',
-                      shortcut: '⌘H',
-                      run: () => findReplace.openReplace(''),
-                    },
-                    {
-                      id: 'edit.hyperlink',
-                      label: 'Insert link',
-                      path: 'Edit',
-                      shortcut: '⌘K',
-                      run: () => handleFormat('insertLink'),
-                    },
-                    {
-                      id: 'edit.selectAll',
-                      label: 'Select All',
-                      path: 'Edit',
-                      shortcut: '⌘A',
-                      run: () => handleFormat('selectAll'),
-                    },
+                      {
+                        id: 'edit.find',
+                        label: 'Find',
+                        path: 'Edit',
+                        shortcut: '⌘F',
+                        run: () => findReplace.openFind(''),
+                      },
+                      {
+                        id: 'edit.findReplace',
+                        label: 'Find and Replace',
+                        path: 'Edit',
+                        shortcut: '⌘H',
+                        run: () => findReplace.openReplace(''),
+                      },
+                      {
+                        id: 'edit.hyperlink',
+                        label: 'Insert link',
+                        path: 'Edit',
+                        shortcut: '⌘K',
+                        run: () => handleFormat('insertLink'),
+                      },
+                      {
+                        id: 'edit.selectAll',
+                        label: 'Select All',
+                        path: 'Edit',
+                        shortcut: '⌘A',
+                        run: () => handleFormat('selectAll'),
+                      },
 
-                    {
-                      id: 'format.bold',
-                      label: 'Bold',
-                      path: 'Format',
-                      shortcut: '⌘B',
-                      run: () => handleFormat('bold'),
-                    },
-                    {
-                      id: 'format.italic',
-                      label: 'Italic',
-                      path: 'Format',
-                      shortcut: '⌘I',
-                      run: () => handleFormat('italic'),
-                    },
-                    {
-                      id: 'format.underline',
-                      label: 'Underline',
-                      path: 'Format',
-                      shortcut: '⌘U',
-                      run: () => handleFormat('underline'),
-                    },
-                    {
-                      id: 'format.strike',
-                      label: 'Strikethrough',
-                      path: 'Format',
-                      shortcut: '⌘⇧X',
-                      run: () => handleFormat('strikethrough'),
-                    },
-                    {
-                      id: 'format.super',
-                      label: 'Superscript',
-                      path: 'Format',
-                      shortcut: '⌘.',
-                      run: () => handleFormat('superscript'),
-                    },
-                    {
-                      id: 'format.sub',
-                      label: 'Subscript',
-                      path: 'Format',
-                      shortcut: '⌘,',
-                      run: () => handleFormat('subscript'),
-                    },
-                    {
-                      id: 'format.smallCaps',
-                      label: 'Small Caps',
-                      path: 'Format',
-                      run: () => handleFormat('toggleSmallCaps'),
-                    },
-                    {
-                      id: 'format.allCaps',
-                      label: 'All Caps',
-                      path: 'Format',
-                      run: () => handleFormat('toggleAllCaps'),
-                    },
-                    {
-                      id: 'format.clear',
-                      label: 'Clear formatting',
-                      path: 'Format',
-                      shortcut: '⌘\\',
-                      run: () => handleFormat('clearFormatting'),
-                    },
-                    {
-                      id: 'format.ltr',
-                      label: 'Left-to-right text',
-                      path: 'Format',
-                      run: () => handleFormat('setLtr'),
-                    },
-                    {
-                      id: 'format.rtl',
-                      label: 'Right-to-left text',
-                      path: 'Format',
-                      run: () => handleFormat('setRtl'),
-                    },
+                      {
+                        id: 'format.bold',
+                        label: 'Bold',
+                        path: 'Format',
+                        shortcut: '⌘B',
+                        run: () => handleFormat('bold'),
+                      },
+                      {
+                        id: 'format.italic',
+                        label: 'Italic',
+                        path: 'Format',
+                        shortcut: '⌘I',
+                        run: () => handleFormat('italic'),
+                      },
+                      {
+                        id: 'format.underline',
+                        label: 'Underline',
+                        path: 'Format',
+                        shortcut: '⌘U',
+                        run: () => handleFormat('underline'),
+                      },
+                      {
+                        id: 'format.strike',
+                        label: 'Strikethrough',
+                        path: 'Format',
+                        shortcut: '⌘⇧X',
+                        run: () => handleFormat('strikethrough'),
+                      },
+                      {
+                        id: 'format.super',
+                        label: 'Superscript',
+                        path: 'Format',
+                        shortcut: '⌘.',
+                        run: () => handleFormat('superscript'),
+                      },
+                      {
+                        id: 'format.sub',
+                        label: 'Subscript',
+                        path: 'Format',
+                        shortcut: '⌘,',
+                        run: () => handleFormat('subscript'),
+                      },
+                      {
+                        id: 'format.smallCaps',
+                        label: 'Small Caps',
+                        path: 'Format',
+                        run: () => handleFormat('toggleSmallCaps'),
+                      },
+                      {
+                        id: 'format.allCaps',
+                        label: 'All Caps',
+                        path: 'Format',
+                        run: () => handleFormat('toggleAllCaps'),
+                      },
+                      {
+                        id: 'format.clear',
+                        label: 'Clear formatting',
+                        path: 'Format',
+                        shortcut: '⌘\\',
+                        run: () => handleFormat('clearFormatting'),
+                      },
+                      {
+                        id: 'format.ltr',
+                        label: 'Left-to-right text',
+                        path: 'Format',
+                        run: () => handleFormat('setLtr'),
+                      },
+                      {
+                        id: 'format.rtl',
+                        label: 'Right-to-left text',
+                        path: 'Format',
+                        run: () => handleFormat('setRtl'),
+                      },
 
-                    {
-                      id: 'view.focusMode',
-                      label: focusMode ? 'Exit focus mode' : 'Enter focus mode',
-                      path: 'View',
-                      shortcut: 'Ctrl+Shift+\\',
-                      run: () => setFocusMode((v) => !v),
-                    },
-                    {
-                      id: 'view.zoomIn',
-                      label: 'Zoom in',
-                      path: 'View',
-                      shortcut: '⌘=',
-                      run: () => handleZoomChange(Math.min(state.zoom * 1.1, 4)),
-                    },
-                    {
-                      id: 'view.zoomOut',
-                      label: 'Zoom out',
-                      path: 'View',
-                      shortcut: '⌘−',
-                      run: () => handleZoomChange(Math.max(state.zoom / 1.1, 0.25)),
-                    },
-                    {
-                      id: 'view.zoomReset',
-                      label: 'Reset zoom to 100%',
-                      path: 'View',
-                      shortcut: '⌘0',
-                      run: () => handleZoomChange(1),
-                    },
-                    {
-                      id: 'view.themeAuto',
-                      label: 'Theme: match system',
-                      path: 'View',
-                      run: () => handleSetColorTheme('auto'),
-                    },
-                    {
-                      id: 'view.themeLight',
-                      label: 'Theme: light',
-                      path: 'View',
-                      run: () => handleSetColorTheme('light'),
-                    },
-                    {
-                      id: 'view.themeDark',
-                      label: 'Theme: dark',
-                      path: 'View',
-                      run: () => handleSetColorTheme('dark'),
-                    },
-                    // Strict co-editing — only when a collab session wired the
-                    // plugin. Mirrors OnlyOffice's Fast/Strict co-editing mode.
-                    ...(strictCoEditAvailable
-                      ? [
-                          {
-                            id: 'view.strictCoEditing',
-                            label: strictCoEditEnabled
-                              ? 'Strict co-editing: on'
-                              : 'Strict co-editing: off',
-                            path: 'View',
-                            run: handleToggleStrictCoEditing,
-                          },
-                        ]
-                      : []),
+                      {
+                        id: 'view.focusMode',
+                        label: focusMode ? 'Exit focus mode' : 'Enter focus mode',
+                        path: 'View',
+                        shortcut: 'Ctrl+Shift+\\',
+                        run: () => setFocusMode((v) => !v),
+                      },
+                      {
+                        id: 'view.zoomIn',
+                        label: 'Zoom in',
+                        path: 'View',
+                        shortcut: '⌘=',
+                        run: () => handleZoomChange(Math.min(state.zoom * 1.1, 4)),
+                      },
+                      {
+                        id: 'view.zoomOut',
+                        label: 'Zoom out',
+                        path: 'View',
+                        shortcut: '⌘−',
+                        run: () => handleZoomChange(Math.max(state.zoom / 1.1, 0.25)),
+                      },
+                      {
+                        id: 'view.zoomReset',
+                        label: 'Reset zoom to 100%',
+                        path: 'View',
+                        shortcut: '⌘0',
+                        run: () => handleZoomChange(1),
+                      },
+                      {
+                        id: 'view.themeAuto',
+                        label: 'Theme: match system',
+                        path: 'View',
+                        run: () => handleSetColorTheme('auto'),
+                      },
+                      {
+                        id: 'view.themeLight',
+                        label: 'Theme: light',
+                        path: 'View',
+                        run: () => handleSetColorTheme('light'),
+                      },
+                      {
+                        id: 'view.themeDark',
+                        label: 'Theme: dark',
+                        path: 'View',
+                        run: () => handleSetColorTheme('dark'),
+                      },
+                      // Strict co-editing — only when a collab session wired the
+                      // plugin. Mirrors OnlyOffice's Fast/Strict co-editing mode.
+                      ...(strictCoEditAvailable
+                        ? [
+                            {
+                              id: 'view.strictCoEditing',
+                              label: strictCoEditEnabled
+                                ? 'Strict co-editing: on'
+                                : 'Strict co-editing: off',
+                              path: 'View',
+                              run: handleToggleStrictCoEditing,
+                            },
+                          ]
+                        : []),
 
-                    {
-                      id: 'insert.pageBreak',
-                      label: 'Insert page break',
-                      path: 'Insert',
-                      shortcut: '⌘↵',
-                      run: () => handleInsertPageBreak(),
-                    },
-                    {
-                      id: 'insert.toc',
-                      label: 'Insert table of contents',
-                      path: 'Insert',
-                      run: () => handleInsertTOC(),
-                    },
-                    {
-                      id: 'insert.image',
-                      label: 'Insert image',
-                      path: 'Insert',
-                      run: handleInsertImageClick,
-                    },
-                    {
-                      id: 'insert.watermark',
-                      label: 'Watermark…',
-                      path: 'Insert',
-                      run: () => setShowWatermarkDialog(true),
-                    },
-                    {
-                      id: 'insert.buildingBlocks',
-                      label: 'Building blocks…',
-                      path: 'Insert',
-                      run: handleOpenBuildingBlocks,
-                    },
-                    {
-                      id: 'insert.convertToTable',
-                      label: 'Convert selection to table',
-                      path: 'Insert',
-                      run: handleConvertSelectionToTable,
-                    },
-                    {
-                      id: 'insert.shape.rectangle',
-                      label: 'Shape · Rectangle',
-                      path: 'Insert',
-                      run: () => handleInsertShape('rectangle'),
-                    },
-                    {
-                      id: 'insert.shape.ellipse',
-                      label: 'Shape · Ellipse',
-                      path: 'Insert',
-                      run: () => handleInsertShape('ellipse'),
-                    },
-                    {
-                      id: 'insert.shape.line',
-                      label: 'Shape · Line',
-                      path: 'Insert',
-                      run: () => handleInsertShape('line'),
-                    },
-                    {
-                      id: 'insert.shape.arrow',
-                      label: 'Shape · Arrow',
-                      path: 'Insert',
-                      run: () => handleInsertShape('arrow'),
-                    },
-                    {
-                      id: 'insert.textbox',
-                      label: 'Text box',
-                      path: 'Insert',
-                      run: () => handleInsertTextBox('plain'),
-                    },
-                    {
-                      id: 'insert.callout',
-                      label: 'Callout',
-                      path: 'Insert',
-                      run: () => handleInsertTextBox('callout'),
-                    },
-                    {
-                      id: 'insert.equation',
-                      label: 'Equation',
-                      path: 'Insert',
-                      shortcut: 'Alt+=',
-                      run: openEquationDialog,
-                    },
+                      {
+                        id: 'insert.pageBreak',
+                        label: 'Insert page break',
+                        path: 'Insert',
+                        shortcut: '⌘↵',
+                        run: () => handleInsertPageBreak(),
+                      },
+                      {
+                        id: 'insert.toc',
+                        label: 'Insert table of contents',
+                        path: 'Insert',
+                        run: () => handleInsertTOC(),
+                      },
+                      {
+                        id: 'insert.image',
+                        label: 'Insert image',
+                        path: 'Insert',
+                        run: handleInsertImageClick,
+                      },
+                      {
+                        id: 'insert.watermark',
+                        label: 'Watermark…',
+                        path: 'Insert',
+                        run: () => setShowWatermarkDialog(true),
+                      },
+                      {
+                        id: 'insert.buildingBlocks',
+                        label: 'Building blocks…',
+                        path: 'Insert',
+                        run: handleOpenBuildingBlocks,
+                      },
+                      {
+                        id: 'insert.convertToTable',
+                        label: 'Convert selection to table',
+                        path: 'Insert',
+                        run: handleConvertSelectionToTable,
+                      },
+                      {
+                        id: 'insert.shape.rectangle',
+                        label: 'Shape · Rectangle',
+                        path: 'Insert',
+                        run: () => handleInsertShape('rectangle'),
+                      },
+                      {
+                        id: 'insert.shape.ellipse',
+                        label: 'Shape · Ellipse',
+                        path: 'Insert',
+                        run: () => handleInsertShape('ellipse'),
+                      },
+                      {
+                        id: 'insert.shape.line',
+                        label: 'Shape · Line',
+                        path: 'Insert',
+                        run: () => handleInsertShape('line'),
+                      },
+                      {
+                        id: 'insert.shape.arrow',
+                        label: 'Shape · Arrow',
+                        path: 'Insert',
+                        run: () => handleInsertShape('arrow'),
+                      },
+                      {
+                        id: 'insert.textbox',
+                        label: 'Text box',
+                        path: 'Insert',
+                        run: () => handleInsertTextBox('plain'),
+                      },
+                      {
+                        id: 'insert.callout',
+                        label: 'Callout',
+                        path: 'Insert',
+                        run: () => handleInsertTextBox('callout'),
+                      },
+                      {
+                        id: 'insert.equation',
+                        label: 'Equation',
+                        path: 'Insert',
+                        shortcut: 'Alt+=',
+                        run: openEquationDialog,
+                      },
 
-                    {
-                      id: 'tools.wordCount',
-                      label: 'Word count',
-                      path: 'Tools',
-                      shortcut: '⌘⇧C',
-                      run: handleOpenWordCount,
-                    },
-                    {
-                      id: 'tools.dictionary',
-                      label: 'Dictionary',
-                      path: 'Tools',
-                      shortcut: '⌘⇧Y',
-                      run: handleOpenDictionary,
-                    },
-                    {
-                      id: 'tools.translate',
-                      label: 'Translate…',
-                      path: 'Tools',
-                      run: handleOpenTranslate,
-                    },
-                    {
-                      id: 'tools.explore',
-                      label: 'Explore…',
-                      path: 'Tools',
-                      run: handleOpenExplore,
-                    },
-                    {
-                      id: 'tools.citations',
-                      label: 'Citations…',
-                      path: 'Tools',
-                      run: handleOpenCitations,
-                    },
-                    {
-                      id: 'tools.preferences',
-                      label: 'Preferences…',
-                      path: 'Tools',
-                      run: () => setShowPreferences(true),
-                    },
-                    {
-                      id: 'tools.accessibility',
-                      label: 'Accessibility…',
-                      path: 'Tools',
-                      run: handleOpenAccessibility,
-                    },
+                      {
+                        id: 'tools.wordCount',
+                        label: 'Word count',
+                        path: 'Tools',
+                        shortcut: '⌘⇧C',
+                        run: handleOpenWordCount,
+                      },
+                      {
+                        id: 'tools.dictionary',
+                        label: 'Dictionary',
+                        path: 'Tools',
+                        shortcut: '⌘⇧Y',
+                        run: handleOpenDictionary,
+                      },
+                      {
+                        id: 'tools.translate',
+                        label: 'Translate…',
+                        path: 'Tools',
+                        run: handleOpenTranslate,
+                      },
+                      {
+                        id: 'tools.explore',
+                        label: 'Explore…',
+                        path: 'Tools',
+                        run: handleOpenExplore,
+                      },
+                      {
+                        id: 'tools.citations',
+                        label: 'Citations…',
+                        path: 'Tools',
+                        run: handleOpenCitations,
+                      },
+                      {
+                        id: 'tools.preferences',
+                        label: 'Preferences…',
+                        path: 'Tools',
+                        run: () => setShowPreferences(true),
+                      },
+                      {
+                        id: 'tools.accessibility',
+                        label: 'Accessibility…',
+                        path: 'Tools',
+                        run: handleOpenAccessibility,
+                      },
 
-                    {
-                      id: 'view.showFormattingMarks',
-                      label: showFormattingMarks
-                        ? 'Hide non-printing characters'
-                        : 'Show non-printing characters',
-                      path: 'View',
-                      run: handleToggleShowFormattingMarks,
-                    },
-                    {
-                      id: 'view.showOutline',
-                      label: showOutline ? 'Hide document outline' : 'Show document outline',
-                      path: 'View',
-                      shortcut: '⌘⇧H',
-                      run: handleToggleOutline,
-                    },
-                    {
-                      id: 'view.showComments',
-                      label: showCommentsSidebar ? 'Hide comments' : 'Show comments',
-                      path: 'View',
-                      run: handleToggleComments,
-                    },
-                    {
-                      id: 'view.showVersionHistory',
-                      label: showVersionHistory ? 'Hide version history' : 'Show version history',
-                      path: 'View',
-                      run: handleToggleVersionHistory,
-                    },
+                      {
+                        id: 'view.showFormattingMarks',
+                        label: showFormattingMarks
+                          ? 'Hide non-printing characters'
+                          : 'Show non-printing characters',
+                        path: 'View',
+                        run: handleToggleShowFormattingMarks,
+                      },
+                      {
+                        id: 'view.showOutline',
+                        label: showOutline ? 'Hide document outline' : 'Show document outline',
+                        path: 'View',
+                        shortcut: '⌘⇧H',
+                        run: handleToggleOutline,
+                      },
+                      {
+                        id: 'view.showComments',
+                        label: showCommentsSidebar ? 'Hide comments' : 'Show comments',
+                        path: 'View',
+                        run: handleToggleComments,
+                      },
+                      {
+                        id: 'view.showVersionHistory',
+                        label: showVersionHistory ? 'Hide version history' : 'Show version history',
+                        path: 'View',
+                        run: handleToggleVersionHistory,
+                      },
 
-                    {
-                      id: 'help.report',
-                      label: 'Report a bug',
-                      path: 'Help',
-                      run: handleReportBug,
-                    },
-                    {
-                      id: 'help.about',
-                      label: 'About Casual Editor',
-                      path: 'Help',
-                      run: handleShowAbout,
-                    },
-                  ]}
-                />
-              )}
-            </Suspense>
-            {/* InlineHeaderFooterEditor is rendered inside the editor content area (position:relative div) */}
-            {/* Hidden file input for image insertion */}
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={handleImageFileChange}
-            />
-            {/* Hidden file input for File → Open */}
-            <input
-              ref={docxInputRef}
-              type="file"
-              accept=".docx,.odt,.md,.markdown,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              style={{ display: 'none' }}
-              onChange={handleDocxFileChange}
-            />
-          </div>
+                      {
+                        id: 'help.report',
+                        label: 'Report a bug',
+                        path: 'Help',
+                        run: handleReportBug,
+                      },
+                      {
+                        id: 'help.about',
+                        label: 'About Casual Editor',
+                        path: 'Help',
+                        run: handleShowAbout,
+                      },
+                    ]}
+                  />
+                )}
+              </Suspense>
+              {/* InlineHeaderFooterEditor is rendered inside the editor content area (position:relative div) */}
+              {/* Hidden file input for image insertion */}
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleImageFileChange}
+              />
+              {/* Hidden file input for File → Open */}
+              <input
+                ref={docxInputRef}
+                type="file"
+                accept=".docx,.odt,.md,.markdown,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                style={{ display: 'none' }}
+                onChange={handleDocxFileChange}
+              />
+            </div>
+          </DisabledFeaturesContext.Provider>
         </ErrorBoundary>
       </ErrorProvider>
     </LocaleProvider>

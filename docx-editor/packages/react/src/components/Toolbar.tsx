@@ -16,7 +16,8 @@
  * Uses FormattingBar internally for the icon toolbar.
  */
 
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useContext, useRef } from 'react';
+import { DisabledFeaturesContext } from './features';
 import { useTranslation } from '../i18n';
 import type { CSSProperties, ReactNode } from 'react';
 import type {
@@ -426,6 +427,11 @@ export interface ToolbarButtonProps {
   className?: string;
   /** ARIA label for accessibility */
   ariaLabel?: string;
+  /**
+   * Feature id (docs#272). When the host disables this id via the
+   * `features` map, the button renders `null`. Omit for always-on buttons.
+   */
+  featureId?: string;
 }
 
 /**
@@ -456,7 +462,13 @@ export function ToolbarButton({
   children,
   className,
   ariaLabel,
+  featureId,
 }: ToolbarButtonProps) {
+  // Per-control hiding by feature id (docs#272). A disabled id removes the
+  // button entirely; command-veto is handled at the dispatch layer.
+  const disabledFeatures = useContext(DisabledFeaturesContext);
+  if (featureId && disabledFeatures.has(featureId)) return null;
+
   const testId =
     ariaLabel?.toLowerCase().replace(/\s+/g, '-') ||
     title
