@@ -346,7 +346,7 @@ Hotfixes → `0.x`. Everything else → `main`.
 
 | Package                        | Path                 | Published?             |
 | ------------------------------ | -------------------- | ---------------------- |
-| `@eigenpal/docx-js-editor`     | `packages/react`     | ✅                     |
+| `@casualoffice/docs`     | `packages/react`     | ✅                     |
 | `@eigenpal/docx-editor-agents` | `packages/agent-use` | ✅                     |
 | `@eigenpal/docx-core`          | `packages/core`      | ❌ private             |
 | `@eigenpal/docx-editor-vue`    | `packages/vue`       | ❌ private / community |
@@ -369,11 +369,11 @@ The frontmatter must use the **full npm package name**, not the repo name or a g
 
 ```markdown
 ---
-'@eigenpal/docx-js-editor': patch
+'@casualoffice/docs': patch
 ---
 ```
 
-Only `@eigenpal/docx-js-editor` needs to be listed — the fixed group in `.changeset/config.json` auto-bumps `@eigenpal/docx-editor-agents` to match. Always run `bun changeset` rather than hand-writing the file; the interactive prompt picks valid names from the workspace. A wrong name (e.g. bare `docx-editor`) does not fail the PR's CI but **crashes the post-merge Release workflow** with `Found changeset X for package Y which is not in the workspace`, blocking all releases until someone edits the bad changeset.
+Only `@casualoffice/docs` needs to be listed — the fixed group in `.changeset/config.json` auto-bumps `@eigenpal/docx-editor-agents` to match. Always run `bun changeset` rather than hand-writing the file; the interactive prompt picks valid names from the workspace. A wrong name (e.g. bare `docx-editor`) does not fail the PR's CI but **crashes the post-merge Release workflow** with `Found changeset X for package Y which is not in the workspace`, blocking all releases until someone edits the bad changeset.
 
 #### Bump levels (semver)
 
@@ -390,7 +390,7 @@ The summary you write (`Add foo prop to DocxEditor`) goes verbatim into `CHANGEL
 1. **Look for an open PR titled `chore: release`** on `main`. The bot opens it automatically the first time a changeset lands; subsequent changeset-bearing PRs update the same PR with the latest bumps and CHANGELOG entries.
 2. **Review the PR.** It shows: version bumps in `package.json`s, new CHANGELOG sections, and the `.md` files being drained from `.changeset/`. Treat it like any other PR — CI runs on it.
 3. **Merge it.** Standard merge. No bypass, no manual workflow trigger needed.
-4. **Wait ~3 minutes.** The post-merge workflow run sees an empty changeset queue, runs `changeset publish` against npm via OIDC Trusted Publishing (no `NPM_TOKEN`), creates per-package git tags (`@eigenpal/docx-js-editor@X.Y.Z`), and creates a GitHub Release with the new CHANGELOG section.
+4. **Wait ~3 minutes.** The post-merge workflow run sees an empty changeset queue, runs `changeset publish` against npm via OIDC Trusted Publishing (no `NPM_TOKEN`), creates per-package git tags (`@casualoffice/docs@X.Y.Z`), and creates a GitHub Release with the new CHANGELOG section.
 
 That's the entire release. One PR merge.
 
@@ -412,7 +412,7 @@ That's the entire release. One PR merge.
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | npmjs.com                | Trusted Publisher configured for both packages → repo `eigenpal/docx-editor`, workflow `release.yml`                                        |
 | `package.json`           | `"publishConfig": { "access": "public" }` on each published package (already set)                                                           |
-| `.changeset/config.json` | `"access": "public"`; `fixed: [["@eigenpal/docx-js-editor", "@eigenpal/docx-editor-agents"]]` (already set)                                 |
+| `.changeset/config.json` | `"access": "public"`; `fixed: [["@casualoffice/docs", "@eigenpal/docx-editor-agents"]]` (already set)                                 |
 | GitHub perms             | Settings → Actions → General → Workflow permissions = **Read and write**, **Allow GitHub Actions to create and approve pull requests** = on |
 | GitHub secrets           | `SLACK_WEBHOOK_URL` (optional — release notifications)                                                                                      |
 
