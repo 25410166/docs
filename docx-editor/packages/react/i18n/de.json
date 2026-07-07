@@ -1056,5 +1056,18 @@
       "table": null,
       "translate": null
     }
+  },
+  "share": {
+    "copied": null,
+    "copy": null,
+    "description": null,
+    "done": null,
+    "linkLabel": null,
+    "roleComment": null,
+    "roleEdit": null,
+    "roleLabel": null,
+    "roleView": null,
+    "secureNote": null,
+    "title": null
   }
 }

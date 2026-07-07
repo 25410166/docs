@@ -859,6 +859,14 @@ export function IconContentCopy(props: IconProps) {
   );
 }
 
+export function IconShare(props: IconProps) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M680-80q-50 0-85-35t-35-85q0-6 3-28L282-392q-16 15-37 23.5T200-360q-50 0-85-35t-35-85q0-50 35-85t85-35q24 0 45 8.5t37 23.5l286-167q-2-7-2.5-13.5T600-760q0-50 35-85t85-35q50 0 85 35t35 85q0 50-35 85t-85 35q-24 0-45-8.5T678-672L392-505q2 7 2.5 13.5t.5 13.5q0 7-.5 13.5T392-441l286 167q16-15 37-23.5t45-8.5q50 0 85 35t35 85q0 50-35 85t-85 35Z" />
+    </SvgIcon>
+  );
+}
+
 export function IconContentPaste(props: IconProps) {
   return (
     <SvgIcon {...props}>
@@ -1078,6 +1086,7 @@ const iconMap: Record<string, React.ComponentType<IconProps>> = {
   // Edit menu — clipboard ops
   content_cut: IconContentCut,
   content_copy: IconContentCopy,
+  share: IconShare,
   content_paste: IconContentPaste,
   content_paste_go: IconContentPasteGo,
   find_replace: IconFindReplace,

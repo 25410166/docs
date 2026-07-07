@@ -144,6 +144,16 @@ export {
   type PresencePeer,
 } from './components/PresenceCluster';
 
+// ShareDialog — the editor's built-in "share this live document" surface.
+// CasualEditor mounts it automatically in collab mode; exported so hosts can
+// render it themselves (e.g. from a custom `onShare`).
+export {
+  ShareDialog,
+  buildShareUrl,
+  type ShareDialogProps,
+  type ShareRole,
+} from './components/ShareDialog';
+
 // Collab — Yjs/y-websocket wiring exposed so SDK consumers (host
 // apps embedding the editor) can opt into co-edit by passing the
 // returned plugins into DocxEditor's `externalPlugins`. `yjs`,
