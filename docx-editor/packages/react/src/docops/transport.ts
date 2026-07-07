@@ -202,7 +202,11 @@ export class DirectTransport implements DocOpsTransport {
  */
 export class CollabTransport implements DocOpsTransport {
   readonly requiresApiKey = false;
-  readonly drivesLoop = true;
+  // Single round per call() — the panel (chat) and runAgent (agent mode) drive
+  // the tool loop; the collab server is just a key-holding LLM proxy for one
+  // turn. Previously drivesLoop=true ceded the whole loop to the server, which
+  // hid the Agent toggle (gated on !drivesLoop) so the agent never ran on web.
+  readonly drivesLoop = false;
 
   constructor(
     /** WebSocket URL for the AI endpoint, e.g. "wss://collab.example.com/api/ai". */
@@ -256,9 +260,9 @@ export class CollabTransport implements DocOpsTransport {
             system: payload.system,
             messages: payload.messages,
             tools: payload.tools,
+            singleRound: true,
             ...(payload.apiKey ? { apiKey: payload.apiKey } : {}),
             ...(this.room ? { roomName: this.room } : {}),
-            ...(payload.maxToolRounds != null ? { maxToolRounds: payload.maxToolRounds } : {}),
           })
         );
       });
@@ -273,7 +277,16 @@ export class CollabTransport implements DocOpsTransport {
           return;
         }
 
-        if (msg.type === 'text') {
+        if (msg.type === 'round') {
+          // Single-round reply: the panel/agent drives the loop from here.
+          settle({
+            data: {
+              content: msg.content ?? [],
+              stop_reason: (msg.stop_reason as string) ?? 'end_turn',
+            },
+            status: 200,
+          });
+        } else if (msg.type === 'text') {
           payload.onText?.(msg.text as string);
         } else if (msg.type === 'tool_call') {
           const id = msg.id as string;
