@@ -126,6 +126,12 @@ export interface CasualEditorProps {
   /** Forwarded to DocxEditor.onError. */
   onError?: DocxEditorProps['onError'];
   /**
+   * Built-in DocOps AI assistant. Forwarded to DocxEditor.ai — set
+   * `ai={{ enabled: true }}` to unlock the assistant panel (no window
+   * global). See DocxEditor's `ai` prop.
+   */
+  ai?: DocxEditorProps['ai'];
+  /**
    * Fires whenever a tick lands — host can render its own
    * "Saved 2 min ago" indicator without subscribing to the
    * underlying hook.
@@ -196,6 +202,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       onSave,
       onSelectionChange,
       onError,
+      ai,
       onAutosaveState,
       onCollabState,
       onShare,
@@ -379,6 +386,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
         onError={onError}
         renderTitleBarRight={renderCollabPresence}
         docopsTransport={createDocOpsTransport({ collabWsUrl: backendUrl, room: docId })}
+        ai={ai}
         {...docxEditorProps}
       />
     );
