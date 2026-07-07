@@ -392,6 +392,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
             title={t('formattingBar.paintFormat')}
             ariaLabel={t('formattingBar.paintFormat')}
             active={!!paintFormatArmed}
+            featureId="paintFormat"
           >
             <MaterialSymbol name="format_paint" size={ICON_SIZE} />
           </ToolbarButton>
@@ -465,6 +466,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           title={t('formattingBar.bold')}
           shortcut="⌘B"
           ariaLabel={t('formattingBar.bold')}
+          featureId="bold"
         >
           <MaterialSymbol name="format_bold" size={ICON_SIZE} />
         </ToolbarButton>
@@ -475,6 +477,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           title={t('formattingBar.italic')}
           shortcut="⌘I"
           ariaLabel={t('formattingBar.italic')}
+          featureId="italic"
         >
           <MaterialSymbol name="format_italic" size={ICON_SIZE} />
         </ToolbarButton>
@@ -485,6 +488,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           title={t('formattingBar.underline')}
           shortcut="⌘U"
           ariaLabel={t('formattingBar.underline')}
+          featureId="underline"
         >
           <MaterialSymbol name="format_underlined" size={ICON_SIZE} />
         </ToolbarButton>
@@ -495,6 +499,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           title={t('formattingBar.strikethrough')}
           shortcut="⌘⇧X"
           ariaLabel={t('formattingBar.strikethrough')}
+          featureId="strikethrough"
         >
           <MaterialSymbol name="strikethrough_s" size={ICON_SIZE} />
         </ToolbarButton>

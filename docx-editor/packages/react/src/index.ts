@@ -42,6 +42,21 @@ export {
   type EditorMode,
 } from './components/DocxEditor';
 
+// SDK customization surface (docs#272 / docs#273, doc 38 §5–6):
+// the `features` flag-map + its published id catalog, and the
+// `editorExtensions` API for adding/replacing ProseMirror behavior.
+export {
+  DOCX_FEATURE_IDS,
+  type DocxFeatureId,
+  type FeatureMap,
+  isFeatureEnabled,
+} from './components/features';
+export {
+  type EditorExtension,
+  type EditorExtensionContext,
+  resolveEditorExtensionPlugins,
+} from './components/editorExtensions';
+
 // CasualEditor — composable SDK wrapper bundling DocxEditor +
 // FileSource + optional collab + optional autosave for host apps
 // (Drive, future sheet) that want the editor with minimum ceremony.
