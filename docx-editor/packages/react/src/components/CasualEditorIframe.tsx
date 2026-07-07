@@ -6,6 +6,17 @@
  * CasualEditorIframe — the iframe-mounting variant of `<CasualEditor>`.
  * Doc 16 §5 + §6.
  *
+ * **This is the guaranteed style-isolation path** (doc 38 §8). Because the
+ * editor mounts inside a same-origin iframe, none of its styles, Tailwind
+ * utilities, design-system tokens, or fonts can leak onto the host page, and
+ * the host's CSS cannot bleed into the editor. Direct-mount `<CasualEditor>`
+ * shares the host's DOM/CSS scope; prefer this variant when strict isolation
+ * or strict-CSP compliance matters.
+ *
+ * For strict-CSP hosts (`style-src 'nonce-…'`), pass {@link
+ * CasualEditorIframeProps.cspNonce} — it is threaded through the iframe URL and
+ * stamped onto every stylesheet in the iframe document so none are blocked.
+ *
  * Public surface is intentionally identical to the existing
  * `<CasualEditor>` so v1.1's migration path is one component swap.
  * v1.2 will rename CasualEditorIframe → CasualEditor (and the
@@ -21,6 +32,7 @@ import {
   type MutableRefObject,
 } from 'react';
 
+import { applyCspNonce } from './cspNonce';
 import { EmbedHostTransport } from '../embed/EmbedHostTransport';
 import type {
   CasualApp,
@@ -50,6 +62,12 @@ export interface CasualEditorIframeProps {
   embedBasePath?: string;
   /** Default `docs`. Sheet SDK ships its own variant with `app: 'sheet'`. */
   app?: CasualApp;
+  /** CSP nonce for strict-CSP hosts (`style-src 'nonce-<value>'`). Pass the
+   *  same value used in the host's CSP header: it is threaded through the
+   *  iframe URL and stamped as the `nonce` attribute on every `<style>` /
+   *  `<link rel="stylesheet">` in the iframe document, so the editor's styles
+   *  aren't blocked. Omit when the host has no strict style-src policy. */
+  cspNonce?: string;
   onSelectionChanged?: (data: SelectionChangedData) => void;
   onTelemetry?: (data: TelemetryEventData) => void;
   onError?: (data: CasualErrorData) => void;
@@ -73,6 +91,7 @@ export const CasualEditorIframe = forwardRef<CasualEditorIframeRef, CasualEditor
       viewMode = 'editor',
       embedBasePath = '/embed/docs',
       app = 'docs',
+      cspNonce,
       onSelectionChanged,
       onTelemetry,
       onError,
@@ -83,6 +102,7 @@ export const CasualEditorIframe = forwardRef<CasualEditorIframeRef, CasualEditor
 
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const transportRef = useRef<EmbedHostTransport | null>(null);
+    const nonceCleanupRef = useRef<(() => void) | null>(null);
 
     // Latest fileSource via ref so the load/save handlers don't
     // rebuild the transport on every consumer re-render.
@@ -132,6 +152,10 @@ export const CasualEditorIframe = forwardRef<CasualEditorIframeRef, CasualEditor
     const onIframeLoad = useCallback(() => {
       const iframe = iframeRef.current;
       if (!iframe?.contentWindow) return;
+      // Stamp the CSP nonce onto the iframe document's stylesheets (present
+      // now and injected later) so strict-CSP hosts don't block them.
+      nonceCleanupRef.current?.();
+      nonceCleanupRef.current = cspNonce ? applyCspNonce(iframe.contentDocument, cspNonce) : null;
       transportRef.current?.destroy();
       const transport = new EmbedHostTransport({
         app,
@@ -150,7 +174,7 @@ export const CasualEditorIframe = forwardRef<CasualEditorIframeRef, CasualEditor
         },
       });
       transportRef.current = transport;
-    }, [app, onLoad, onSave, onSelectionChanged, onTelemetry, onError, viewMode]);
+    }, [app, cspNonce, onLoad, onSave, onSelectionChanged, onTelemetry, onError, viewMode]);
 
     // Push viewMode changes through the wire instead of re-mounting.
     useEffect(() => {
@@ -162,6 +186,8 @@ export const CasualEditorIframe = forwardRef<CasualEditorIframeRef, CasualEditor
       return () => {
         transportRef.current?.destroy();
         transportRef.current = null;
+        nonceCleanupRef.current?.();
+        nonceCleanupRef.current = null;
       };
     }, []);
 
@@ -178,7 +204,9 @@ export const CasualEditorIframe = forwardRef<CasualEditorIframeRef, CasualEditor
       `${embedBasePath}/embed.html` +
       `?app=${app}` +
       `&docId=${encodeURIComponent(docId)}` +
-      `&viewMode=${viewMode}`;
+      `&viewMode=${viewMode}` +
+      // Threaded so the embed runtime can also apply the nonce at parse time.
+      (cspNonce ? `&cspNonce=${encodeURIComponent(cspNonce)}` : '');
 
     return (
       <iframe
