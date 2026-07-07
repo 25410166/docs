@@ -1069,5 +1069,9 @@
     "roleView": null,
     "secureNote": null,
     "title": null
+  },
+  "presence": {
+    "aiEditing": null,
+    "askingAi": null
   }
 }

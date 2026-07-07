@@ -22,6 +22,7 @@
 
 import type { CSSProperties, ReactElement } from 'react';
 import { AvatarStack, Badge, Button, type BadgeTone } from '@schnsrw/design-system';
+import { useTranslation } from '../i18n';
 
 export interface PresencePeer {
   /** Display name — also seeds the avatar's deterministic colour + initials. */
@@ -37,6 +38,13 @@ export interface PresenceClusterProps {
   peers: PresencePeer[];
   /** Realtime room status → drives the status badge. Omit for non-collab docs. */
   status?: 'connecting' | 'connected' | 'disconnected';
+  /** True while an AI request is running for this room → shows an "AI is editing" chip. */
+  aiIsEditing?: boolean;
+  /**
+   * Display name of the peer who triggered the AI request. When set, the chip
+   * names them ("<name> is asking AI…"); otherwise it stays generic.
+   */
+  aiEditingBy?: string | null;
   /** Share action. When provided, renders a Share button after a divider. */
   onShare?: () => void;
   /** Max avatars before the rest collapse into a `+N` chip. Default 4. */
@@ -66,19 +74,44 @@ const dividerStyle: CSSProperties = {
   margin: '0 var(--space-1, 2px)',
 };
 
+const aiChipStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 'var(--space-1, 2px)',
+  padding: '2px var(--space-2, 4px)',
+  borderRadius: 'var(--radius-full, 999px)',
+  fontSize: 'var(--text-xs, 12px)',
+  color: 'var(--doc-accent, #6b3fd4)',
+  background: 'var(--doc-accent-subtle, rgba(107, 63, 212, 0.12))',
+  whiteSpace: 'nowrap',
+};
+
 export function PresenceCluster({
   peers,
   status,
   onShare,
   maxAvatars = 4,
+  aiIsEditing = false,
+  aiEditingBy = null,
 }: PresenceClusterProps): ReactElement | null {
+  const { t } = useTranslation();
   const hasPeers = peers.length > 0;
-  if (!hasPeers && !status && !onShare) return null;
+  if (!hasPeers && !status && !onShare && !aiIsEditing) return null;
 
   const s = status ? STATUS[status] : null;
+  const aiLabel = aiIsEditing
+    ? aiEditingBy
+      ? t('presence.askingAi', { name: aiEditingBy })
+      : t('presence.aiEditing')
+    : null;
 
   return (
     <div style={wrapStyle} data-testid="presence-cluster">
+      {aiLabel && (
+        <span style={aiChipStyle} data-testid="presence-ai-chip">
+          {aiLabel}
+        </span>
+      )}
       {hasPeers && (
         <AvatarStack
           size={26}
