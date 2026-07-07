@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from 'bun:test';
 
-import type { CasualEditorRef } from './CasualEditor';
+import type { CasualEditorProps, CasualEditorRef } from './CasualEditor';
 
 describe('CasualEditor SDK shape', () => {
   it('CasualEditorRef declares the SDK-level methods', () => {
@@ -39,6 +39,43 @@ describe('CasualEditor SDK shape', () => {
       r.off('dirtyChange', () => {});
     };
     expect(typeof _expectShape).toBe('function');
+  });
+
+  it('accepts the declarative collab object (doc 38 §6) with server + room + user', () => {
+    // Type-level: the wrapper takes the same `collab` shape sheets ships.
+    // Field names must match Sheets (server / room / user) so the "one
+    // contract" claim holds. server + room are the wired fields.
+    const withCollab: CasualEditorProps = {
+      fileSource: {} as CasualEditorProps['fileSource'],
+      docId: 'doc-1',
+      collab: {
+        server: 'wss://collab.example/yjs',
+        room: 'room-42',
+        user: { name: 'Ada', color: '#f00' },
+      },
+    };
+    expect(withCollab.collab?.server).toBe('wss://collab.example/yjs');
+    expect(withCollab.collab?.room).toBe('room-42');
+    expect(withCollab.collab?.user?.name).toBe('Ada');
+
+    // Reserved-for-parity fields are accepted by the type (not yet wired).
+    const reserved: NonNullable<CasualEditorProps['collab']> = {
+      server: 'wss://x/yjs',
+      room: 'r',
+      password: 'pw',
+      token: 'tok',
+      role: 'view',
+    };
+    expect(reserved.role).toBe('view');
+
+    // `backendUrl` still works as the deprecated alias.
+    const legacy: CasualEditorProps = {
+      fileSource: {} as CasualEditorProps['fileSource'],
+      docId: 'doc-1',
+      backendUrl: 'wss://collab.example/yjs',
+      user: { name: 'Ada', color: '#f00' },
+    };
+    expect(legacy.backendUrl).toBe('wss://collab.example/yjs');
   });
 
   it("collabStatus returns 'standalone' when collab is off (sentinel value, not undefined)", () => {
