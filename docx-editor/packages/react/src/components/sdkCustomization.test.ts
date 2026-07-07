@@ -11,7 +11,14 @@
 import { describe, expect, it } from 'bun:test';
 import type { Plugin } from 'prosemirror-state';
 
-import { disabledFeatureSet, isFeatureEnabled } from './features';
+import type { Command, EditorState } from 'prosemirror-state';
+
+import {
+  disabledFeatureSet,
+  isFeatureEnabled,
+  isCommandVetoed,
+  buildFeatureVetoBindings,
+} from './features';
 import { resolveEditorExtensionPlugins, type EditorExtension } from './editorExtensions';
 
 // Lightweight stand-ins — resolveEditorExtensionPlugins only moves references.
@@ -47,6 +54,52 @@ describe('features flag-map (docs#272)', () => {
   it('an empty / missing map disables nothing', () => {
     expect(disabledFeatureSet(undefined).size).toBe(0);
     expect(disabledFeatureSet({}).size).toBe(0);
+  });
+});
+
+describe('disabled features veto their command (docs#289)', () => {
+  it('vetoes by feature id and by command name; enabled commands pass', () => {
+    const disabled = disabledFeatureSet({ bold: false, italic: true });
+    // Feature id form (executeCommand('bold')).
+    expect(isCommandVetoed(disabled, 'bold')).toBe(true);
+    // Command-registry name form (executeCommand('toggleBold')).
+    expect(isCommandVetoed(disabled, 'toggleBold')).toBe(true);
+    // An enabled feature is untouched, by either name.
+    expect(isCommandVetoed(disabled, 'italic')).toBe(false);
+    expect(isCommandVetoed(disabled, 'toggleItalic')).toBe(false);
+    // Unknown ids are never vetoed.
+    expect(isCommandVetoed(disabled, 'someOtherCommand')).toBe(false);
+  });
+
+  it('an empty disabled set vetoes nothing', () => {
+    expect(isCommandVetoed(new Set(), 'bold')).toBe(false);
+    expect(isCommandVetoed(new Set(), 'toggleBold')).toBe(false);
+  });
+
+  it('the keymap binding no-ops (returns true, never dispatches) when disabled, else falls through', () => {
+    const disabled = new Set<string>(['bold']);
+    const bindings = buildFeatureVetoBindings(() => disabled);
+    const veto = bindings['Mod-b'] as Command;
+    expect(veto).toBeDefined();
+
+    // Disabled → command consumes the key as a no-op: returns true, no dispatch.
+    let dispatched = false;
+    const dispatch = () => {
+      dispatched = true;
+    };
+    expect(veto({} as EditorState, dispatch)).toBe(true);
+    expect(dispatched).toBe(false);
+
+    // Enabled (feature removed from the live set) → falls through: returns false
+    // so the real formatting command downstream runs.
+    disabled.delete('bold');
+    expect(veto({} as EditorState, dispatch)).toBe(false);
+    expect(dispatched).toBe(false);
+  });
+
+  it('binds a key for every feature that owns a keyboard shortcut', () => {
+    const bindings = buildFeatureVetoBindings(() => new Set());
+    expect(Object.keys(bindings).sort()).toEqual(['Mod-Shift-x', 'Mod-b', 'Mod-i', 'Mod-u'].sort());
   });
 });
 

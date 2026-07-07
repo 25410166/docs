@@ -456,6 +456,8 @@ import {
   DisabledFeaturesContext,
   disabledFeatureSet,
   isFeatureEnabled,
+  isCommandVetoed,
+  createFeatureVetoPlugin,
   type FeatureMap,
 } from './features';
 import { resolveEditorExtensionPlugins, type EditorExtension } from './editorExtensions';
@@ -2053,6 +2055,13 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // (which already encodes the `chrome` preset). `disabledFeatures` drives
   // per-button hiding via context.
   const disabledFeatures = useMemo(() => disabledFeatureSet(features), [features]);
+  // Mirror the live disabled set into a ref so the command layer (keymap veto
+  // plugin + executeCommand) can consult it without re-creating editor state
+  // when `features` changes (docs#289).
+  const disabledFeaturesRef = useRef(disabledFeatures);
+  useEffect(() => {
+    disabledFeaturesRef.current = disabledFeatures;
+  }, [disabledFeatures]);
   const showToolbarEffective = isFeatureEnabled(features, 'toolbar', showToolbar);
   const showPanelRailEffective = isFeatureEnabled(features, 'panelRail', showPanelRail);
   const showStatusBarEffective = isFeatureEnabled(features, 'statusBar', showStatusBar);
@@ -2466,6 +2475,15 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     () => createSuggestionModePlugin(editingMode === 'suggesting', author),
     [] // eslint-disable-line react-hooks/exhaustive-deps
   );
+  // Feature-veto keymap (docs#289): swallows a disabled feature's keyboard
+  // shortcut (e.g. Ctrl+B when `features={{ bold: false }}`). Built once and
+  // reads the live disabled set through the ref, so it never rebuilds editor
+  // state. External plugins run before the extension keymaps, so a vetoed key
+  // is consumed before the real formatting command sees it.
+  const featureVetoPlugin = useMemo(
+    () => createFeatureVetoPlugin(() => disabledFeaturesRef.current),
+    []
+  );
   // Markdown heading shortcut: "# " / "## " / "### " at the start of a plain
   // paragraph applies Heading 1/2/3. Lives at the React layer because applying
   // a heading needs the document's RESOLVED style formatting (font/size/bold)
@@ -2542,6 +2560,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       // low-level `externalPlugins` escape hatch — a single merged plugin stack.
       resolveEditorExtensionPlugins(
         [
+          featureVetoPlugin,
           suggestionPlugin,
           markdownHeadingPlugin,
           findHighlightPlugin,
@@ -2551,6 +2570,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         editorExtensions
       ),
     [
+      featureVetoPlugin,
       suggestionPlugin,
       markdownHeadingPlugin,
       findHighlightPlugin,
@@ -8915,6 +8935,10 @@ body { background: white; }
       undo: () => pagedEditorRef.current?.undo() ?? false,
       redo: () => pagedEditorRef.current?.redo() ?? false,
       executeCommand: async (id, params) => {
+        // A disabled feature vetoes its command, not just its button (docs#289).
+        // Accepts either the feature id (`bold`) or the command name
+        // (`toggleBold`); returns false without mutating.
+        if (isCommandVetoed(disabledFeaturesRef.current, id)) return false;
         const view = pagedEditorRef.current?.getView();
         if (!view) return false;
         // Route through the same command registry the toolbar/keymap use.
