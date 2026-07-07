@@ -117,8 +117,15 @@ export interface CasualEditorProps {
    * `'viewing'`. Forwarded to DocxEditor.documentMode.
    */
   documentMode?: DocxEditorProps['documentMode'];
-  /** Fires when the document mode changes (forwarded from DocxEditor). */
+  /**
+   * Fires when the document mode changes (forwarded from DocxEditor).
+   * @deprecated Use {@link onDocumentModeChange} — the canonical name (doc 38 §3).
+   */
   onModeChange?: DocxEditorProps['onModeChange'];
+  /** Fires when the document mode changes (canonical name, doc 38 §3). */
+  onDocumentModeChange?: DocxEditorProps['onDocumentModeChange'];
+  /** Fires on dirty ⇄ clean transitions (forwarded from DocxEditor, doc 38 §3). */
+  onDirtyChange?: DocxEditorProps['onDirtyChange'];
   /** Forwarded to DocxEditor.onSave for hosts that want a hook. */
   onSave?: DocxEditorProps['onSave'];
   /** Forwarded to DocxEditor.onSelectionChange — Drive uses this for the right-panel sync. */
@@ -199,6 +206,8 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       author,
       documentMode,
       onModeChange,
+      onDocumentModeChange,
+      onDirtyChange,
       onSave,
       onSelectionChange,
       onError,
@@ -381,6 +390,8 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
         author={author}
         documentMode={documentMode}
         onModeChange={onModeChange}
+        onDocumentModeChange={onDocumentModeChange}
+        onDirtyChange={onDirtyChange}
         onSave={onSave}
         onSelectionChange={onSelectionChange}
         onError={onError}
@@ -562,5 +573,16 @@ function noopDocxEditorRef(): DocxEditorRef {
     getPageContent: () => null,
     insertReportFromData: () => false,
     createDocument: () => false,
+    // Unified SDK contract (doc 38) — safe defaults before the editor mounts.
+    getContent: () => null,
+    setContent: noop,
+    getSelection: () => null,
+    import: () => Promise.resolve(),
+    export: noopAsync,
+    executeCommand: () => Promise.resolve(false),
+    undo: () => false,
+    redo: () => false,
+    on: () => noop,
+    off: noop,
   } as unknown as DocxEditorRef;
 }

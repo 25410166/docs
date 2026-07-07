@@ -27,6 +27,16 @@ describe('CasualEditor SDK shape', () => {
       r.save();
       r.focus();
       r.getCurrentPage();
+      // Unified SDK contract (doc 38 §4) — canonical handle surface.
+      r.getContent();
+      r.getSelection();
+      void r.export();
+      void r.executeCommand('toggleBold');
+      r.undo();
+      r.redo();
+      const off = r.on('change', () => {});
+      off();
+      r.off('dirtyChange', () => {});
     };
     expect(typeof _expectShape).toBe('function');
   });

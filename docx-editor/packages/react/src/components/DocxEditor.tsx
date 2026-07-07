@@ -451,6 +451,7 @@ import {
 
 // Paginated editor
 import { PagedEditor, type PagedEditorRef, DEFAULT_PAGE_WIDTH } from '../paged-editor/PagedEditor';
+import { createEditorEventBus } from './editorEventBus';
 
 // Plugin API types
 import type { RenderedDomContext } from '../plugin-api/types';
@@ -545,6 +546,12 @@ export interface DocxEditorProps {
   onSelectionChange?: (state: SelectionState | null) => void;
   /** Callback on error */
   onError?: (error: Error) => void;
+  /**
+   * Fires on dirty ⇄ clean transitions (doc 38 §3). `true` when the document
+   * gains unsaved edits, `false` once it is saved/clean again. Mirrors the
+   * `'dirtyChange'` emitter event.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
   /** When set, the Version-history panel lists the host's
    *  server-persisted revision chain (`/history`) and restores by
    *  downloading a revision's `.docx` into the editor. Absent → the
@@ -700,8 +707,18 @@ export interface DocxEditorProps {
   documentMode?: EditorMode;
   /** Editor mode: 'editing' (direct edits), 'suggesting' (track changes), or 'viewing' (read-only). Default: 'editing' */
   mode?: EditorMode;
-  /** Callback when the editing mode changes */
+  /**
+   * Callback when the editing mode changes.
+   * @deprecated Use {@link onDocumentModeChange} — the canonical name paired
+   * with the `documentMode` prop (doc 38 §3). This alias still fires.
+   */
   onModeChange?: (mode: EditorMode) => void;
+  /**
+   * Fires when the document mode changes (doc 38 §3) — the canonical rename of
+   * {@link onModeChange}, paired with the `documentMode` prop. Mirrors the
+   * `'documentModeChange'` emitter event. Both callbacks fire.
+   */
+  onDocumentModeChange?: (mode: EditorMode) => void;
   /** Callback when a comment is added via the UI */
   onCommentAdd?: (comment: Comment) => void;
   /** Callback when a comment is resolved via the UI */
@@ -837,10 +854,52 @@ export type { AiProp, DocOpsAction };
 /**
  * DocxEditor ref interface
  */
+/**
+ * Canonical cross-editor event map (doc 38 §3). Every event is available two
+ * ways: as an `on*` config prop on {@link DocxEditorProps} AND via the
+ * {@link DocxEditorRef} `on()`/`off()` emitter — same event, same payload.
+ * The config-prop name maps to the emitter name mechanically: drop the `on`
+ * prefix and lower-camel it (`onSelectionChange` ⇄ `'selectionChange'`).
+ */
+export interface DocxEditorEvents {
+  /** Fired once, after the editor mounts and finishes loading its document. */
+  ready: (api: DocxEditorRef) => void;
+  /** Fired after every committed edit, with the new document. */
+  change: (document: Document) => void;
+  /** Fired when the cursor / selection changes. */
+  selectionChange: (selection: SelectionState | null) => void;
+  /** Fired after a successful save, with the serialized `.docx` bytes. */
+  save: (bytes: ArrayBuffer) => void;
+  /** Fired when the editor surfaces an error. */
+  error: (error: Error) => void;
+  /** Fired on dirty ⇄ clean transitions. */
+  dirtyChange: (dirty: boolean) => void;
+  /** Fired when the document mode changes. */
+  documentModeChange: (mode: EditorMode) => void;
+  /**
+   * Fired when a collaboration session becomes ready. DocxEditor is the
+   * single-user surface and never emits this itself; the CasualEditor wrapper
+   * wires it from the collab session.
+   */
+  collaborationReady: (info: unknown) => void;
+  /**
+   * Fired when the collaboration connection status changes. Not emitted by
+   * DocxEditor itself; the CasualEditor wrapper wires it from the collab session.
+   */
+  collaborationStatus: (status: unknown) => void;
+}
+
+/** Union of canonical event names accepted by {@link DocxEditorRef.on}. */
+export type DocxEditorEventName = keyof DocxEditorEvents;
+
 export interface DocxEditorRef {
   /** Get the DocumentAgent for programmatic access */
   getAgent: () => DocumentAgent | null;
-  /** Get the current document */
+  /**
+   * Get the current document.
+   * @deprecated Use {@link getContent} — the canonical cross-editor name
+   * (doc 38 §4). This alias still works.
+   */
   getDocument: () => Document | null;
   /** Get the editor ref */
   getEditorRef: () => PagedEditorRef | null;
@@ -880,14 +939,24 @@ export interface DocxEditorRef {
   openPrintPreview: () => void;
   /** Print the document directly */
   print: () => void;
-  /** Load a pre-parsed document programmatically */
+  /**
+   * Load a pre-parsed document programmatically.
+   * @deprecated Use {@link setContent} — the canonical cross-editor name
+   * (doc 38 §4). This alias still works.
+   */
   loadDocument: (doc: Document) => void;
   /** Load a DOCX buffer programmatically (ArrayBuffer, Uint8Array, Blob, or File) */
   loadDocumentBuffer: (buffer: DocxInput) => Promise<void>;
-  /** Alias of `loadDocumentBuffer` — parity with the sheet SDK's `importXlsx`. */
+  /**
+   * Alias of `loadDocumentBuffer` — parity with the sheet SDK's `importXlsx`.
+   * @deprecated Use {@link import} — the canonical cross-editor name (doc 38 §4).
+   */
   importDocx: (buffer: DocxInput) => Promise<void>;
-  /** Alias of `save` — parity with the sheet SDK's `exportXlsx`. Returns the
-   *  serialized .docx bytes, or null if serialization fails. */
+  /**
+   * Alias of `save` — parity with the sheet SDK's `exportXlsx`. Returns the
+   * serialized .docx bytes, or null if serialization fails.
+   * @deprecated Use {@link export} — the canonical cross-editor name (doc 38 §4).
+   */
   exportDocx: (options?: { selective?: boolean }) => Promise<ArrayBuffer | null>;
   /** Add a comment programmatically. Anchored by Word `w14:paraId` so
    * it survives unrelated edits. Returns the comment ID, or null if
@@ -953,7 +1022,11 @@ export interface DocxEditorRef {
     text: string;
     paragraphs: Array<{ paraId: string; text: string; styleId?: string }>;
   } | null;
-  /** Read the user's current cursor / selection — what's highlighted right now. */
+  /**
+   * Read the user's current cursor / selection — what's highlighted right now.
+   * @deprecated Use {@link getSelection} — the canonical cross-editor name
+   * (doc 38 §4). This alias still works.
+   */
   getSelectionInfo: () => {
     paraId: string | null;
     selectedText: string;
@@ -963,9 +1036,15 @@ export interface DocxEditorRef {
   } | null;
   /** Get all comments. */
   getComments: () => Comment[];
-  /** Subscribe to document changes. Fires after every committed edit. Returns unsubscribe. */
+  /**
+   * Subscribe to document changes. Fires after every committed edit. Returns unsubscribe.
+   * @deprecated Use `on('change', listener)` — the unified emitter (doc 38 §3).
+   */
   onContentChange: (listener: (document: Document) => void) => () => void;
-  /** Subscribe to selection changes (cursor moves / selection changes). Returns unsubscribe. */
+  /**
+   * Subscribe to selection changes (cursor moves / selection changes). Returns unsubscribe.
+   * @deprecated Use `on('selectionChange', listener)` — the unified emitter (doc 38 §3).
+   */
   onSelectionChange: (listener: (selection: SelectionState | null) => void) => () => void;
   /** Rewrite the current editor selection as a tracked change. Returns false if there is no
    * selection or the selection overlaps an existing tracked change. */
@@ -1011,6 +1090,49 @@ export interface DocxEditorRef {
   setDocumentMode: (mode: EditorMode) => void;
   /** Read the current document mode (`'editing'` | `'suggesting'` | `'viewing'`). */
   getDocumentMode: () => EditorMode;
+
+  // ── Unified SDK contract (doc 38 §4) ──────────────────────────────────────
+  /** Canonical alias of {@link getDocument} — the current document, or null. */
+  getContent: () => Document | null;
+  /** Canonical alias of {@link loadDocument} — load a pre-parsed document. */
+  setContent: (content: Document) => void;
+  /** Canonical alias of {@link getSelectionInfo} — the current cursor/selection. */
+  getSelection: () => {
+    paraId: string | null;
+    selectedText: string;
+    paragraphText: string;
+    before: string;
+    after: string;
+  } | null;
+  /**
+   * Canonical alias of {@link loadDocumentBuffer} — import DOCX bytes
+   * (ArrayBuffer, Uint8Array, Blob, or File).
+   */
+  import: (input: DocxInput) => Promise<void>;
+  /**
+   * Canonical alias of {@link save} — export the document as `.docx` bytes.
+   * Returns the serialized bytes, or null if serialization fails.
+   */
+  export: (options?: { selective?: boolean }) => Promise<ArrayBuffer | null>;
+  /**
+   * Execute a registered editor command by id (e.g. `'toggleBold'`,
+   * `'setFontSize'`, `'undo'`, `'redo'`). `params` is forwarded to the command
+   * factory. Resolves to whether the command applied; unknown ids resolve to
+   * `false`. Routes through the ProseMirror command registry the toolbar uses.
+   */
+  executeCommand: (id: string, params?: unknown) => Promise<boolean>;
+  /** Undo the last edit. Returns whether anything was undone. */
+  undo: () => boolean;
+  /** Redo the last undone edit. Returns whether anything was redone. */
+  redo: () => boolean;
+  /**
+   * Subscribe to a canonical editor event (doc 38 §3). Returns a disposer that
+   * removes the listener. Mirrors the `on*` config props one-to-one.
+   * @example const off = ref.on('change', (doc) => …); // later: off();
+   */
+  on: <K extends DocxEditorEventName>(name: K, handler: DocxEditorEvents[K]) => () => void;
+  /** Remove a listener previously registered with {@link on}. */
+  off: <K extends DocxEditorEventName>(name: K, handler: DocxEditorEvents[K]) => void;
 }
 
 /**
@@ -1736,6 +1858,8 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     documentMode,
     mode: modeProp,
     onModeChange,
+    onDocumentModeChange,
+    onDirtyChange,
     onCommentAdd,
     onCommentResolve,
     onCommentDelete,
@@ -1768,6 +1892,28 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   ref
 ) {
   const { t } = useTranslation();
+
+  // Unified event emitter (doc 38 §3). Backs the ref's on()/off() surface; every
+  // canonical event is also mirrored to its `on*` config prop.
+  const eventBusRef = useRef(createEditorEventBus<DocxEditorEvents>());
+  const emitEvent = useCallback(
+    <K extends DocxEditorEventName>(name: K, arg: Parameters<DocxEditorEvents[K]>[0]) => {
+      // `Parameters<T>[0]` and the bus's `EventArg<T>` coincide for single-arg
+      // handlers, but TS can't prove that for a free type variable — cast once.
+      (eventBusRef.current.emit as (n: K, a: unknown) => void)(name, arg);
+    },
+    []
+  );
+  // Route every editor error through both the `onError` prop and the emitter so
+  // the two error surfaces stay in lockstep (doc 38 §3).
+  const emitError = useCallback(
+    (error: Error) => {
+      onError?.(error);
+      emitEvent('error', error);
+    },
+    [onError, emitEvent]
+  );
+
   // State
   const [state, setState] = useState<EditorState>({
     isLoading: !!documentBuffer && !externalContent,
@@ -1992,7 +2138,11 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const editingMode = controlledMode ?? editingModeInternal;
   const setEditingMode = (mode: EditorMode) => {
     if (!controlledMode) setEditingModeInternal(mode);
+    // `onModeChange` is the deprecated alias; `onDocumentModeChange` is the
+    // canonical name (doc 38 §3). Both fire, plus the unified emitter.
     onModeChange?.(mode);
+    onDocumentModeChange?.(mode);
+    emitEvent('documentModeChange', mode);
   };
   // Refs so the global keydown listener can read latest without re-binding.
   const editingModeRef = useRef<EditorMode>(editingMode);
@@ -3280,10 +3430,10 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
           isLoading: false,
           parseError: message,
         }));
-        onError?.(error instanceof Error ? error : new Error(message));
+        emitError(error instanceof Error ? error : new Error(message));
       }
     },
-    [resetForNewDocument, loadParsedDocument, onError]
+    [resetForNewDocument, loadParsedDocument, emitError]
   );
 
   // Restore a server-persisted revision: download its .docx from the
@@ -3298,11 +3448,11 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
           const buf = await downloadServerVersion(versionBackend, version);
           await loadBuffer(buf);
         } catch (err) {
-          onError?.(err instanceof Error ? err : new Error(String(err)));
+          emitError(err instanceof Error ? err : new Error(String(err)));
         }
       })();
     },
-    [versionBackend, loadBuffer, onError]
+    [versionBackend, loadBuffer, emitError]
   );
 
   // React to document/documentBuffer prop changes
@@ -3380,11 +3530,20 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // when the value flips.
   const isDirtyRef = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
-  const markDirty = useCallback((dirty: boolean) => {
-    isDirtyRef.current = dirty;
-    // Only re-render when the displayed state actually changes.
-    setIsDirty((prev) => (prev === dirty ? prev : dirty));
-  }, []);
+  const markDirty = useCallback(
+    (dirty: boolean) => {
+      const changed = isDirtyRef.current !== dirty;
+      isDirtyRef.current = dirty;
+      // Only re-render when the displayed state actually changes.
+      setIsDirty((prev) => (prev === dirty ? prev : dirty));
+      // Fire the dirty ⇄ clean transition once (doc 38 §3).
+      if (changed) {
+        onDirtyChange?.(dirty);
+        emitEvent('dirtyChange', dirty);
+      }
+    },
+    [onDirtyChange, emitEvent]
+  );
   // True while a save / download is in flight — drives the
   // "Saving…" indicator in the title bar.
   const [isSaving, setIsSaving] = useState(false);
@@ -3408,6 +3567,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       markDirty(true);
       pushDocument(newDocument);
       onChange?.(newDocument);
+      emitEvent('change', newDocument);
       // Fan out to bridge subscribers (errors in one don't break the others).
       for (const cb of contentChangeSubscribersRef.current) {
         try {
@@ -3434,7 +3594,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       }
       cleanOrphanedCommentsTimerRef.current = setTimeout(cleanOrphanedComments, 300);
     },
-    [onChange, pushDocument, cleanOrphanedComments]
+    [onChange, pushDocument, cleanOrphanedComments, emitEvent]
   );
 
   // Recompute the floating "add comment" button position from the current PM
@@ -3728,6 +3888,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
 
       // Notify parent
       onSelectionChange?.(selectionState);
+      emitEvent('selectionChange', selectionState);
       // Fan out to bridge subscribers.
       for (const cb of selectionChangeSubscribersRef.current) {
         try {
@@ -3739,7 +3900,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     },
     // getActiveEditorView's return depends on hfEditPosition; theme drives
     // color resolution. Both must be in deps to avoid stale-closure reads.
-    [onSelectionChange, isAddingComment, readOnly, getActiveEditorView, theme]
+    [onSelectionChange, isAddingComment, readOnly, getActiveEditorView, theme, emitEvent]
   );
 
   // Table selection hook
@@ -7284,21 +7445,22 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         }
 
         onSave?.(buffer);
+        emitEvent('save', buffer);
         return buffer;
       } catch (error) {
-        onError?.(error instanceof Error ? error : new Error('Failed to save document'));
+        emitError(error instanceof Error ? error : new Error('Failed to save document'));
         return null;
       }
     },
-    [onSave, onError, comments]
+    [onSave, emitError, emitEvent, comments]
   );
 
   // Handle error from editor
   const handleEditorError = useCallback(
     (error: Error) => {
-      onError?.(error);
+      emitError(error);
     },
-    [onError]
+    [emitError]
   );
 
   // `handleDirectPrint` is also the underlying flow for Export as PDF —
@@ -7641,10 +7803,10 @@ body { background: white; }
         toast.success(`Downloaded ${fileName}`, { id: toastId });
       } catch (error) {
         toast.error(`Failed to export as ${label}`, { id: toastId });
-        onError?.(error instanceof Error ? error : new Error(`Failed to export as ${target}`));
+        emitError(error instanceof Error ? error : new Error(`Failed to export as ${target}`));
       }
     },
-    [handleSave, documentName, onError, onExport]
+    [handleSave, documentName, emitError, onExport]
   );
   const handleExportOdt = useCallback(() => handleExportAs('odt'), [handleExportAs]);
   const handleExportMd = useCallback(() => handleExportAs('md'), [handleExportAs]);
@@ -7731,10 +7893,10 @@ body { background: white; }
           });
         }
       } catch (error) {
-        onError?.(error instanceof Error ? error : new Error('Failed to open document'));
+        emitError(error instanceof Error ? error : new Error('Failed to open document'));
       }
     },
-    [loadBuffer, onDocumentNameChange, onError, onFileOpened]
+    [loadBuffer, onDocumentNameChange, emitError, onFileOpened]
   );
 
   // ============================================================================
@@ -8658,6 +8820,34 @@ body { background: white; }
       // latest value via refs so the handle needn't be re-created on mode change.
       setDocumentMode: (mode) => setEditingModeRef.current(mode),
       getDocumentMode: () => editingModeRef.current,
+
+      // ── Unified SDK contract (doc 38 §4) ────────────────────────────────
+      // Canonical aliases delegate to the existing implementations so the old
+      // (deprecated) names and the new ones share one code path.
+      getContent: () => history.state,
+      setContent: loadParsedDocument,
+      getSelection: () => api.getSelectionInfo(),
+      import: loadBuffer,
+      export: handleSave,
+      undo: () => pagedEditorRef.current?.undo() ?? false,
+      redo: () => pagedEditorRef.current?.redo() ?? false,
+      executeCommand: async (id, params) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        // Route through the same command registry the toolbar/keymap use.
+        // `undo`/`redo` are registered there too, so a bare id works.
+        const factory = extensionManager.getCommand(id);
+        if (!factory) return false;
+        try {
+          const command = params === undefined ? factory() : factory(params);
+          return command(view.state, view.dispatch, view);
+        } catch (e) {
+          console.error(`executeCommand('${id}') threw:`, e);
+          return false;
+        }
+      },
+      on: (name, handler) => eventBusRef.current.on(name, handler),
+      off: (name, handler) => eventBusRef.current.off(name, handler),
     };
     // Expose the same handle to the onReady effect below,
     // and register mutation methods with the DocOps bridge.
@@ -8673,17 +8863,21 @@ body { background: white; }
     loadParsedDocument,
     loadBuffer,
     comments,
+    extensionManager,
   ]);
 
   // onReady — fire once, after the editor has mounted and the initial document
-  // has finished loading, with the imperative API (sheet-SDK parity).
+  // has finished loading, with the imperative API (sheet-SDK parity). Emit the
+  // canonical `'ready'` event too, even when no `onReady` prop was supplied so
+  // `ref.on('ready', …)` listeners still fire (doc 38 §3).
   useEffect(() => {
-    if (!onReady || onReadyFiredRef.current || state.isLoading) return;
+    if (onReadyFiredRef.current || state.isLoading) return;
     const api = exposedApiRef.current;
     if (!api) return;
     onReadyFiredRef.current = true;
-    onReady(api);
-  }, [onReady, state.isLoading]);
+    onReady?.(api);
+    emitEvent('ready', api);
+  }, [onReady, state.isLoading, emitEvent]);
 
   const initialSectionProperties = useMemo(
     () => getInitialSectionProperties(history.state),
