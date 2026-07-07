@@ -159,6 +159,44 @@
   --doc-anim-fast: var(--motion-fast) var(--ease-out);
   --doc-anim-base: var(--motion-base) var(--ease-out);
   --doc-anim-slow: var(--motion-slow) var(--ease-out);
+
+  /* ========================================
+   * Public token surface — --ce-* (Casual Editor)
+   *
+   * SDK contract (doc 38 §8 "style isolation"). The internal chrome is
+   * themed with the --doc-* variables above; those names are an
+   * implementation detail and may be renamed. The --ce-* aliases below are
+   * the STABLE, PUBLIC surface a host reads (getComputedStyle) or overrides
+   * to blend the editor chrome with its own theme. They inherit into the
+   * iframe document too, so the same names work in either delivery mode.
+   *
+   * Aliases are one-way (--ce-* → --doc-*): setting a --ce-* var here is
+   * read-only relative to the internal system. To have a host override
+   * flow inward, a future --doc-x: var(--ce-x, <default>) indirection would
+   * be added per token; kept out of scope now to avoid churn.
+   *
+   * Public name        Internal source        Meaning
+   * --ce-bg            --doc-bg              desk behind the page
+   * --ce-page-paper    --doc-page-paper      default page fill (display-only)
+   * --ce-chrome        --doc-chrome          toolbar/title/status strips
+   * --ce-surface       --doc-surface         panel / dialog / dropdown bg
+   * --ce-text          --doc-text            primary text
+   * --ce-text-muted    --doc-text-muted      secondary text
+   * --ce-primary       --doc-primary         primary action / accent
+   * --ce-accent        --doc-accent          accent (alias of primary)
+   * --ce-border        --doc-border          standard borders
+   * --ce-link          --doc-link            hyperlinks
+   * ======================================== */
+  --ce-bg: var(--doc-bg);
+  --ce-page-paper: var(--doc-page-paper);
+  --ce-chrome: var(--doc-chrome);
+  --ce-surface: var(--doc-surface);
+  --ce-text: var(--doc-text);
+  --ce-text-muted: var(--doc-text-muted);
+  --ce-primary: var(--doc-primary);
+  --ce-accent: var(--doc-accent);
+  --ce-border: var(--doc-border);
+  --ce-link: var(--doc-link);
 }
 
 /* ============================================================================
