@@ -16,7 +16,18 @@ import { checkFormattingAtSelection, getParagraphText, getParagraphCount } from 
  * Assert that text is bold
  */
 export async function assertTextIsBold(page: Page, searchText: string): Promise<void> {
-  const isBold = await page.evaluate((text) => {
+  // The visible pages re-render asynchronously after the ProseMirror transaction,
+  // so a one-shot read races the re-render. expect.poll retries until it settles.
+  await expect
+    .poll(() => evalTextIsBold(page, searchText), {
+      message: `Expected "${searchText}" to be bold`,
+    })
+    .toBe(true);
+}
+
+/** One-shot DOM check: is any text node containing `searchText` rendered bold? */
+function evalTextIsBold(page: Page, searchText: string): Promise<boolean> {
+  return page.evaluate((text) => {
     // Search only in editor content area, not toolbar (which has icon text like "format_bold")
     const contentArea =
       document.querySelector('.ProseMirror') ||
@@ -45,121 +56,102 @@ export async function assertTextIsBold(page: Page, searchText: string): Promise<
     }
     return false;
   }, searchText);
-
-  expect(isBold, `Expected "${searchText}" to be bold`).toBe(true);
 }
 
 /**
  * Assert that text is not bold
  */
 export async function assertTextIsNotBold(page: Page, searchText: string): Promise<void> {
-  const isBold = await page.evaluate((text) => {
-    // Search only in editor content area
-    const contentArea =
-      document.querySelector('.ProseMirror') ||
-      document.querySelector('.docx-editor-pages') ||
-      document.querySelector('.docx-ai-editor');
-    if (!contentArea) return false;
-
-    const walker = document.createTreeWalker(contentArea, NodeFilter.SHOW_TEXT, null);
-
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text | null)) {
-      if (node.textContent?.includes(text)) {
-        let element = node.parentElement;
-        while (element) {
-          const style = window.getComputedStyle(element);
-          const fontWeight = style.fontWeight;
-          if (fontWeight === 'bold' || parseInt(fontWeight) >= 700) {
-            return true;
-          }
-          if (element.tagName === 'STRONG' || element.tagName === 'B') {
-            return true;
-          }
-          element = element.parentElement;
-        }
-        return false;
-      }
-    }
-    return false;
-  }, searchText);
-
-  expect(isBold, `Expected "${searchText}" to NOT be bold`).toBe(false);
+  await expect
+    .poll(() => evalTextIsBold(page, searchText), {
+      message: `Expected "${searchText}" to NOT be bold`,
+    })
+    .toBe(false);
 }
 
 /**
  * Assert that text is italic
  */
 export async function assertTextIsItalic(page: Page, searchText: string): Promise<void> {
-  const isItalic = await page.evaluate((text) => {
-    // Search only in editor content area
-    const contentArea =
-      document.querySelector('.ProseMirror') ||
-      document.querySelector('.docx-editor-pages') ||
-      document.querySelector('.docx-ai-editor');
-    if (!contentArea) return false;
+  // Poll: the visible pages re-render asynchronously after the PM transaction.
+  await expect
+    .poll(
+      () =>
+        page.evaluate((text) => {
+          // Search only in editor content area
+          const contentArea =
+            document.querySelector('.ProseMirror') ||
+            document.querySelector('.docx-editor-pages') ||
+            document.querySelector('.docx-ai-editor');
+          if (!contentArea) return false;
 
-    const walker = document.createTreeWalker(contentArea, NodeFilter.SHOW_TEXT, null);
+          const walker = document.createTreeWalker(contentArea, NodeFilter.SHOW_TEXT, null);
 
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text | null)) {
-      if (node.textContent?.includes(text)) {
-        let element = node.parentElement;
-        while (element) {
-          const style = window.getComputedStyle(element);
-          if (style.fontStyle === 'italic') {
-            return true;
+          let node: Text | null;
+          while ((node = walker.nextNode() as Text | null)) {
+            if (node.textContent?.includes(text)) {
+              let element = node.parentElement;
+              while (element) {
+                const style = window.getComputedStyle(element);
+                if (style.fontStyle === 'italic') {
+                  return true;
+                }
+                if (element.tagName === 'EM' || element.tagName === 'I') {
+                  return true;
+                }
+                element = element.parentElement;
+              }
+            }
           }
-          if (element.tagName === 'EM' || element.tagName === 'I') {
-            return true;
-          }
-          element = element.parentElement;
-        }
-      }
-    }
-    return false;
-  }, searchText);
-
-  expect(isItalic, `Expected "${searchText}" to be italic`).toBe(true);
+          return false;
+        }, searchText),
+      { message: `Expected "${searchText}" to be italic` }
+    )
+    .toBe(true);
 }
 
 /**
  * Assert that text is underlined
  */
 export async function assertTextIsUnderlined(page: Page, searchText: string): Promise<void> {
-  const isUnderlined = await page.evaluate((text) => {
-    // Search only in editor content area
-    const contentArea =
-      document.querySelector('.ProseMirror') ||
-      document.querySelector('.docx-editor-pages') ||
-      document.querySelector('.docx-ai-editor');
-    if (!contentArea) return false;
+  // Poll: the visible pages re-render asynchronously after the PM transaction.
+  await expect
+    .poll(
+      () =>
+        page.evaluate((text) => {
+          // Search only in editor content area
+          const contentArea =
+            document.querySelector('.ProseMirror') ||
+            document.querySelector('.docx-editor-pages') ||
+            document.querySelector('.docx-ai-editor');
+          if (!contentArea) return false;
 
-    const walker = document.createTreeWalker(contentArea, NodeFilter.SHOW_TEXT, null);
+          const walker = document.createTreeWalker(contentArea, NodeFilter.SHOW_TEXT, null);
 
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text | null)) {
-      if (node.textContent?.includes(text)) {
-        let element = node.parentElement;
-        while (element) {
-          const style = window.getComputedStyle(element);
-          if (
-            style.textDecoration.includes('underline') ||
-            style.textDecorationLine.includes('underline')
-          ) {
-            return true;
+          let node: Text | null;
+          while ((node = walker.nextNode() as Text | null)) {
+            if (node.textContent?.includes(text)) {
+              let element = node.parentElement;
+              while (element) {
+                const style = window.getComputedStyle(element);
+                if (
+                  style.textDecoration.includes('underline') ||
+                  style.textDecorationLine.includes('underline')
+                ) {
+                  return true;
+                }
+                if (element.tagName === 'U') {
+                  return true;
+                }
+                element = element.parentElement;
+              }
+            }
           }
-          if (element.tagName === 'U') {
-            return true;
-          }
-          element = element.parentElement;
-        }
-      }
-    }
-    return false;
-  }, searchText);
-
-  expect(isUnderlined, `Expected "${searchText}" to be underlined`).toBe(true);
+          return false;
+        }, searchText),
+      { message: `Expected "${searchText}" to be underlined` }
+    )
+    .toBe(true);
 }
 
 /**
