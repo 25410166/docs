@@ -30,6 +30,7 @@
 import { createRoot } from 'react-dom/client';
 
 import { CasualEditor } from '../components/CasualEditor';
+import { applyCspNonce } from '../components/cspNonce';
 import { EmbedTransport } from '../embed/EmbedTransport';
 import { createIframeFileSource } from '../embed/IframeFileSource';
 import type { CasualApp } from '../embed/protocol';
@@ -44,6 +45,10 @@ interface EmbedUrlConfig {
   docId: string;
   /** Initial chrome shape. */
   viewMode: 'preview' | 'editor';
+  /** CSP nonce (without the `nonce-` prefix) to stamp onto stylesheets the
+   *  runtime injects, for strict-CSP (`style-src 'nonce-…'`) hosts. Empty when
+   *  the host has no strict style-src policy. */
+  cspNonce: string;
 }
 
 function parseUrlConfig(search: string): EmbedUrlConfig {
@@ -52,7 +57,8 @@ function parseUrlConfig(search: string): EmbedUrlConfig {
   const docId = params.get('docId') ?? '';
   const viewModeParam = params.get('viewMode');
   const viewMode: 'preview' | 'editor' = viewModeParam === 'editor' ? 'editor' : 'preview';
-  return { app, docId, viewMode };
+  const cspNonce = params.get('cspNonce') ?? '';
+  return { app, docId, viewMode, cspNonce };
 }
 
 export interface MountEmbeddedOptions {
@@ -72,6 +78,16 @@ export interface MountEmbeddedOptions {
 export function mountEmbedded(opts: MountEmbeddedOptions): void {
   const search = opts.search ?? (typeof window !== 'undefined' ? window.location.search : '');
   const config = parseUrlConfig(search);
+
+  // Strict-CSP hosts serve `style-src 'nonce-<value>'`, which blocks any
+  // stylesheet lacking a matching `nonce`. Stamp the nonce (threaded through
+  // the iframe URL by the wrapper) onto this iframe document's stylesheets
+  // — both those already present and any the editor injects while it mounts
+  // — before rendering, so parse-time `<style>` tags aren't dropped. No-op
+  // when no nonce was passed. Lives for the iframe's lifetime; no teardown.
+  if (typeof document !== 'undefined') {
+    applyCspNonce(document, config.cspNonce);
+  }
 
   const hostOrigin =
     opts.hostOrigin ??
