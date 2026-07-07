@@ -112,6 +112,13 @@ export interface CasualEditorProps {
   autosaveInterval?: number;
   /** Author used by comments + track-change attribution. */
   author?: string;
+  /**
+   * Document mode (SuperDoc vocabulary): `'editing'`, `'suggesting'`, or
+   * `'viewing'`. Forwarded to DocxEditor.documentMode.
+   */
+  documentMode?: DocxEditorProps['documentMode'];
+  /** Fires when the document mode changes (forwarded from DocxEditor). */
+  onModeChange?: DocxEditorProps['onModeChange'];
   /** Forwarded to DocxEditor.onSave for hosts that want a hook. */
   onSave?: DocxEditorProps['onSave'];
   /** Forwarded to DocxEditor.onSelectionChange — Drive uses this for the right-panel sync. */
@@ -184,6 +191,8 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       autosave = false,
       autosaveInterval = 30000,
       author,
+      documentMode,
+      onModeChange,
       onSave,
       onSelectionChange,
       onError,
@@ -363,6 +372,8 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
         comments={collabState ? collabComments : undefined}
         onCommentsChange={collabState ? handleCommentsChange : undefined}
         author={author}
+        documentMode={documentMode}
+        onModeChange={onModeChange}
         onSave={onSave}
         onSelectionChange={onSelectionChange}
         onError={onError}
