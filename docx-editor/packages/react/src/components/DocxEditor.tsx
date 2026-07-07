@@ -689,6 +689,14 @@ export interface DocxEditorProps {
   onCut?: () => void;
   /** Callback when content is pasted */
   onPaste?: () => void;
+  /**
+   * Document mode (SuperDoc vocabulary, matches the sheet SDK's `documentMode`):
+   * `'editing'` (direct edits), `'suggesting'` (track changes), or `'viewing'`
+   * (read-only). This is the preferred public name; it maps onto the same
+   * internal mechanism as `mode`. When both `documentMode` and `mode`/`readOnly`
+   * are supplied, `documentMode` wins.
+   */
+  documentMode?: EditorMode;
   /** Editor mode: 'editing' (direct edits), 'suggesting' (track changes), or 'viewing' (read-only). Default: 'editing' */
   mode?: EditorMode;
   /** Callback when the editing mode changes */
@@ -981,6 +989,15 @@ export interface DocxEditorRef {
     title: string;
     sections: Array<{ heading: string; level?: number; paragraphs?: string[] }>;
   }) => boolean;
+  /**
+   * Switch the document mode at runtime (SuperDoc vocabulary): `'editing'`,
+   * `'suggesting'`, or `'viewing'`. Fires `onModeChange`. In uncontrolled mode
+   * this updates internal state; when `documentMode`/`mode` is a controlled prop
+   * the host is expected to react to `onModeChange` and update the prop.
+   */
+  setDocumentMode: (mode: EditorMode) => void;
+  /** Read the current document mode (`'editing'` | `'suggesting'` | `'viewing'`). */
+  getDocumentMode: () => EditorMode;
 }
 
 /**
@@ -1703,6 +1720,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     onCopy: _onCopy,
     onCut: _onCut,
     onPaste: _onPaste,
+    documentMode,
     mode: modeProp,
     onModeChange,
     onCommentAdd,
@@ -1951,10 +1969,15 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     to: number;
   } | null>(null);
   const [addCommentYPosition, setAddCommentYPosition] = useState<number | null>(null);
-  const [editingModeInternal, setEditingModeInternal] = useState<EditorMode>(modeProp ?? 'editing');
-  const editingMode = modeProp ?? editingModeInternal;
+  // `documentMode` (SuperDoc vocabulary, sheet-SDK parity) is the preferred
+  // public name and wins over the legacy `mode` prop when both are set.
+  const controlledMode = documentMode ?? modeProp;
+  const [editingModeInternal, setEditingModeInternal] = useState<EditorMode>(
+    controlledMode ?? 'editing'
+  );
+  const editingMode = controlledMode ?? editingModeInternal;
   const setEditingMode = (mode: EditorMode) => {
-    if (!modeProp) setEditingModeInternal(mode);
+    if (!controlledMode) setEditingModeInternal(mode);
     onModeChange?.(mode);
   };
   // Refs so the global keydown listener can read latest without re-binding.
@@ -1966,8 +1989,11 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   useEffect(() => {
     setEditingModeRef.current = setEditingMode;
   });
-  // 'viewing' mode acts as read-only
-  const readOnly = readOnlyProp || editingMode === 'viewing';
+  // 'viewing' mode acts as read-only. When `documentMode` is explicitly set it
+  // is the single source of truth for editability, so it overrides the legacy
+  // `readOnly` prop (documentMode wins when both are supplied).
+  const readOnly =
+    documentMode != null ? editingMode === 'viewing' : readOnlyProp || editingMode === 'viewing';
 
   // Agent panel open state (uncontrolled fallback when `agentPanel.open` is undefined).
   const [agentPanelInternalOpen, setAgentPanelInternalOpen] = useState(false);
@@ -8596,6 +8622,11 @@ body { background: white; }
         view.dispatch(tr.scrollIntoView());
         return true;
       },
+
+      // Runtime document-mode switching (SuperDoc vocabulary). Reads/writes the
+      // latest value via refs so the handle needn't be re-created on mode change.
+      setDocumentMode: (mode) => setEditingModeRef.current(mode),
+      getDocumentMode: () => editingModeRef.current,
     };
     // Expose the same handle to the onReady effect below,
     // and register mutation methods with the DocOps bridge.
