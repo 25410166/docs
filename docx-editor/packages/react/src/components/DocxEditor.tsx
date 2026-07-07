@@ -74,6 +74,7 @@ import {
   API_KEY_STORAGE,
   type DocsBridgeActions,
 } from '../docops';
+import { withActionNotifier, type AiProp, type DocOpsAction } from '../docops/ai-prop';
 import { markdownToFragment } from '../lib/writer/markdownToFragment';
 import { AutosaveRestoreBanner } from './AutosaveRestoreBanner';
 import { writeAutosave, clearLegacyLocalStorageAutosave } from '../utils/autosave';
@@ -819,7 +820,19 @@ export interface DocxEditorProps {
    * stops the loop and tells the user. Defaults to 12.
    */
   docopsMaxToolRounds?: number;
+  /**
+   * Built-in DocOps AI assistant — the supported SDK surface (#269).
+   *
+   * `ai={{ enabled: true }}` unlocks the assistant panel without the legacy
+   * `window.__casualFeatures__.docops` global (kept as a deprecated fallback
+   * for one minor). `ai.transport` routes model calls (the explicit
+   * `docopsTransport` prop still wins when both are set), and `ai.onAction`
+   * fires after each document write the assistant performs.
+   */
+  ai?: AiProp;
 }
+
+export type { AiProp, DocOpsAction };
 
 /**
  * DocxEditor ref interface
@@ -1750,6 +1763,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     wordCompat = false,
     docopsTransport,
     docopsMaxToolRounds,
+    ai,
   },
   ref
 ) {
@@ -2826,6 +2840,23 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   useEffect(() => {
     docsBridgeRef.current?.setAiAuthor(author);
   }, [author]);
+
+  // DocOps AI availability. `ai.enabled` is the supported SDK switch (#269);
+  // the `window.__casualFeatures__.docops` global (read by `isDocOpsEnabled`)
+  // stays a deprecated fallback for one minor, alongside the desktop shell.
+  const docOpsEnabled = ai?.enabled === true || isDocOpsEnabled();
+
+  // Transport precedence: explicit `docopsTransport` prop → `ai.transport` →
+  // auto-selected. Resolved lazily at panel-mount time (see below).
+  const docOpsTransport = docopsTransport ?? ai?.transport;
+
+  // Wrap the bridge so `ai.onAction` fires after each write-tool run. The
+  // wrapper is a no-op passthrough when no callback is supplied.
+  const aiOnAction = ai?.onAction;
+  const notifyingBridge = useMemo<DocsBridge | null>(
+    () => (docsBridgeRef.current ? withActionNotifier(docsBridgeRef.current, aiOnAction) : null),
+    [aiOnAction]
+  );
 
   // Right-side panel mutex. Google Docs / Microsoft Word only ever
   // expose ONE right-edge panel at a time (Comments XOR Outline,
@@ -10450,14 +10481,15 @@ body { background: white; }
                     />
                   )}
 
-                  {/* DocOps AI panel — gated behind window.__casualFeatures__.docops.
+                  {/* DocOps AI panel — unlocked via the `ai` SDK prop (or the
+                      deprecated window.__casualFeatures__.docops global).
                       Uses the Anthropic API directly (user-supplied key) with the
                       JSON DocOps IR tool catalog. No WebLLM, no server inference. */}
-                  {showDocOpsPanel && isDocOpsEnabled() && docsBridgeRef.current && (
+                  {showDocOpsPanel && docOpsEnabled && notifyingBridge && (
                     <DocOpsPanel
-                      bridge={docsBridgeRef.current}
+                      bridge={notifyingBridge}
                       onClose={() => openRightPanel('none')}
-                      transport={docopsTransport ?? createDocOpsTransport()}
+                      transport={docOpsTransport ?? createDocOpsTransport()}
                       maxToolRounds={docopsMaxToolRounds}
                     />
                   )}
@@ -10485,9 +10517,9 @@ body { background: white; }
                       //   onToggleWriter={() => openRightPanel(showWritingAssistant ? 'none' : 'writer')}
                       //   chatVisible={showChatPanel}
                       //   onToggleChat={() => openRightPanel(showChatPanel ? 'none' : 'chat')}
-                      docopsVisible={isDocOpsEnabled() ? showDocOpsPanel : undefined}
+                      docopsVisible={docOpsEnabled ? showDocOpsPanel : undefined}
                       onToggleDocOps={
-                        isDocOpsEnabled()
+                        docOpsEnabled
                           ? () => openRightPanel(showDocOpsPanel ? 'none' : 'docops')
                           : undefined
                       }
