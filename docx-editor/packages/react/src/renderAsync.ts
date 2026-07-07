@@ -27,7 +27,14 @@
 
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { DocxEditor, type DocxEditorProps, type DocxEditorRef } from './components/DocxEditor';
+import {
+  DocxEditor,
+  type DocxEditorProps,
+  type DocxEditorRef,
+  type DocxEditorEventName,
+  type DocxEditorEvents,
+  type EditorMode,
+} from './components/DocxEditor';
 import type { DocxInput } from '@eigenpal/docx-core/utils';
 import type { Document } from '@eigenpal/docx-core/types/document';
 import type { EditorHandle } from '@eigenpal/docx-core';
@@ -40,7 +47,10 @@ export type RenderAsyncOptions = Omit<DocxEditorProps, 'documentBuffer' | 'docum
 
 /**
  * React-specific handle that extends the framework-agnostic EditorHandle
- * with zoom control.
+ * with zoom control plus the unified imperative surface (doc 38 §4) so the
+ * vanilla `renderAsync` mount reaches parity with the React `DocxEditorRef`:
+ * the `.on()/.off()` emitter, `executeCommand`, `getContent`/`setContent`,
+ * `undo`/`redo`, and `setDocumentMode`.
  */
 export interface DocxEditorHandle extends EditorHandle {
   /** Set zoom level (1.0 = 100%). */
@@ -49,6 +59,28 @@ export interface DocxEditorHandle extends EditorHandle {
   scrollToParaId: (paraId: string) => boolean;
   /** Scroll to a raw ProseMirror document position. */
   scrollToPosition: (pmPos: number) => void;
+  /**
+   * Subscribe to a canonical editor event (doc 38 §3). Returns a disposer that
+   * removes the listener. Mirrors {@link DocxEditorRef.on}.
+   */
+  on: <K extends DocxEditorEventName>(name: K, handler: DocxEditorEvents[K]) => () => void;
+  /** Remove a listener previously registered with {@link on}. */
+  off: <K extends DocxEditorEventName>(name: K, handler: DocxEditorEvents[K]) => void;
+  /**
+   * Execute a registered editor command by id (e.g. `'toggleBold'`). Resolves to
+   * whether the command applied; unknown ids resolve to `false`.
+   */
+  executeCommand: (id: string, params?: unknown) => Promise<boolean>;
+  /** Get the current document, or null before the editor has mounted. */
+  getContent: () => Document | null;
+  /** Replace the document with a pre-parsed one. */
+  setContent: (content: Document) => void;
+  /** Undo the last edit. Returns whether anything was undone. */
+  undo: () => boolean;
+  /** Redo the last undone edit. Returns whether anything was redone. */
+  redo: () => boolean;
+  /** Switch the document mode (`'editing'` | `'suggesting'` | `'viewing'`). */
+  setDocumentMode: (mode: EditorMode) => void;
 }
 
 /**
@@ -88,6 +120,18 @@ export function renderAsync(
       setZoom: (z) => ref.current?.setZoom(z),
       scrollToParaId: (paraId: string) => ref.current?.scrollToParaId(paraId) ?? false,
       scrollToPosition: (pmPos: number) => ref.current?.scrollToPosition(pmPos),
+      // Unified imperative surface (doc 38 §4) — delegate to the underlying ref
+      // so the vanilla mount matches the React DocxEditorRef. Each method
+      // no-ops with a safe default when the editor hasn't mounted yet.
+      on: (name, handler) => ref.current?.on(name, handler) ?? (() => {}),
+      off: (name, handler) => ref.current?.off(name, handler),
+      executeCommand: (id, params) =>
+        ref.current?.executeCommand(id, params) ?? Promise.resolve(false),
+      getContent: () => ref.current?.getContent() ?? null,
+      setContent: (content) => ref.current?.setContent(content),
+      undo: () => ref.current?.undo() ?? false,
+      redo: () => ref.current?.redo() ?? false,
+      setDocumentMode: (mode) => ref.current?.setDocumentMode(mode),
       destroy: () => {
         root?.unmount();
         root = null;

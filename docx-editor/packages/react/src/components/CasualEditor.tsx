@@ -92,12 +92,58 @@ export interface CasualEditorProps {
    * the wrapper enables Yjs collab — the editor renders with
    * `externalPlugins` from `useCollab` and `externalContent` true.
    * When omitted, the editor runs standalone (no collab plugins).
+   *
+   * @deprecated Use {@link collab} (doc 38 §6) — the declarative collab
+   * object shared with Casual Sheets. `backendUrl` stays as an alias:
+   * `backendUrl='wss://…'` is equivalent to `collab={{ server: 'wss://…',
+   * room: docId }}`. When both are given, `collab` wins.
    */
   backendUrl?: string;
+  /**
+   * Declarative collab config (doc 38 §6) — the single shape shared with
+   * Casual Sheets' `collab` prop. When present it drives the collab setup:
+   * `collab.server` is the WS/backend URL, `collab.room` is the room id
+   * (used instead of `docId` for presence / DocOps / the Share link), and
+   * `collab.user` is the presence identity. Omit for single-user.
+   *
+   * Takes precedence over the deprecated `backendUrl` / `user` pair when both
+   * are supplied. Byte load + autosave still key off `docId`; only the live
+   * collab room keys off `collab.room`.
+   */
+  collab?: {
+    /** Base WebSocket URL of the collab server, e.g. `wss://host/yjs`. */
+    server: string;
+    /** Room / document id for the live session. Falls back to `docId` when omitted upstream. */
+    room: string;
+    /** Presence identity for collab awareness (display name + cursor color). */
+    user?: { name: string; color: string };
+    /**
+     * Room password.
+     * @remarks Reserved for cross-SDK parity with Casual Sheets' `collab.password`
+     * (doc 38 §6). NOT yet wired — docs' `useCollab` path has no password handshake.
+     * TODO(docs#267): thread through once the docs collab client supports it.
+     */
+    password?: string;
+    /**
+     * Auth token for the Hocuspocus handshake.
+     * @remarks Reserved for parity with Sheets' `collab.token` (doc 38 §6). NOT yet
+     * wired in docs. TODO(docs#267): thread through the WS preflight.
+     */
+    token?: string;
+    /**
+     * `'view'` joins read-only; default `'write'`.
+     * @remarks Reserved for parity with Sheets' `collab.role` (doc 38 §6). NOT yet
+     * wired in docs. TODO(docs#267): map to the read-only document mode.
+     */
+    role?: 'view' | 'write';
+  };
   /**
    * Local user identity for collab awareness. Required when
    * `backendUrl` is set; ignored otherwise. Drive supplies the
    * signed-in user's display name + a per-user color.
+   *
+   * @deprecated Prefer `collab.user` (doc 38 §6). Still honored for the
+   * `backendUrl` path; `collab.user` wins when both are given.
    */
   user?: { name: string; color: string };
   /**
@@ -211,6 +257,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       fileSource,
       docId,
       backendUrl,
+      collab,
       user,
       autosave = false,
       autosaveInterval = 30000,
@@ -268,15 +315,23 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
     // Collab — opt-in via backendUrl
     // ---------------------------------------------------------------
 
+    // Reconcile the declarative `collab` object (doc 38 §6) with the legacy
+    // `backendUrl` / `user` pair. `collab` wins when both are supplied; the
+    // room defaults to `docId` so the byte-load path (which keys off `docId`)
+    // and the live session stay aligned unless the host overrides the room.
+    const collabBackend = collab?.server ?? backendUrl;
+    const collabRoom = collab?.room ?? docId;
+    const collabUser = collab?.user ?? user;
+
     // The hook MUST be called unconditionally to obey rules-of-hooks;
     // we pass sentinel values when collab is off and ignore the
     // returned plugins. The destructured plugins are an empty array
     // in standalone mode because we never wire them to DocxEditor.
     const collabState = useCollabSafe({
-      enabled: !!backendUrl,
-      backend: backendUrl ?? '',
-      room: docId,
-      user: user ?? { name: 'Anonymous', color: '#94a3b8' },
+      enabled: !!collabBackend,
+      backend: collabBackend ?? '',
+      room: collabRoom,
+      user: collabUser ?? { name: 'Anonymous', color: '#94a3b8' },
     });
 
     useEffect(() => {
@@ -411,7 +466,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
         features={features}
         editorExtensions={editorExtensions}
         renderTitleBarRight={renderCollabPresence}
-        docopsTransport={createDocOpsTransport({ collabWsUrl: backendUrl, room: docId })}
+        docopsTransport={createDocOpsTransport({ collabWsUrl: collabBackend, room: collabRoom })}
         ai={ai}
         {...docxEditorProps}
       />
@@ -436,7 +491,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
     // positioned, so it never disturbs the editor layout when closed.
     const shareDialog =
       collabState && !onShare ? (
-        <ShareDialog isOpen={shareOpen} onClose={() => setShareOpen(false)} roomId={docId} />
+        <ShareDialog isOpen={shareOpen} onClose={() => setShareOpen(false)} roomId={collabRoom} />
       ) : null;
 
     // In collab mode, show the default reconnecting/offline banner
