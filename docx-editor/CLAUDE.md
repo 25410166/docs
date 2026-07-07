@@ -336,22 +336,22 @@ Releases follow the canonical [`changesets/action@v1`](https://github.com/change
 After the 1.0 cut, two release lines exist:
 
 - **`main`** — 1.x line. New work targets here. See the Packages table below.
-- **`0.x`** — maintenance line for the pre-rename packages. Patch and minor only — **never major**. `@eigenpal/docx-editor-agents` is in `ignore` on `0.x`; the 1.x line owns that name.
+- **`0.x`** — maintenance line for the pre-rename package. Patch and minor only — **never major**. The 1.x line (`@casualoffice/docs`) owns the current published name.
 
-Both branches publish to npm's `latest` for their own package names — no dist-tag collision because the package names diverged at the rename. The release workflow listens on both branches; each maintains its own `.changeset/*.md` queue.
+Both branches publish to npm's `latest` for their own package name — no dist-tag collision because the name diverged at the rename. The release workflow listens on both branches; each maintains its own `.changeset/*.md` queue.
 
 Hotfixes → `0.x`. Everything else → `main`.
 
 ### Packages
 
-| Package                        | Path                 | Published?             |
-| ------------------------------ | -------------------- | ---------------------- |
-| `@casualoffice/docs`     | `packages/react`     | ✅                     |
-| `@eigenpal/docx-editor-agents` | `packages/agent-use` | ✅                     |
-| `@eigenpal/docx-core`          | `packages/core`      | ❌ private             |
-| `@eigenpal/docx-editor-vue`    | `packages/vue`       | ❌ private / community |
+| Package                     | Path              | Published?             |
+| --------------------------- | ----------------- | ---------------------- |
+| `@casualoffice/docs`        | `packages/react`  | ✅                     |
+| `@casualoffice/docops`      | `packages/docops` | ❌ private             |
+| `@eigenpal/docx-core`       | `packages/core`   | ❌ private             |
+| `@eigenpal/docx-editor-vue` | `packages/vue`    | ❌ private / community |
 
-The two published packages are in a **fixed group** in `.changeset/config.json` — they always ship the same version. A changeset only needs to declare the bump for one; the other follows automatically.
+`@casualoffice/docs` (`packages/react`) is the **only published package**. There is no fixed group — `.changeset/config.json` has `"fixed": []` — so a changeset simply declares the bump for `@casualoffice/docs`. The former AGPL `@eigenpal/docx-editor-agents` package (`packages/agent-use`) has been **removed** from the fork; do not reference or reintroduce it.
 
 ### Author flow (every contributor, every code PR)
 
@@ -373,7 +373,7 @@ The frontmatter must use the **full npm package name**, not the repo name or a g
 ---
 ```
 
-Only `@casualoffice/docs` needs to be listed — the fixed group in `.changeset/config.json` auto-bumps `@eigenpal/docx-editor-agents` to match. Always run `bun changeset` rather than hand-writing the file; the interactive prompt picks valid names from the workspace. A wrong name (e.g. bare `docx-editor`) does not fail the PR's CI but **crashes the post-merge Release workflow** with `Found changeset X for package Y which is not in the workspace`, blocking all releases until someone edits the bad changeset.
+`@casualoffice/docs` is the only name to list — it is the single published package. Always run `bun changeset` rather than hand-writing the file; the interactive prompt picks valid names from the workspace. A wrong name (e.g. bare `docx-editor`) does not fail the PR's CI but **crashes the post-merge Release workflow** with `Found changeset X for package Y which is not in the workspace`, blocking all releases until someone edits the bad changeset.
 
 #### Bump levels (semver)
 
@@ -408,13 +408,13 @@ That's the entire release. One PR merge.
 
 ### First-time setup (already configured, documented for future reference)
 
-| Where                    | What                                                                                                                                        |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| npmjs.com                | Trusted Publisher configured for both packages → repo `eigenpal/docx-editor`, workflow `release.yml`                                        |
-| `package.json`           | `"publishConfig": { "access": "public" }` on each published package (already set)                                                           |
-| `.changeset/config.json` | `"access": "public"`; `fixed: [["@casualoffice/docs", "@eigenpal/docx-editor-agents"]]` (already set)                                 |
-| GitHub perms             | Settings → Actions → General → Workflow permissions = **Read and write**, **Allow GitHub Actions to create and approve pull requests** = on |
-| GitHub secrets           | `SLACK_WEBHOOK_URL` (optional — release notifications)                                                                                      |
+| Where                    | What                                                                                                                                                            |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| npmjs.com                | Trusted Publisher configured for `@casualoffice/docs` → repo `CasualOffice/docs` (confirm the exact release-workflow filename in the repo before relying on it) |
+| `package.json`           | `"publishConfig": { "access": "public" }` on the published package (already set)                                                                                |
+| `.changeset/config.json` | `"access": "public"`; `"fixed": []` (no fixed group); `"ignore": ["@eigenpal/docx-editor-vue", "@eigenpal/docx-core"]` (already set)                            |
+| GitHub perms             | Settings → Actions → General → Workflow permissions = **Read and write**, **Allow GitHub Actions to create and approve pull requests** = on                     |
+| GitHub secrets           | `SLACK_WEBHOOK_URL` (optional — release notifications)                                                                                                          |
 
 ### Manual / local releases (don't, but if you must)
 
