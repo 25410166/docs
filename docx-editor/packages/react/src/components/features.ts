@@ -17,6 +17,8 @@
  */
 
 import { createContext } from 'react';
+import { keymap } from 'prosemirror-keymap';
+import type { Command, Plugin } from 'prosemirror-state';
 
 /**
  * The published DocxEditor feature-id catalog. Split into coarse chrome regions
@@ -83,3 +85,79 @@ export const EMPTY_DISABLED_FEATURES: ReadonlySet<string> = new Set<string>();
  * buttons exist. Default is the empty set (everything enabled).
  */
 export const DisabledFeaturesContext = createContext<ReadonlySet<string>>(EMPTY_DISABLED_FEATURES);
+
+/**
+ * Feature ids that gate an editing *command*, not just a toolbar button. Each
+ * entry lists the command-registry names (what `DocxEditorRef.executeCommand`
+ * routes through) and the keyboard shortcut keys (what the PM keymap binds) the
+ * feature owns. Disabling the feature must veto BOTH — otherwise hiding the
+ * button still leaves Ctrl+B and `executeCommand('bold')` live (docs#289).
+ *
+ * Only features with a real command/keymap appear here; a UI-only feature such
+ * as `paintFormat` (format painter lives entirely in React) has nothing to
+ * veto and is intentionally absent.
+ */
+export const FEATURE_COMMAND_BINDINGS: Record<
+  string,
+  { readonly commands: readonly string[]; readonly keys: readonly string[] }
+> = {
+  bold: { commands: ['toggleBold'], keys: ['Mod-b'] },
+  italic: { commands: ['toggleItalic'], keys: ['Mod-i'] },
+  underline: { commands: ['toggleUnderline'], keys: ['Mod-u'] },
+  strikethrough: { commands: ['toggleStrike'], keys: ['Mod-Shift-x'] },
+};
+
+/** Reverse index: command-registry name → the feature id that governs it. */
+const COMMAND_TO_FEATURE: ReadonlyMap<string, string> = (() => {
+  const map = new Map<string, string>();
+  for (const [featureId, { commands }] of Object.entries(FEATURE_COMMAND_BINDINGS)) {
+    for (const command of commands) map.set(command, featureId);
+  }
+  return map;
+})();
+
+/**
+ * Whether a command should be vetoed because its feature is disabled. Accepts
+ * either the feature id itself (`bold`) or a command-registry name
+ * (`toggleBold`), so both `executeCommand('bold')` and the canonical
+ * `executeCommand('toggleBold')` are covered.
+ */
+export function isCommandVetoed(
+  disabled: ReadonlySet<string>,
+  commandOrFeatureId: string
+): boolean {
+  if (disabled.size === 0) return false;
+  if (disabled.has(commandOrFeatureId)) return true;
+  const featureId = COMMAND_TO_FEATURE.get(commandOrFeatureId);
+  return featureId != null && disabled.has(featureId);
+}
+
+/**
+ * Build the key → veto-command map for {@link createFeatureVetoPlugin}. Each
+ * binding returns `true` to consume the key as a no-op while its feature is
+ * disabled, or `false` to fall through to the real formatting command when
+ * enabled. Exposed for unit testing the veto contract without a live view.
+ */
+export function buildFeatureVetoBindings(
+  getDisabled: () => ReadonlySet<string>
+): Record<string, Command> {
+  const bindings: Record<string, Command> = {};
+  for (const [featureId, { keys }] of Object.entries(FEATURE_COMMAND_BINDINGS)) {
+    const veto: Command = () => getDisabled().has(featureId);
+    for (const key of keys) bindings[key] = veto;
+  }
+  return bindings;
+}
+
+/**
+ * A ProseMirror keymap plugin that swallows a feature's keyboard shortcut while
+ * that feature is disabled. Bindings read the live disabled set through
+ * `getDisabled` (a ref-backed getter) so the plugin — and therefore the editor
+ * state — stays stable across `features` prop changes.
+ *
+ * Placed ahead of the extension keymaps (external plugins run first), a vetoed
+ * key is consumed before the real formatting command sees it.
+ */
+export function createFeatureVetoPlugin(getDisabled: () => ReadonlySet<string>): Plugin {
+  return keymap(buildFeatureVetoBindings(getDisabled));
+}
