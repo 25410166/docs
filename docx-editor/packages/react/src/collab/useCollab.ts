@@ -24,7 +24,7 @@
  *   - When peers' awareness picks up users, remote cursors light up.
  *   - On unmount, provider is destroyed and the Y.Doc closed.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { ySyncPlugin, yCursorPlugin, yUndoPlugin, ySyncPluginKey } from 'y-prosemirror';
@@ -52,6 +52,13 @@ export interface CollabState {
   peers: CollabPeer[];
   /** True while the server-side AI orchestrator is running a tool loop for this room. */
   aiIsEditing: boolean;
+  /**
+   * Display name of the peer who triggered the running AI request, when the
+   * server reports it and it isn't the local user. `null` when no name is
+   * known or the local user is the one asking — the UI then shows a generic
+   * "AI is editing" chip instead of naming the requester.
+   */
+  aiEditingBy: string | null;
   /** The Yjs awareness instance — exposed for advanced consumers. */
   awareness: HocuspocusProvider['awareness'];
   /**
@@ -227,6 +234,13 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
   const [status, setStatus] = useState<CollabStatus>('connecting');
   const [peers, setPeers] = useState<CollabPeer[]>([]);
   const [aiIsEditing, setAiIsEditing] = useState(false);
+  const [aiEditingBy, setAiEditingBy] = useState<string | null>(null);
+
+  // Keep the latest local name reachable from the stateless handler
+  // (which is bound once, on `provider`) so we can filter out the local
+  // user without re-subscribing on every rename.
+  const userNameRef = useRef(user.name);
+  userNameRef.current = user.name;
 
   // Publish local-user identity into awareness so peers can render
   // avatars + remote cursors. Re-runs on rename / recolor without
@@ -260,9 +274,19 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
 
     const onStateless = ({ payload }: { payload: string }) => {
       try {
-        const msg = JSON.parse(payload) as { type?: string; status?: string };
+        const msg = JSON.parse(payload) as {
+          type?: string;
+          status?: string;
+          userName?: string;
+        };
         if (msg.type === 'ai-status') {
-          setAiIsEditing(msg.status === 'thinking');
+          const thinking = msg.status === 'thinking';
+          setAiIsEditing(thinking);
+          // Name the requester only when it's someone else — the local user
+          // already knows they kicked off the request.
+          const by =
+            thinking && msg.userName && msg.userName !== userNameRef.current ? msg.userName : null;
+          setAiEditingBy(by);
         }
       } catch {
         /* ignore non-JSON stateless messages */
@@ -295,6 +319,7 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
     status,
     peers,
     aiIsEditing,
+    aiEditingBy,
     awareness: provider.awareness,
     metaMap,
     footnotesMap,

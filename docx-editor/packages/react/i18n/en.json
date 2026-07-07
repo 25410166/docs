@@ -1069,5 +1069,9 @@
     "copied": "Copied",
     "secureNote": "The role is set by a link parameter today. Server-enforced secure links are coming soon.",
     "done": "Done"
+  },
+  "presence": {
+    "aiEditing": "AI is editing…",
+    "askingAi": "{name} is asking AI…"
   }
 }
