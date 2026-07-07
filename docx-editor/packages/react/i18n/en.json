@@ -1056,5 +1056,18 @@
       "translate": "Translate to Spanish",
       "summarize": "Summarize this"
     }
+  },
+  "share": {
+    "title": "Share this document",
+    "description": "Anyone with the link can join this live document at the role you pick.",
+    "roleLabel": "Anyone with the link can",
+    "roleView": "View only",
+    "roleComment": "Comment",
+    "roleEdit": "Edit",
+    "linkLabel": "Share link",
+    "copy": "Copy",
+    "copied": "Copied",
+    "secureNote": "The role is set by a link parameter today. Server-enforced secure links are coming soon.",
+    "done": "Done"
   }
 }

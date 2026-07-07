@@ -53,6 +53,7 @@ import {
 
 import { DocxEditor, type DocxEditorProps, type DocxEditorRef } from './DocxEditor';
 import { PresenceCluster } from './PresenceCluster';
+import { ShareDialog } from './ShareDialog';
 import { createDocOpsTransport } from '../docops';
 import { createEmptyDocument } from '@eigenpal/docx-core/utils';
 import type { Document } from '@eigenpal/docx-core/types/document';
@@ -129,10 +130,11 @@ export interface CasualEditorProps {
    */
   onCollabState?: (state: CollabState) => void;
   /**
-   * Share action for the collab presence cluster. When set (and
-   * collab is active), the title-bar PresenceCluster renders a
-   * Share button that invokes this. Omit to hide the button — the
-   * wrapper never invents a share backend.
+   * Share action for the collab presence cluster. When collab is
+   * active the title-bar PresenceCluster always shows a Share button;
+   * passing `onShare` overrides its default behaviour (which opens the
+   * wrapper's built-in ShareDialog — a room link + view/comment/edit
+   * role picker) with the host's own flow.
    */
   onShare?: () => void;
   /** Custom render override for the loading state. Default is a centered "Loading…" string. */
@@ -278,10 +280,17 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       [collabState]
     );
 
+    // Built-in share surface. When collab is active the title-bar Share
+    // button opens the wrapper's own ShareDialog (a room link + role picker);
+    // a host that passes `onShare` overrides that with its own flow. Gated on
+    // collab so standalone docs never show a Share affordance.
+    const [shareOpen, setShareOpen] = useState(false);
+    const handleShare = onShare ?? (() => setShareOpen(true));
+
     // Live presence in the title bar — avatar stack + room-status badge
-    // (+ optional Share). Only mounted when collab is active, so standalone
-    // docs keep the plain title bar. Fed by the same peers + status the ref
-    // exposes via collabPeers()/collabStatus().
+    // (+ Share). Only mounted when collab is active, so standalone docs keep
+    // the plain title bar. Fed by the same peers + status the ref exposes via
+    // collabPeers()/collabStatus().
     const renderCollabPresence = collabState
       ? () => (
           <PresenceCluster
@@ -291,7 +300,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
               active: true,
             }))}
             status={collabState.status}
-            onShare={onShare}
+            onShare={handleShare}
           />
         )
       : undefined;
@@ -377,6 +386,14 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       </SigningProvider>
     );
 
+    // Built-in share dialog — rendered only for the wrapper's own Share
+    // flow (collab active, host didn't supply its own `onShare`). Fixed-
+    // positioned, so it never disturbs the editor layout when closed.
+    const shareDialog =
+      collabState && !onShare ? (
+        <ShareDialog isOpen={shareOpen} onClose={() => setShareOpen(false)} roomId={docId} />
+      ) : null;
+
     // In collab mode, show the default reconnecting/offline banner
     // above the editor whenever the session isn't connected. Hosts
     // that render their own indicator can ignore it — the strip only
@@ -387,11 +404,17 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
         <div style={bannerLayoutStyle}>
           <ReconnectBanner status={collabState.status} />
           <div style={bannerBodyStyle}>{content}</div>
+          {shareDialog}
         </div>
       );
     }
 
-    return content;
+    return (
+      <>
+        {content}
+        {shareDialog}
+      </>
+    );
   }
 );
 
