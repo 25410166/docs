@@ -125,9 +125,9 @@ export interface CasualEditorProps {
      */
     password?: string;
     /**
-     * Auth token for the Hocuspocus handshake.
-     * @remarks Reserved for parity with Sheets' `collab.token` (doc 38 §6). NOT yet
-     * wired in docs. TODO(docs#267): thread through the WS preflight.
+     * Auth token for the Hocuspocus handshake — passed to the provider's
+     * `onAuthenticate` hook. Hosts with a JWT-protected collab server (e.g.
+     * Drive mints a per-file room token) supply it here.
      */
     token?: string;
     /**
@@ -322,6 +322,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
     const collabBackend = collab?.server ?? backendUrl;
     const collabRoom = collab?.room ?? docId;
     const collabUser = collab?.user ?? user;
+    const collabToken = collab?.token;
 
     // The hook MUST be called unconditionally to obey rules-of-hooks;
     // we pass sentinel values when collab is off and ignore the
@@ -332,6 +333,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       backend: collabBackend ?? '',
       room: collabRoom,
       user: collabUser ?? { name: 'Anonymous', color: '#94a3b8' },
+      token: collabToken,
     });
 
     useEffect(() => {
@@ -541,6 +543,7 @@ function useCollabSafe(args: {
   backend: string;
   room: string;
   user: { name: string; color: string };
+  token?: string;
 }): CollabState | null {
   if (!args.enabled) {
     // Hook order is fixed for the lifetime of the component — if
@@ -549,7 +552,12 @@ function useCollabSafe(args: {
     return null;
   }
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  return useCollab({ backend: args.backend, room: args.room, user: args.user });
+  return useCollab({
+    backend: args.backend,
+    room: args.room,
+    user: args.user,
+    token: args.token,
+  });
 }
 
 // Flex-column wrapper used only when the reconnect banner is visible,
