@@ -115,7 +115,7 @@ import {
   type CaretPosition,
 } from '@eigenpal/docx-core/layout-bridge';
 import { findWordBoundaries } from '@eigenpal/docx-core/utils';
-import { emuToPixels, pixelsToEmu } from '@eigenpal/docx-core/utils';
+import { emuToPixels, pixelsToEmu, getGoogleFontEquivalent } from '@eigenpal/docx-core/utils';
 
 // Layout painter
 import { LayoutPainter, type BlockLookup } from '@eigenpal/docx-core/layout-painter';
@@ -1437,6 +1437,117 @@ function isWithinSidebar(target: EventTarget | null): boolean {
   return !!(el?.closest('.docx-comments-sidebar') || el?.closest('.docx-unified-sidebar'));
 }
 
+// =============================================================================
+// FONT-LOAD RELAYOUT (issue #303)
+// =============================================================================
+
+/**
+ * Trailing debounce for coalescing a burst of font `loadingdone` events into a
+ * single relayout. A document that pulls in ~20 @font-face subsets plus the
+ * Material Symbols icon font fires many events over a second or two; without
+ * coalescing each one triggered a synchronous, cache-nuking full relayout
+ * (O(K×N) — visible as click-time flicker, and an OOM on Linux where the font
+ * set is larger and the Google CDN is disabled so subsets keep retrying).
+ */
+const FONT_RELAYOUT_DEBOUNCE_MS = 150;
+
+/** Caret height as a multiple of the run's font-size (≈ ascent + descent). */
+const CARET_HEIGHT_RATIO = 1.2;
+
+/** Fallback caret font-size in px (12pt) when none can be read from the DOM. */
+const DEFAULT_CARET_FONT_PX = 16;
+
+/** Normalise a font family for set membership: strip quotes, trim, lowercase. */
+function normalizeFamily(name: string): string {
+  return name.replace(/['"]/g, '').trim().toLowerCase();
+}
+
+/**
+ * Collect the set of font families the document can actually paint — the
+ * original DOCX names plus their bundled/Google equivalents (e.g. Calibri and
+ * Carlito). Used to gate the font-load relayout so icon/UI-chrome font events
+ * (Material Symbols, app UI) — which never affect body-text measurement — don't
+ * trigger a relayout. Walks tables recursively.
+ */
+function collectDocFontFamilies(blocks: FlowBlock[]): Set<string> {
+  const set = new Set<string>();
+  const add = (fam?: string) => {
+    if (!fam) return;
+    const norm = normalizeFamily(fam);
+    if (!norm) return;
+    set.add(norm);
+    set.add(normalizeFamily(getGoogleFontEquivalent(fam)));
+  };
+  const walk = (bs: FlowBlock[]): void => {
+    for (const block of bs) {
+      if (block.kind === 'paragraph') {
+        add(block.attrs?.defaultFontFamily);
+        for (const run of block.runs) {
+          if ('fontFamily' in run) add(run.fontFamily);
+        }
+      } else if (block.kind === 'table') {
+        for (const row of block.rows) {
+          for (const cell of row.cells) walk(cell.blocks);
+        }
+      }
+    }
+  };
+  walk(blocks);
+  return set;
+}
+
+/**
+ * True when at least one just-loaded font face belongs to a family the document
+ * uses. When the document set is empty (initial load, before blocks exist) or
+ * the faces can't be identified, returns true so we stay correct and relayout.
+ */
+function facesAffectDocument(
+  faces: ReadonlyArray<FontFace> | undefined,
+  docFamilies: Set<string>
+): boolean {
+  if (docFamilies.size === 0) return true;
+  if (!faces || faces.length === 0) return true;
+  for (const face of faces) {
+    if (docFamilies.has(normalizeFamily(face.family))) return true;
+  }
+  return false;
+}
+
+/** Read a rendered font-size (px, pre-transform) from an element. */
+function readFontSizePx(el: Element | null, fallback: number = DEFAULT_CARET_FONT_PX): number {
+  if (!el) return fallback;
+  const view = el.ownerDocument?.defaultView;
+  if (!view) return fallback;
+  const px = parseFloat(view.getComputedStyle(el).fontSize);
+  return Number.isFinite(px) && px > 0 ? px : fallback;
+}
+
+/**
+ * Caret geometry sized to the run at the caret, not the full line box. At
+ * line-spacing > 1 the line box is 1.5–2× the glyph height, and a line can hold
+ * a taller neighbouring run — using `lineEl.offsetHeight` for the caret height
+ * made the caret that much too tall (issue #303). Height ≈ 1.2× the caret run's
+ * font-size; the caret is vertically centred within the line box. All values in
+ * layout (pre-zoom-transform) px, matching the existing overlay coordinate space.
+ */
+function caretYAndHeight(
+  fallbackTopClient: number,
+  lineEl: HTMLElement | null,
+  overlayRect: DOMRect,
+  currentZoom: number,
+  fontSizePx: number
+): { y: number; height: number } {
+  const height = fontSizePx * CARET_HEIGHT_RATIO;
+  if (lineEl) {
+    const lineRect = lineEl.getBoundingClientRect();
+    const lineTop = (lineRect.top - overlayRect.top) / currentZoom;
+    // offsetHeight is the untransformed layout height, already in layout px.
+    const lineHeight = lineEl.offsetHeight;
+    return { y: lineTop + Math.max(0, lineHeight - height) / 2, height };
+  }
+  return { y: (fallbackTopClient - overlayRect.top) / currentZoom, height };
+}
+
 /**
  * PagedEditor - Main paginated editing component.
  */
@@ -2407,13 +2518,19 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
               const spanRect = spanEl.getBoundingClientRect();
               const pageEl = spanEl.closest('.layout-page');
               const pageIndex = pageEl ? Number((pageEl as HTMLElement).dataset.pageNumber) - 1 : 0;
-              const lineEl = spanEl.closest('.layout-line');
-              const lineHeight = lineEl ? (lineEl as HTMLElement).offsetHeight : 16;
+              const lineEl = spanEl.closest('.layout-line') as HTMLElement | null;
+              const { y, height } = caretYAndHeight(
+                spanRect.top,
+                lineEl,
+                overlayRect,
+                currentZoom,
+                readFontSizePx(spanEl)
+              );
 
               return {
                 x: (spanRect.left - overlayRect.left) / currentZoom,
-                y: (spanRect.top - overlayRect.top) / currentZoom,
-                height: lineHeight,
+                y,
+                height,
                 pageIndex,
               };
             }
@@ -2442,14 +2559,20 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
             const pageEl = spanEl.closest('.layout-page');
             const pageIndex = pageEl ? Number((pageEl as HTMLElement).dataset.pageNumber) - 1 : 0;
 
-            // Get line height from the line element or use default
-            const lineEl = spanEl.closest('.layout-line');
-            const lineHeight = lineEl ? (lineEl as HTMLElement).offsetHeight : 16;
+            // Caret height tracks the run's font, not the full line box.
+            const lineEl = spanEl.closest('.layout-line') as HTMLElement | null;
+            const { y, height } = caretYAndHeight(
+              rangeRect.top,
+              lineEl,
+              overlayRect,
+              currentZoom,
+              readFontSizePx(spanEl)
+            );
 
             return {
               x: (rangeRect.left - overlayRect.left) / currentZoom,
-              y: (rangeRect.top - overlayRect.top) / currentZoom,
-              height: lineHeight,
+              y,
+              height,
               pageIndex,
             };
           }
@@ -2468,13 +2591,22 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
             const runRect = emptyRun.getBoundingClientRect();
             const pageEl = paragraph.closest('.layout-page');
             const pageIndex = pageEl ? Number((pageEl as HTMLElement).dataset.pageNumber) - 1 : 0;
-            const lineEl = emptyRun.closest('.layout-line');
-            const lineHeight = lineEl ? (lineEl as HTMLElement).offsetHeight : 16;
+            const lineEl = emptyRun.closest('.layout-line') as HTMLElement | null;
+            // Empty paragraph: size the caret to the paragraph's resolved run
+            // font (from the empty run, falling back to the paragraph), not 16px.
+            const fontSizePx = readFontSizePx(emptyRun, readFontSizePx(paragraph));
+            const { y, height } = caretYAndHeight(
+              runRect.top,
+              lineEl,
+              overlayRect,
+              currentZoom,
+              fontSizePx
+            );
 
             return {
               x: (runRect.left - overlayRect.left) / currentZoom,
-              y: (runRect.top - overlayRect.top) / currentZoom,
-              height: lineHeight,
+              y,
+              height,
               pageIndex,
             };
           }
@@ -4513,25 +4645,61 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
       [runLayoutPipeline, updateSelectionOverlay, readOnly]
     );
 
-    // Re-layout when web fonts finish loading to fix measurements that were
-    // computed against fallback fonts during initial render.
-    // Uses FontFaceSet.onloadingdone to detect when new fonts complete loading.
+    // Latest scheduleLayout + the document's font-family set, read from the
+    // long-lived font-load listener below without re-subscribing on every
+    // render (the effect deps must stay [] so we don't tear down/re-add the
+    // listener mid-session and miss lazily-loaded weight/style variants).
+    const scheduleLayoutRef = useRef(scheduleLayout);
+    const docFontFamiliesRef = useRef<Set<string>>(new Set());
     useEffect(() => {
-      const handleFontsLoaded = () => {
+      scheduleLayoutRef.current = scheduleLayout;
+    }, [scheduleLayout]);
+    useEffect(() => {
+      docFontFamiliesRef.current = collectDocFontFamilies(blocks);
+    }, [blocks]);
+
+    // Re-layout when web fonts finish loading, so measurements computed against
+    // fallback fonts during initial render are corrected once the real glyphs
+    // decode. FontFaceSet fires `loadingdone` once per completed batch of faces
+    // — for EVERY font: the ~20 @font-face body-font variants, the Material
+    // Symbols icon font, and UI-chrome fonts, plus each weight/style variant
+    // separately. The previous handler ran a synchronous, cache-nuking full
+    // relayout per event: K faces = K re-measures + K page rebuilds (O(K×N)),
+    // visible as click-time flicker and, on Linux (larger font set + Google CDN
+    // disabled so subsets keep retrying), an OOM (issue #303).
+    //
+    // Instead: (1) gate out faces the document doesn't use — drops all
+    // icon/UI-font events; (2) coalesce a burst of relevant events into a single
+    // trailing relayout via debounce + rAF; (3) clear caches once per flush, not
+    // per event. Kept as a session-long subscription (not a one-shot
+    // `fonts.ready`) because bold/italic variants load lazily the first time
+    // such a run is painted, well after the initial settle.
+    useEffect(() => {
+      let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const flush = () => {
+        debounceTimer = null;
         const view = hiddenPMRef.current?.getView();
-        if (view) {
-          // Clear all cached measurements — font metrics have changed
-          resetCanvasContext();
-          clearAllCaches();
-          runLayoutPipeline(view.state);
-          updateSelectionOverlay(view.state);
-        }
+        if (!view) return;
+        // Font metrics changed — drop cached measurements once, then re-measure.
+        resetCanvasContext();
+        clearAllCaches();
+        // scheduleLayout coalesces via rAF; the layout→overlay effect refreshes
+        // the caret/selection against fresh geometry once the pipeline runs.
+        scheduleLayoutRef.current(view.state);
       };
 
-      // Listen for font loading completion events
+      const handleFontsLoaded = (event: Event) => {
+        const faces = (event as FontFaceSetLoadEvent).fontfaces;
+        if (!facesAffectDocument(faces, docFontFamiliesRef.current)) return;
+        if (debounceTimer !== null) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(flush, FONT_RELAYOUT_DEBOUNCE_MS);
+      };
+
       window.document.fonts.addEventListener('loadingdone', handleFontsLoaded);
       return () => {
         window.document.fonts.removeEventListener('loadingdone', handleFontsLoaded);
+        if (debounceTimer !== null) clearTimeout(debounceTimer);
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
