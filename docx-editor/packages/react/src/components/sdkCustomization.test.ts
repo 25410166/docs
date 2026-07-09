@@ -18,6 +18,7 @@ import {
   isFeatureEnabled,
   isCommandVetoed,
   buildFeatureVetoBindings,
+  resolveChromeVisibility,
 } from './features';
 import { resolveEditorExtensionPlugins, type EditorExtension } from './editorExtensions';
 
@@ -54,6 +55,65 @@ describe('features flag-map (docs#272)', () => {
   it('an empty / missing map disables nothing', () => {
     expect(disabledFeatureSet(undefined).size).toBe(0);
     expect(disabledFeatureSet({}).size).toBe(0);
+  });
+});
+
+describe('embedded chrome — toolbar without the app shell (doc 39)', () => {
+  // Mirrors the `showToolbar` default the DocxEditor prop destructure encodes
+  // (`chrome === 'none' ? false : true`) so the fallback matches the component.
+  const toolbarFallback = (chrome: string | undefined) => chrome !== 'none';
+
+  it('chrome:"embedded" shows the formatting toolbar but hides title bar + menu bar', () => {
+    const v = resolveChromeVisibility('embedded', undefined, toolbarFallback('embedded'));
+    expect(v.toolbar).toBe(true); // formatting toolbar stays
+    expect(v.titleBar).toBe(false); // logo + document name + menus gone
+    expect(v.menuBar).toBe(false); // File/Edit/… menus (and About/Help) gone
+    expect(v.appShellHidden).toBe(true); // → suppress Cmd+O / Cmd+N
+  });
+
+  it('chrome:"full" (and default) keeps the whole shell', () => {
+    for (const chrome of ['full', undefined] as const) {
+      const v = resolveChromeVisibility(chrome, undefined, toolbarFallback(chrome));
+      expect(v.toolbar).toBe(true);
+      expect(v.titleBar).toBe(true);
+      expect(v.menuBar).toBe(true);
+      expect(v.appShellHidden).toBe(false);
+    }
+  });
+
+  it('chrome:"minimal" keeps the shell (only "embedded" hides it)', () => {
+    const v = resolveChromeVisibility('minimal', undefined, toolbarFallback('minimal'));
+    expect(v.titleBar).toBe(true);
+    expect(v.menuBar).toBe(true);
+    expect(v.appShellHidden).toBe(false);
+  });
+
+  it('features={{ titleBar:false, menuBar:false }} hides the shell in any preset, toolbar stays', () => {
+    const v = resolveChromeVisibility('full', { titleBar: false, menuBar: false }, true);
+    expect(v.toolbar).toBe(true);
+    expect(v.titleBar).toBe(false);
+    expect(v.menuBar).toBe(false);
+    expect(v.appShellHidden).toBe(true);
+  });
+
+  it('features can keep the title row but drop only the menus (title bar shown, appShell not "hidden")', () => {
+    const v = resolveChromeVisibility('full', { menuBar: false }, true);
+    expect(v.titleBar).toBe(true);
+    expect(v.menuBar).toBe(false);
+    // Title row still present → not the full embedded shell, so Cmd+O/N stay.
+    expect(v.appShellHidden).toBe(false);
+  });
+
+  it('features override the embedded default — a host can force the shell back on', () => {
+    const v = resolveChromeVisibility('embedded', { titleBar: true, menuBar: true }, true);
+    expect(v.titleBar).toBe(true);
+    expect(v.menuBar).toBe(true);
+    expect(v.appShellHidden).toBe(false);
+  });
+
+  it('chrome:"none" also hides the toolbar (unchanged behavior)', () => {
+    const v = resolveChromeVisibility('none', undefined, toolbarFallback('none'));
+    expect(v.toolbar).toBe(false);
   });
 });
 

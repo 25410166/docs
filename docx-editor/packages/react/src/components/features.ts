@@ -29,6 +29,14 @@ import type { Command, Plugin } from 'prosemirror-state';
 export const DOCX_FEATURE_IDS = [
   // ── Coarse chrome regions (deprecated show* booleans map to these) ──
   'toolbar',
+  // The app-shell rows that sit above the formatting toolbar. Gated
+  // independently of `toolbar` so an embedding host can hide the shell
+  // (logo + document name + menus + About/Help) while keeping the
+  // formatting toolbar (doc 39 — embedded-mode contract). `titleBar` is the
+  // whole top row (logo/name/menus); `menuBar` is just the File/Edit/… menus
+  // inside it, so a host can keep the title row but drop the menus.
+  'titleBar',
+  'menuBar',
   'panelRail',
   'statusBar',
   'zoomControl',
@@ -63,6 +71,48 @@ export function isFeatureEnabled(
     return features[id];
   }
   return fallback;
+}
+
+/**
+ * Resolved visibility of the top chrome rows for a `chrome` preset + `features`
+ * overrides (doc 39 — embedded-mode contract). The formatting toolbar and the
+ * app shell (title bar + menu bar) are gated *independently*: the `"embedded"`
+ * preset hides the shell by default while keeping the toolbar, so an embedding
+ * host renders one shell (its own) plus the editor's formatting toolbar — not
+ * the "two shells" that a shared `toolbar` gate produced. Centralized here so
+ * the DocxEditor render gate and its unit tests share one source of truth.
+ */
+export interface ChromeVisibility {
+  /** The formatting toolbar (bold/italic/font/…). Hidden only by `chrome:"none"`. */
+  toolbar: boolean;
+  /** The top row: logo + document name + menu bar. Hidden by `chrome:"embedded"`. */
+  titleBar: boolean;
+  /** The File/Edit/… menus inside the title row. Hidden by `chrome:"embedded"`. */
+  menuBar: boolean;
+  /**
+   * True when the whole app shell (title bar + menu bar) is gone — the host owns
+   * file identity/lifecycle, so the SDK suppresses Cmd/Ctrl+O and Cmd/Ctrl+N.
+   */
+  appShellHidden: boolean;
+}
+
+/**
+ * Resolve {@link ChromeVisibility} from the `chrome` preset and `features` map.
+ * `showToolbarFallback` is the toolbar default the preset/`showToolbar` prop
+ * already encoded. `features.titleBar` / `features.menuBar` override the shell
+ * in any preset, so a host can also opt into the bare surface without the
+ * preset (`features={{ titleBar: false, menuBar: false }}`).
+ */
+export function resolveChromeVisibility(
+  chrome: string | undefined,
+  features: FeatureMap | undefined,
+  showToolbarFallback: boolean
+): ChromeVisibility {
+  const toolbar = isFeatureEnabled(features, 'toolbar', showToolbarFallback);
+  const shellShownByDefault = chrome !== 'embedded';
+  const titleBar = isFeatureEnabled(features, 'titleBar', shellShownByDefault);
+  const menuBar = isFeatureEnabled(features, 'menuBar', shellShownByDefault);
+  return { toolbar, titleBar, menuBar, appShellHidden: !titleBar && !menuBar };
 }
 
 /** The set of feature ids explicitly disabled (`features[id] === false`). */
