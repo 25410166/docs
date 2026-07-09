@@ -458,6 +458,7 @@ import {
   isFeatureEnabled,
   isCommandVetoed,
   createFeatureVetoPlugin,
+  resolveChromeVisibility,
   type FeatureMap,
 } from './features';
 import { resolveEditorExtensionPlugins, type EditorExtension } from './editorExtensions';
@@ -639,12 +640,20 @@ export interface DocxEditorProps {
    *   - `"full"` (default): batteries-included shell — toolbar + status bar +
    *     panel rail + zoom. For 3rd-party hosts.
    *   - `"minimal"`: lean editing surface — toolbar + zoom only.
+   *   - `"embedded"`: formatting-toolbar-only surface for hosts that render
+   *     their own app shell (doc 39 — embedded-mode contract). Same editing UI
+   *     as `"full"` (formatting toolbar, panel rail, zoom, ruler) but the app
+   *     shell — logo, document-name row, menu bar, and therefore the About /
+   *     Help / File menus — is hidden, so the host's chrome is the only shell.
+   *     Cmd/Ctrl+O and Cmd/Ctrl+N are suppressed (the host owns open/new);
+   *     Cmd/Ctrl+S still routes to `onSave` when provided.
    *   - `"none"`: bare editing canvas, no built-in chrome — the host brings its
    *     own shell and consumes the editor core.
    * Any explicit `showToolbar` / `showStatusBar` / `showPanelRail` /
-   * `showZoomControl` prop overrides the preset.
+   * `showZoomControl` prop overrides the preset; `features.titleBar` /
+   * `features.menuBar` override the shell visibility independently.
    */
-  chrome?: 'none' | 'minimal' | 'full';
+  chrome?: 'none' | 'minimal' | 'embedded' | 'full';
   /**
    * Per-control on/off map (docs#272, doc 38 §5a) — the shared shape the sister
    * sheet SDK uses. Each key is a control id (see `DOCX_FEATURE_IDS`); `false`
@@ -2062,7 +2071,26 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   useEffect(() => {
     disabledFeaturesRef.current = disabledFeatures;
   }, [disabledFeatures]);
-  const showToolbarEffective = isFeatureEnabled(features, 'toolbar', showToolbar);
+  // App-shell rows (title bar + menu bar) sit above the formatting toolbar and
+  // are gated independently of the toolbar so an embedding host can hide its own
+  // second shell while keeping the formatting toolbar (doc 39). `chrome:"embedded"`
+  // defaults the shell off; `features.titleBar` / `features.menuBar` override in
+  // any preset.
+  const {
+    toolbar: showToolbarEffective,
+    titleBar: showTitleBarEffective,
+    menuBar: showMenuBarEffective,
+    appShellHidden,
+  } = resolveChromeVisibility(chrome, features, showToolbar);
+  // When the app shell is hidden the host owns file identity/lifecycle, so the
+  // file-management keybindings (Cmd/Ctrl+O open, Cmd/Ctrl+N new) are suppressed
+  // (doc 39, issue #301). Mirrored into a ref so the stable keydown listener can
+  // read it without re-subscribing. Cmd/Ctrl+S is untouched — it already routes
+  // to `onSave` when set.
+  const appShellHiddenRef = useRef(appShellHidden);
+  useEffect(() => {
+    appShellHiddenRef.current = appShellHidden;
+  }, [appShellHidden]);
   const showPanelRailEffective = isFeatureEnabled(features, 'panelRail', showPanelRail);
   const showStatusBarEffective = isFeatureEnabled(features, 'statusBar', showStatusBar);
   const showZoomControlEffective = isFeatureEnabled(features, 'zoomControl', showZoomControl);
@@ -4109,15 +4137,20 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
           e.preventDefault();
           shortcutActionsRef.current.print?.();
         } else if (e.key.toLowerCase() === 'n') {
-          // Mod+N: New document. Only honor if the host opted in via onNew.
-          if (shortcutActionsRef.current.new) {
+          // Mod+N: New document. Suppressed when the app shell is hidden
+          // (embedded) — the host owns new. Otherwise only honor if the host
+          // opted in via onNew.
+          if (!appShellHiddenRef.current && shortcutActionsRef.current.new) {
             e.preventDefault();
             shortcutActionsRef.current.new();
           }
         } else if (e.key.toLowerCase() === 'o') {
-          // Mod+O: Open file picker
-          e.preventDefault();
-          shortcutActionsRef.current.open?.();
+          // Mod+O: Open file picker. Suppressed when the app shell is hidden
+          // (embedded) — the host owns open, so leave the event for it.
+          if (!appShellHiddenRef.current) {
+            e.preventDefault();
+            shortcutActionsRef.current.open?.();
+          }
         } else if (e.key === '\\') {
           // Mod+\\: Clear formatting (Google Docs convention)
           const view = pagedEditorRef.current?.getView();
@@ -9848,22 +9881,24 @@ body { background: white; }
                         tableContext={state.pmTableContext}
                         onTableAction={handleTableAction}
                       >
-                        <EditorToolbar.TitleBar>
-                          {renderLogo && <EditorToolbar.Logo>{renderLogo()}</EditorToolbar.Logo>}
-                          {documentName !== undefined && (
-                            <EditorToolbar.DocumentName
-                              value={documentName}
-                              onChange={onDocumentNameChange}
-                              editable={documentNameEditable}
-                            />
-                          )}
-                          {renderTitleBarRight && (
-                            <EditorToolbar.TitleBarRight>
-                              {renderTitleBarRight()}
-                            </EditorToolbar.TitleBarRight>
-                          )}
-                          <EditorToolbar.MenuBar />
-                        </EditorToolbar.TitleBar>
+                        {showTitleBarEffective && (
+                          <EditorToolbar.TitleBar>
+                            {renderLogo && <EditorToolbar.Logo>{renderLogo()}</EditorToolbar.Logo>}
+                            {documentName !== undefined && (
+                              <EditorToolbar.DocumentName
+                                value={documentName}
+                                onChange={onDocumentNameChange}
+                                editable={documentNameEditable}
+                              />
+                            )}
+                            {renderTitleBarRight && (
+                              <EditorToolbar.TitleBarRight>
+                                {renderTitleBarRight()}
+                              </EditorToolbar.TitleBarRight>
+                            )}
+                            {showMenuBarEffective && <EditorToolbar.MenuBar />}
+                          </EditorToolbar.TitleBar>
+                        )}
                         <EditorToolbar.FormattingBar>{toolbarChildren}</EditorToolbar.FormattingBar>
                       </EditorToolbar>
                     </div>
