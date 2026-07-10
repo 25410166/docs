@@ -1197,10 +1197,17 @@ export function TitleBar({ children }: TitleBarProps) {
       onMouseDown={handleMouseDown}
       data-testid="title-bar"
     >
-      {/* Left: Logo spanning full height (default doc icon if none provided) */}
-      <div className="flex items-center flex-shrink-0 pl-3 pr-1">
-        {logoItem || <DefaultDocIcon />}
-      </div>
+      {/* Left: Logo spanning full height (default doc icon if none provided).
+        In embedded mode the host hides the app shell — no Logo and no
+        DocumentName are passed, leaving only the menu bar — so the default
+        doc icon must NOT leak in as branding. Show it only when the title row
+        carries app-shell content (a document name); otherwise the menus stand
+        alone (doc 39). */}
+      {(logoItem || middleTopItems.length > 0) && (
+        <div className="flex items-center flex-shrink-0 pl-3 pr-1">
+          {logoItem || <DefaultDocIcon />}
+        </div>
+      )}
 
       {/* Center: doc name on top, menus below */}
       <div className="flex flex-col justify-center flex-1 min-w-0 py-1 overflow-hidden">

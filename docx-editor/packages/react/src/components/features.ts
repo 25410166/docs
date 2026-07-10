@@ -85,13 +85,19 @@ export function isFeatureEnabled(
 export interface ChromeVisibility {
   /** The formatting toolbar (bold/italic/font/…). Hidden only by `chrome:"none"`. */
   toolbar: boolean;
-  /** The top row: logo + document name + menu bar. Hidden by `chrome:"embedded"`. */
+  /** The title row: logo + document name. Hidden by `chrome:"embedded"`. */
   titleBar: boolean;
-  /** The File/Edit/… menus inside the title row. Hidden by `chrome:"embedded"`. */
+  /**
+   * The File/Edit/Insert/Format/… menus. Part of the editing surface, so they
+   * stay in `chrome:"embedded"` and are hidden only by `chrome:"none"`. In
+   * embedded the host-owned File/Help entries (Open/New/About/…) are pruned,
+   * but every editing menu remains.
+   */
   menuBar: boolean;
   /**
-   * True when the whole app shell (title bar + menu bar) is gone — the host owns
-   * file identity/lifecycle, so the SDK suppresses Cmd/Ctrl+O and Cmd/Ctrl+N.
+   * True when the title row (app shell) is gone — the host owns file
+   * identity/lifecycle, so the SDK suppresses Cmd/Ctrl+O and Cmd/Ctrl+N and
+   * prunes the host-owned File/Help menu entries.
    */
   appShellHidden: boolean;
 }
@@ -109,10 +115,20 @@ export function resolveChromeVisibility(
   showToolbarFallback: boolean
 ): ChromeVisibility {
   const toolbar = isFeatureEnabled(features, 'toolbar', showToolbarFallback);
-  const shellShownByDefault = chrome !== 'embedded';
-  const titleBar = isFeatureEnabled(features, 'titleBar', shellShownByDefault);
-  const menuBar = isFeatureEnabled(features, 'menuBar', shellShownByDefault);
-  return { toolbar, titleBar, menuBar, appShellHidden: !titleBar && !menuBar };
+  // The formatting toolbar AND the editing menus (Insert/Format/Tools/View/…)
+  // are the *editing surface* — both survive `"embedded"`; only `"none"` drops
+  // them. The title *row* (logo + document name) is the app shell the host
+  // replaces, so it alone defaults off in `"embedded"`. Keeping these welded
+  // was the doc-39 regression: hiding the menu bar stranded ~50 menu-only
+  // features (Insert image/table, Format paragraph, Tools word-count, …).
+  const editingSurfaceDefault = chrome !== 'none';
+  const appShellDefault = chrome !== 'embedded' && chrome !== 'none';
+  const titleBar = isFeatureEnabled(features, 'titleBar', appShellDefault);
+  const menuBar = isFeatureEnabled(features, 'menuBar', editingSurfaceDefault);
+  // App shell == the title row. Whenever it's hidden the host owns file
+  // identity/lifecycle, so the SDK suppresses Cmd/Ctrl+O·N and prunes the
+  // host-owned File/Help menu entries even though the editing menus stay.
+  return { toolbar, titleBar, menuBar, appShellHidden: !titleBar };
 }
 
 /** The set of feature ids explicitly disabled (`features[id] === false`). */

@@ -58,17 +58,20 @@ describe('features flag-map (docs#272)', () => {
   });
 });
 
-describe('embedded chrome — toolbar without the app shell (doc 39)', () => {
+describe('embedded chrome — editing surface without the app shell (doc 39)', () => {
   // Mirrors the `showToolbar` default the DocxEditor prop destructure encodes
   // (`chrome === 'none' ? false : true`) so the fallback matches the component.
   const toolbarFallback = (chrome: string | undefined) => chrome !== 'none';
 
-  it('chrome:"embedded" shows the formatting toolbar but hides title bar + menu bar', () => {
+  it('chrome:"embedded" keeps the formatting toolbar AND the editing menus, dropping only the title row', () => {
     const v = resolveChromeVisibility('embedded', undefined, toolbarFallback('embedded'));
     expect(v.toolbar).toBe(true); // formatting toolbar stays
-    expect(v.titleBar).toBe(false); // logo + document name + menus gone
-    expect(v.menuBar).toBe(false); // File/Edit/… menus (and About/Help) gone
-    expect(v.appShellHidden).toBe(true); // → suppress Cmd+O / Cmd+N
+    expect(v.titleBar).toBe(false); // logo + document-name row gone (host owns it)
+    // The menu bar is the editing surface — Insert/Format/Tools/View/… must
+    // stay reachable. (The host-owned File/Help entries are pruned inside the
+    // component via appShellHidden; the bar itself stays.)
+    expect(v.menuBar).toBe(true);
+    expect(v.appShellHidden).toBe(true); // title row gone → host owns files → suppress Cmd+O/N
   });
 
   it('chrome:"full" (and default) keeps the whole shell', () => {
