@@ -508,6 +508,16 @@ export function App() {
     []
   );
 
+  // Dev/e2e affordance: `?chrome=embedded|minimal|none|full` exercises the
+  // chrome presets (doc 39 embedded-mode contract) without a separate harness.
+  // Absent → undefined → the editor's default full shell (unchanged behavior).
+  const chromeParam = useMemo(() => {
+    const c = new URLSearchParams(window.location.search).get('chrome');
+    return c === 'embedded' || c === 'minimal' || c === 'none' || c === 'full'
+      ? (c as 'embedded' | 'minimal' | 'none' | 'full')
+      : undefined;
+  }, []);
+
   // Collab mode: detected from `?room=<docId>&backend=<wsUrl>`. The
   // GitHub Pages build leaves these blank and stays single-user;
   // the Docker-Hub image's frontend defaults `backend` to its own
@@ -1555,6 +1565,7 @@ export function App() {
           mentionableUsers={mentionableUsers}
           onError={handleError}
           onFontsLoaded={handleFontsLoaded}
+          chrome={chromeParam}
           showToolbar={true}
           showRuler={!isMobile}
           showZoomControl={true}

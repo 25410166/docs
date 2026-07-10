@@ -2091,6 +2091,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   useEffect(() => {
     appShellHiddenRef.current = appShellHidden;
   }, [appShellHidden]);
+  // The top chrome (formatting toolbar + editing menu bar) renders unless the
+  // host stripped BOTH regions, or we're in read-only / focus mode. Either
+  // region alone is enough — `chrome:"embedded"` keeps the menus with the
+  // title row hidden (doc 39).
+  const showEditorChrome =
+    (showToolbarEffective || showMenuBarEffective) && !readOnlyProp && !focusMode;
   const showPanelRailEffective = isFeatureEnabled(features, 'panelRail', showPanelRail);
   const showStatusBarEffective = isFeatureEnabled(features, 'statusBar', showStatusBar);
   const showZoomControlEffective = isFeatureEnabled(features, 'zoomControl', showZoomControl);
@@ -9774,7 +9780,7 @@ body { background: white; }
                   {/* Toolbar - above the scroll container so scrollbar doesn't extend behind it */}
                   {/* Hide toolbar only when readOnly prop is explicitly set (not from viewing mode) */}
                   {/* Focus mode (Phase 5) also hides toolbar for distraction-free writing. */}
-                  {showToolbarEffective && !readOnlyProp && !focusMode && (
+                  {showEditorChrome && (
                     <div
                       ref={toolbarRefCallback}
                       className="z-50 flex flex-col gap-0 flex-shrink-0"
@@ -9800,14 +9806,24 @@ body { background: white; }
                         showPrintButton={showPrintButtonEffective}
                         fontFamilies={fontFamilies}
                         onPrint={handleDirectPrint}
-                        onOpen={handleOpenDocument}
+                        /* When the app shell is hidden (embedded), the host
+                          owns file identity/lifecycle and versions — prune the
+                          File-menu entries it provides so the editing menus
+                          stay without a redundant "second product" File menu.
+                          A MenuBar item disappears when its callback is
+                          undefined (presence-gated). */
+                        onOpen={appShellHidden ? undefined : handleOpenDocument}
                         onSave={handleDownloadDocument}
-                        onMakeCopy={handleMakeCopy}
-                        onEmailAsAttachment={handleEmailAsAttachment}
-                        onOpenVersionHistory={() => {
-                          if (!showVersionHistory) handleToggleVersionHistory();
-                        }}
-                        onNew={onNew}
+                        onMakeCopy={appShellHidden ? undefined : handleMakeCopy}
+                        onEmailAsAttachment={appShellHidden ? undefined : handleEmailAsAttachment}
+                        onOpenVersionHistory={
+                          appShellHidden
+                            ? undefined
+                            : () => {
+                                if (!showVersionHistory) handleToggleVersionHistory();
+                              }
+                        }
+                        onNew={appShellHidden ? undefined : onNew}
                         showZoomControl={showZoomControlEffective}
                         zoom={state.zoom}
                         onZoomChange={handleZoomChange}
@@ -9848,8 +9864,9 @@ body { background: white; }
                         onExportPdf={handleExportPdf}
                         onExportOdt={handleExportOdt}
                         onExportMd={handleExportMd}
-                        onReportBug={handleReportBug}
-                        onShowAbout={handleShowAbout}
+                        /* Branding/support entries the host owns in embedded. */
+                        onReportBug={appShellHidden ? undefined : handleReportBug}
+                        onShowAbout={appShellHidden ? undefined : handleShowAbout}
                         onOpenCommandPalette={() => setShowCommandPalette(true)}
                         onOpenKeyboardShortcuts={() => setShowKeyboardShortcuts(true)}
                         onOpenPreferences={() => setShowPreferences(true)}
@@ -9881,17 +9898,24 @@ body { background: white; }
                         tableContext={state.pmTableContext}
                         onTableAction={handleTableAction}
                       >
-                        {showTitleBarEffective && (
+                        {/* The title row (logo + document name) is the app
+                          shell — hidden in `chrome:"embedded"`. The menu bar is
+                          the editing surface, gated independently, so embedded
+                          keeps the Insert/Format/Tools/… menus while dropping
+                          only the logo/name row (doc 39). */}
+                        {(showTitleBarEffective || showMenuBarEffective) && (
                           <EditorToolbar.TitleBar>
-                            {renderLogo && <EditorToolbar.Logo>{renderLogo()}</EditorToolbar.Logo>}
-                            {documentName !== undefined && (
+                            {showTitleBarEffective && renderLogo && (
+                              <EditorToolbar.Logo>{renderLogo()}</EditorToolbar.Logo>
+                            )}
+                            {showTitleBarEffective && documentName !== undefined && (
                               <EditorToolbar.DocumentName
                                 value={documentName}
                                 onChange={onDocumentNameChange}
                                 editable={documentNameEditable}
                               />
                             )}
-                            {renderTitleBarRight && (
+                            {showTitleBarEffective && renderTitleBarRight && (
                               <EditorToolbar.TitleBarRight>
                                 {renderTitleBarRight()}
                               </EditorToolbar.TitleBarRight>
@@ -9899,7 +9923,11 @@ body { background: white; }
                             {showMenuBarEffective && <EditorToolbar.MenuBar />}
                           </EditorToolbar.TitleBar>
                         )}
-                        <EditorToolbar.FormattingBar>{toolbarChildren}</EditorToolbar.FormattingBar>
+                        {showToolbarEffective && (
+                          <EditorToolbar.FormattingBar>
+                            {toolbarChildren}
+                          </EditorToolbar.FormattingBar>
+                        )}
                       </EditorToolbar>
                     </div>
                   )}
