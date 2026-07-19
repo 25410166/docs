@@ -203,6 +203,12 @@ export class WopiFileSource implements FileSource {
     );
     if (res.status === 409) {
       const body = (await res.json().catch(() => ({}))) as { expected?: string; actual?: string };
+      // Adopt the host's current version so we STOP re-sending the stale
+      // X-WOPI-ItemVersion on every retry (which would 409 forever). The
+      // conflict still throws; a subsequent user-initiated save now carries the
+      // host's version and succeeds as an explicit overwrite, rather than the
+      // autosave loop silently losing every edit against a stale version.
+      if (body.actual) this.version = body.actual;
       throw new WopiSaveConflictError(body.expected, body.actual);
     }
     if (!res.ok) {

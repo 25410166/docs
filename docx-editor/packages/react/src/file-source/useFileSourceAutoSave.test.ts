@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'bun:test';
 
-import { performAutoSave, type AutoSaveEditorRef } from './useFileSourceAutoSave';
+import { performAutoSave, isConflictError, type AutoSaveEditorRef } from './useFileSourceAutoSave';
 import type { FileEntry, FileSource } from './types';
 
 /**
@@ -165,5 +165,86 @@ describe('performAutoSave', () => {
     });
     expect(result.kind).toBe('ok');
     expect(fs.saveCalls[0].size).toBe(0);
+  });
+
+  it('skips with reason "not-ready" and never serializes when isReady() is false', async () => {
+    const fs = fakeFileSource();
+    let serialized = false;
+    const ref: AutoSaveEditorRef = {
+      save: async () => {
+        serialized = true;
+        return new Uint8Array([1]).buffer;
+      },
+    };
+    const result = await performAutoSave({
+      getRef: () => ref,
+      fileSource: fs,
+      docId: 'd',
+      isReady: () => false,
+    });
+    expect(result.kind).toBe('skip');
+    if (result.kind === 'skip') expect(result.reason).toBe('not-ready');
+    // Critical: the editor is never serialized and the store is never touched,
+    // so a blank pre-sync doc can't overwrite the persisted document.
+    expect(serialized).toBe(false);
+    expect(fs.saveCalls.length).toBe(0);
+  });
+
+  it('proceeds normally when isReady() is true', async () => {
+    const fs = fakeFileSource();
+    const bytes = new Uint8Array([0x50, 0x4b]).buffer;
+    const result = await performAutoSave({
+      getRef: () => fakeRef(bytes),
+      fileSource: fs,
+      docId: 'd',
+      isReady: () => true,
+    });
+    expect(result.kind).toBe('ok');
+    expect(fs.saveCalls.length).toBe(1);
+  });
+
+  it('forwards the etag to FileSource.save as If-Match (optimistic concurrency)', async () => {
+    let seenEtag: string | undefined = 'not-called';
+    const fs: FileSource = {
+      kind: 'personal',
+      label: 'T',
+      list: async () => [],
+      open: async () => ({ bytes: new ArrayBuffer(0), name: 'x', etag: 'v1' }),
+      save: async (_id, _bytes, opts) => {
+        seenEtag = opts?.etag;
+        return { id: 'd', etag: 'v2' };
+      },
+      rename: async () => undefined,
+      delete: async () => undefined,
+      watchRecent: () => () => undefined,
+      rememberLastOpened: async () => undefined,
+      lastOpened: async () => null,
+    };
+    const result = await performAutoSave({
+      getRef: () => fakeRef(new Uint8Array([1]).buffer),
+      fileSource: fs,
+      docId: 'd',
+      etag: 'v1',
+    });
+    expect(seenEtag).toBe('v1');
+    expect(result.kind).toBe('ok');
+    // The refreshed etag is returned so the caller can advance the chain.
+    if (result.kind === 'ok') expect(result.etag).toBe('v2');
+  });
+});
+
+describe('isConflictError', () => {
+  it('recognises WOPI 409 and personal 412 conflicts', () => {
+    expect(isConflictError({ name: 'WopiSaveConflictError' })).toBe(true);
+    expect(isConflictError({ name: 'PersonalFileSourceError', status: 412 })).toBe(true);
+    expect(isConflictError({ status: 409 })).toBe(true);
+  });
+
+  it('does not treat ordinary errors or non-objects as conflicts', () => {
+    expect(isConflictError(new Error('gateway down'))).toBe(false);
+    expect(isConflictError({ status: 500 })).toBe(false);
+    expect(isConflictError(null)).toBe(false);
+    expect(isConflictError(undefined)).toBe(false);
+    expect(isConflictError('nope')).toBe(false);
   });
 });

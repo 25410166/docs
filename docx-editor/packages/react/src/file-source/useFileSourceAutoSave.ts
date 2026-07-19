@@ -55,6 +55,20 @@ import type { FileSource } from './types';
  */
 const SAVE_TIMEOUT_MS = 30000;
 
+/**
+ * A save error is a *conflict* when the store rejected the write because our
+ * version is stale — someone else changed the doc (WOPI 409, personal 412).
+ * These must never be retried on the auto-loop: retrying a WOPI 409 re-sends the
+ * same stale version and fails forever (silent loss), and blindly re-saving
+ * would clobber the other writer. Instead the hook pauses and surfaces it, and
+ * only an explicit user-initiated `flush()` (a deliberate overwrite) retries.
+ */
+export function isConflictError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { name?: string; status?: number };
+  return e.name === 'WopiSaveConflictError' || e.status === 412 || e.status === 409;
+}
+
 // ---------------------------------------------------------------
 // Pure controller — extracted so it's bun-unit-testable without a
 // React renderer. The hook below is a thin wrapper that exposes the
@@ -68,7 +82,7 @@ const SAVE_TIMEOUT_MS = 30000;
  * returned; `err` carries the throw.
  */
 export type AutoSaveTickResult =
-  | { kind: 'skip'; reason: 'no-ref' | 'no-bytes' | 'in-flight' }
+  | { kind: 'skip'; reason: 'no-ref' | 'no-bytes' | 'in-flight' | 'not-ready' }
   | { kind: 'ok'; etag: string; savedAt: Date }
   | { kind: 'err'; err: unknown };
 
@@ -78,6 +92,21 @@ export interface PerformAutoSaveDeps {
   fileSource: FileSource;
   docId: string;
   name?: string;
+  /**
+   * Last-known etag for optimistic concurrency. Threaded into
+   * `FileSource.save(...)` as `If-Match` so a concurrent host-side change
+   * surfaces as a 412/conflict instead of silently clobbering the other
+   * writer. Undefined on first save.
+   */
+  etag?: string;
+  /**
+   * Optional readiness gate. When it returns `false` the tick is SKIPPED
+   * before the editor is even serialized — used to refuse saving before a
+   * collab Y.Doc has completed its initial sync, which would otherwise push
+   * the empty mount-time seed over the stored document (data-loss). Absent →
+   * always ready (single-user / non-collab).
+   */
+  isReady?: () => boolean;
 }
 
 /**
@@ -89,6 +118,10 @@ export interface PerformAutoSaveDeps {
 export async function performAutoSave(deps: PerformAutoSaveDeps): Promise<AutoSaveTickResult> {
   const ref = deps.getRef();
   if (!ref) return { kind: 'skip', reason: 'no-ref' };
+  // Refuse to serialize/push before the source of truth is ready (e.g. collab
+  // still syncing). Guards against overwriting stored content with the empty
+  // seed the editor mounts with.
+  if (deps.isReady && !deps.isReady()) return { kind: 'skip', reason: 'not-ready' };
   try {
     const bytes = await ref.save({ selective: true });
     // When the editor ref is mounted, a null return means serialization
@@ -98,7 +131,10 @@ export async function performAutoSave(deps: PerformAutoSaveDeps): Promise<AutoSa
     if (!bytes) {
       return { kind: 'err', err: new Error('Document serialization returned no bytes') };
     }
-    const result = await deps.fileSource.save(deps.docId, bytes, { name: deps.name });
+    const result = await deps.fileSource.save(deps.docId, bytes, {
+      name: deps.name,
+      etag: deps.etag,
+    });
     return { kind: 'ok', etag: result.etag, savedAt: new Date() };
   } catch (err) {
     return { kind: 'err', err };
@@ -139,6 +175,20 @@ export interface UseFileSourceAutoSaveOptions {
   /** Hard-off switch. Default true. */
   enabled?: boolean;
   /**
+   * Readiness gate evaluated fresh on every tick. Return `false` to skip the
+   * save (e.g. while a collab Y.Doc is still syncing) so autosave never
+   * overwrites stored content with the editor's empty mount-time seed. Absent
+   * → always ready.
+   */
+  isReady?: () => boolean;
+  /**
+   * Etag captured from `FileSource.open()`. Seeds the optimistic-concurrency
+   * chain: it's sent as `If-Match` on the next save and refreshed from every
+   * save result, so a concurrent host-side change surfaces as a conflict
+   * instead of a silent last-write-wins overwrite. Reseeds when `docId` changes.
+   */
+  initialEtag?: string;
+  /**
    * Optional file-name to attach on first-save (when docId is null
    * — see save() below). The hook doesn't watch this for changes;
    * the host should call FileSource.rename() for that.
@@ -166,9 +216,16 @@ export interface UseFileSourceAutoSaveReturn {
   /** Last error caught — kept for status='error' rendering. */
   lastError: unknown;
   /**
-   * Force a save right now (bypassing the interval). Returns when
-   * the save round-trip finishes. Useful for "Save & close" buttons
-   * or beforeunload handlers the host owns.
+   * True while a version conflict is unresolved. The auto-loop is paused (it
+   * won't overwrite or re-conflict); the host should prompt the user to reload
+   * the current stored version or force-save. Calling `flush()` clears this and
+   * retries as an explicit overwrite.
+   */
+  conflict: boolean;
+  /**
+   * Force a save right now (bypassing the interval), clearing any conflict
+   * pause — i.e. a deliberate overwrite. Returns when the round-trip finishes.
+   * Useful for "Save & close" buttons or a "Save anyway" conflict action.
    */
   flush: () => Promise<void>;
 }
@@ -187,6 +244,8 @@ export function useFileSourceAutoSave(
     interval = 30000,
     enabled = true,
     name,
+    isReady,
+    initialEtag,
     onSaved,
     onError,
   } = opts;
@@ -194,6 +253,11 @@ export function useFileSourceAutoSave(
   const [status, setStatus] = useState<AutoSaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [lastError, setLastError] = useState<unknown>(null);
+  // Unresolved version conflict. While true, auto-ticks and hide-flushes are
+  // suppressed so we never silently re-conflict or overwrite the other writer;
+  // an explicit flush() clears it.
+  const [conflict, setConflict] = useState(false);
+  const conflictRef = useRef(false);
 
   // Ref for "is a save currently in flight" — guarding setState
   // doesn't help because React batches updates; a plain mutable ref
@@ -213,6 +277,13 @@ export function useFileSourceAutoSave(
   // save has actually run, even if another save was in flight when they
   // called (audit: autosave-pagehide-no-await coupling).
   const inFlightPromiseRef = useRef<Promise<void> | null>(null);
+  // Last-known etag for optimistic concurrency. Seeded from open() via
+  // initialEtag, refreshed from each successful save, and reseeded whenever the
+  // doc changes so a stale etag can't leak across documents.
+  const lastEtagRef = useRef<string | undefined>(initialEtag);
+  useEffect(() => {
+    lastEtagRef.current = initialEtag;
+  }, [docId, initialEtag]);
 
   // Callbacks captured via ref so the tick effect doesn't restart
   // when the host passes a fresh arrow on every render. Same trick
@@ -226,10 +297,10 @@ export function useFileSourceAutoSave(
 
   // Snapshot of the host-controlled deps inside a ref so the timing
   // effect can read fresh values without re-firing on every change.
-  const cfgRef = useRef({ fileSource, docId, editorRef, name });
+  const cfgRef = useRef({ fileSource, docId, editorRef, name, isReady });
   useEffect(() => {
-    cfgRef.current = { fileSource, docId, editorRef, name };
-  }, [fileSource, docId, editorRef, name]);
+    cfgRef.current = { fileSource, docId, editorRef, name, isReady };
+  }, [fileSource, docId, editorRef, name, isReady]);
 
   /**
    * Performs exactly one save round-trip and reflects the outcome in
@@ -241,6 +312,9 @@ export function useFileSourceAutoSave(
    */
   const executeOne = useCallback(async (): Promise<void> => {
     const cfg = cfgRef.current;
+    // Not-ready (e.g. collab still syncing): skip silently without flashing a
+    // 'saving' status every tick, and never touch the stored document.
+    if (cfg.isReady && !cfg.isReady()) return;
     setStatus('saving');
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<AutoSaveTickResult>((resolve) => {
@@ -256,11 +330,16 @@ export function useFileSourceAutoSave(
           fileSource: cfg.fileSource,
           docId: cfg.docId,
           name: cfg.name,
+          isReady: cfg.isReady,
+          etag: lastEtagRef.current,
         }),
         timeout,
       ]);
       switch (result.kind) {
         case 'ok':
+          // Advance the concurrency chain so the NEXT save's If-Match matches
+          // the version we just wrote.
+          lastEtagRef.current = result.etag;
           setLastSavedAt(result.savedAt);
           setStatus('saved');
           setLastError(null);
@@ -269,6 +348,19 @@ export function useFileSourceAutoSave(
           onSavedRef.current?.(result.savedAt, result.etag);
           break;
         case 'err':
+          if (isConflictError(result.err)) {
+            // Durable conflict: pause the auto-loop and surface it until the
+            // user resolves it. Deliberately NOT auto-cleared — a hidden
+            // conflict means every further edit is silently lost.
+            conflictRef.current = true;
+            setConflict(true);
+            setStatus('error');
+            setLastError(result.err);
+            clearTimeout(errorClearTimerRef.current);
+            errorClearTimerRef.current = undefined;
+            onErrorRef.current?.(result.err);
+            break;
+          }
           setStatus('error');
           setLastError(result.err);
           // Auto-clear the error badge after 60 s so a one-off failure
@@ -325,13 +417,24 @@ export function useFileSourceAutoSave(
     return drain;
   }, [executeOne]);
 
+  // Public save entry point. Unlike the interval/hide callers, this clears an
+  // active conflict pause first — it represents a deliberate user decision to
+  // overwrite (the WopiFileSource has already adopted the host's current
+  // version, so this save succeeds rather than re-conflicting).
+  const flush = useCallback((): Promise<void> => {
+    conflictRef.current = false;
+    setConflict(false);
+    return runSave();
+  }, [runSave]);
+
   // Interval ticker. Re-arms when `enabled` or `interval` change;
   // every other dep is read via ref so the timer survives parent
-  // re-renders.
+  // re-renders. Suppressed while a conflict is unresolved so we don't
+  // silently re-conflict (WOPI) or overwrite the other writer.
   useEffect(() => {
     if (!enabled || interval <= 0) return;
     const id = setInterval(() => {
-      void runSave();
+      if (!conflictRef.current) void runSave();
     }, interval);
     return () => clearInterval(id);
   }, [enabled, interval, runSave]);
@@ -351,8 +454,9 @@ export function useFileSourceAutoSave(
   useEffect(() => {
     if (!enabled) return;
     const flushOnHide = () => {
-      // Don't await — the page may be going away.
-      void runSave();
+      // Don't await — the page may be going away. Skip while a conflict is
+      // unresolved: a hide-flush must not silently overwrite the other writer.
+      if (!conflictRef.current) void runSave();
     };
     const onVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
@@ -379,8 +483,9 @@ export function useFileSourceAutoSave(
       status,
       lastSavedAt,
       lastError,
-      flush: runSave,
+      conflict,
+      flush,
     }),
-    [status, lastSavedAt, lastError, runSave]
+    [status, lastSavedAt, lastError, conflict, flush]
   );
 }
