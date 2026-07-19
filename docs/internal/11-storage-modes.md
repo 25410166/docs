@@ -5,9 +5,10 @@ ways Casual Editor is deployed.
 
 This is the design contract. Mirrors the structure of sheet's
 [`docs/STORAGE_MODES.md`](../../../sheet/docs/STORAGE_MODES.md) so
-the two products stay legible side-by-side; the differences sit in
-the language stack (Go gateway vs Bun/Fastify) and the file format
-(`.docx` vs `.xlsx`), not the deployment story.
+the two products stay legible side-by-side. Both now share the same
+Node/TypeScript collab server (Hocuspocus + Yjs on Fastify), so the
+real difference is just the file format (`.docx` vs `.xlsx`), not the
+language stack or the deployment story.
 
 > **Backend note.** References below to a **Go gateway** describe the legacy
 > in-repo `backend/`, now **superseded** by the shared **Node/TypeScript**
@@ -27,9 +28,14 @@ the language stack (Go gateway vs Bun/Fastify) and the file format
 | **2 — WOPI**       | Docker + `GATEWAY_HOST=wopi`                    | JWT issued by embedding host                                    | Server (`host.Integration` backends)                 | Team / org. Embedded in another app. Or driven by an external file system. |
 | **3 — Standalone** | Docker + bind-mount `/data` + `GATEWAY_HOST=local` | Username + password (account, server-issued session cookie)    | Server (`local` backend by default)                  | Personal use. "My files in my container."                                 |
 
-Modes 2 and 3 share the same Go `host.Integration` (already shipped:
-`backend/internal/host/host.go`). The auth model and the file-listing
-surface are what differs.
+Modes 2 and 3 share the same `host.Integration` contract, now owned by
+the Node collab server (`CasualOffice/collab`, vendored at `./collab`).
+The auth model and the file-listing surface are what differs.
+
+> **Historical.** The Go `host.Integration` shipped in the in-repo
+> `backend/internal/host/host.go`; that gateway was **removed 2026-06-28**
+> and the contract carried over to the Node collab server. Go paths cited
+> below are kept with their SHAs for provenance, not as current code.
 
 ---
 
@@ -75,9 +81,14 @@ export type FileEntry = {
 
 `FileSource` is selected once at app boot from a small probe:
 
-1. `__GATEWAY_BUILD__` true + `GET /auth/me` returns 200 → `PersonalFileSource`
+1. `__GATEWAY_BUILD__` false → `BrowserFileSource`
 2. `__GATEWAY_BUILD__` true + WOPI token in URL → `WopiFileSource`
-3. Else → `BrowserFileSource` (Mode 1; also the fallback when offline)
+3. `__GATEWAY_BUILD__` true + `GET /auth/me` returns 200 → `PersonalFileSource`
+4. Else → `BrowserFileSource` (Mode 1; also the fallback when offline)
+
+WOPI is checked before `/auth/me` because a Mode-2 deploy may also have
+personal auth mounted on the same server; the `access_token` in the URL
+is the deciding signal.
 
 The probe lives in `packages/react/src/file-source/select.ts`. Everything
 else just imports `useFileSource()` from `packages/react/src/file-source/context.tsx`.
@@ -121,7 +132,13 @@ else just imports `useFileSource()` from `packages/react/src/file-source/context
 
 ### What exists today
 
-- ✅ `backend/internal/host/wopi/wopi.go` (`9185671`, D1) — WOPI
+> These items shipped first as the Go `backend/…` gateway (SHAs kept for
+> provenance) and, since the **2026-06-28 removal** of `backend/`, now live
+> on the Node collab server (`CasualOffice/collab`, `./collab`). Read the
+> Go paths below as "the WOPI host integration", repointed to collab.
+
+- ✅ WOPI host client (`9185671`, D1) — originally
+  `backend/internal/host/wopi/wopi.go`, now on the collab server — WOPI
   HTTP client implementing `host.Integration`. CheckFileInfo +
   GetFile + PutFile. `docID = base64url(wopiSrc)` keeps the gateway
   stateless. `DocStoreAdapter` satisfies `host.DocStore` (Store/
@@ -133,11 +150,11 @@ else just imports `useFileSource()` from `packages/react/src/file-source/context
   ES256/384/521 accepted; HS\* rejected (alg-confusion defence).
   `ExpirationRequired`. Out-of-band JWKS refetch on unknown kid so
   hosts can rotate keys without restarting the gateway.
-- ✅ `GET /wopi/host` redirect handler (`ccbd9a7`, D2) — the embed
-  entry point. Takes `wopiSrc=<url>&access_token=<JWT>`, verifies
-  the JWT against the configured JWKS, 303s to
-  `/doc/{base64(wopiSrc)}?access_token=<JWT>`. Mounted when
-  `CASUAL_WOPI_JWKS_URL` env is set; otherwise the route 404s.
+- ✅ `GET /wopi/host` redirect handler (`ccbd9a7`, D2; now served by the
+  collab server) — the embed entry point. Takes
+  `wopiSrc=<url>&access_token=<JWT>`, verifies the JWT against the
+  configured JWKS, 303s to `/doc/{base64(wopiSrc)}?access_token=<JWT>`.
+  Mounted when `CASUAL_WOPI_JWKS_URL` env is set; otherwise the route 404s.
 - ✅ Access-token threading (`ccbd9a7` D2 + `e43d232` D3) — the WS
   preflight + the `/api/docs/{id}/download` handler both read
   `access_token` from the request URL and pass it to
@@ -190,8 +207,8 @@ GET /wopi/host?wopiSrc=…&access_token=<JWT> ─→ verify JWT against JWKS
 
 ### Env knobs
 
-- `GATEWAY_HOST=wopi` — picks the WOPI client backend in
-  `selectStore()`.
+- `GATEWAY_HOST=wopi` — picks the WOPI client backend in the collab
+  server's host-selection wiring (originally the Go `selectStore()`).
 - `CASUAL_WOPI_JWKS_URL=<url>` — host's published JWKS endpoint.
   Required to mount `/wopi/host`; without it the route 404s.
 

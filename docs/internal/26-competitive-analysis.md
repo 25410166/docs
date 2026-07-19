@@ -3,7 +3,7 @@
 **Date:** 2026-06-23 · **Method:** web research (2024–2026 sources, cited inline), not memory.
 **Driver:** Position Casual Editor's roadmap against the three editors users compare us to,
 across **UX**, **usability**, and **features**. Findings are framed against our product
-(React + ProseMirror, OOXML-preserving layout, Go/Yjs CRDT backend) but the competitors
+(React + ProseMirror, OOXML-preserving layout, Node/Yjs CRDT backend — Hocuspocus + Yjs on Fastify; the in-repo Go gateway was removed 2026-06-28) but the competitors
 were researched fresh.
 
 ---

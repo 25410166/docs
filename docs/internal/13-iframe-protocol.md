@@ -10,7 +10,7 @@ live behind a single `app` discriminator on the envelope; nothing
 else changes between products.
 
 Source of truth for the wire shape: this doc + the TypeScript types
-that mirror it (`packages/react/src/embed/protocol.ts`, planned).
+that mirror it (`packages/react/src/embed/protocol.ts`).
 
 ---
 
@@ -307,7 +307,7 @@ WOPI-style lock taken by another editor (only for hosts that lock).
 After this, the editor switches to read-only and stops saving.
 
 ```ts
-{ type: 'casual.lock.lost', app: 'docs', v: 1, data: { reason: 'taken_by_other' } }
+{ type: 'casual.lock.lost', app: 'docs', v: 1, data: { reason: 'taken_by_other' | 'expired' | 'host_revoked' } }
 ```
 
 ---
@@ -676,29 +676,31 @@ docs or sheet message" beyond the `app` discriminator.
 
 ## Implementation status
 
-⬜ This document — design contract only. No code shipped yet.
+The docs-side stack has shipped; phases 1, 2, 3, and 5 are done.
+Only phase 4 (host SDK) and phase 6 (sheet port) remain. (Status as
+of 2026-07-19.)
 
-Planned phases (each a separate batch):
+Phases (each a separate batch):
 
-1. **TypeScript types** — `packages/react/src/embed/protocol.ts`
+1. ✅ **TypeScript types** — `packages/react/src/embed/protocol.ts`
    mirrors every envelope shape with discriminated unions; both
    sides import the same types so the wire stays in lockstep.
-2. **Editor-side handler** — `EmbedTransport` class wires the
+2. ✅ **Editor-side handler** — `EmbedTransport` class wires the
    postMessage listener, validates origin, dispatches to
    editor-side handlers, exposes `useEmbedContext()` for UI that
    needs to react to host commands.
-3. **`/embed` route** — a Vite entry point that mounts a stripped-
+3. ✅ **`/embed` route** — a Vite entry point that mounts a stripped-
    down editor configured from EmbedConfig.
-4. **Host SDK (optional)** — a tiny vanilla-TS module hosts can
+4. ⬜ **Host SDK (optional)** — a tiny vanilla-TS module hosts can
    drop in for ergonomic message dispatch. Pure convenience —
    nothing in the protocol requires it.
-5. **Document signatures** — the signing-mode UI in the editor (a
+5. ✅ **Document signatures** — the signing-mode UI in the editor (a
    dimmed-chrome overlay highlighting the next field, draw/type/
    upload picker, "next signer" indicator), the
    `signature.request` handler, and the field-stamping pipeline
    that emits the signed bytes. Lives behind a `signature` build
    flag so non-signing deploys don't pay for the bundle weight.
-6. **Sheet implementation** — once the docs side is solid, port
+6. ⬜ **Sheet implementation** — once the docs side is solid, port
    the `EmbedTransport` + `/embed` route + signature UI into the
    sheet repo with the same protocol module shared. The only
    product-specific code is the field-anchor renderer (paragraph

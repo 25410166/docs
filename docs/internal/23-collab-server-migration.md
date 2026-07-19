@@ -50,8 +50,9 @@ consumers are unaffected. The room name travels in the Hocuspocus handshake, so
 prefix. Anonymous `write` works by default (the server reads share tokens from the
 `?share=` query, not the Hocuspocus `token`).
 
-The `examples/vite` demo keeps its **own** `useCollab` copy on the Go gateway, so the
-existing y-websocket demo is untouched by this change.
+The `examples/vite` demo's `useCollab` is now a thin **re-export shim** to the library
+hook (`export … from '@casualoffice/docs'`), so the example rides the same
+`HocuspocusProvider` path as every consumer — no separate Go-gateway copy remains.
 
 ## Proven
 
@@ -74,17 +75,19 @@ cd collab && npm install && CASUAL_FILE_EXT=.docx npm run dev
 
 A `CasualEditor` host points `backend` at `ws://localhost:1234/yjs`.
 
-## Staged / follow-ups
+## Done
 
-- **Deploy cutover** — production topology + Caddy reverse proxy (`/yjs` → collab,
-  else → gateway) is in [`deploy/`](../../deploy/README.md)
-  (`docker compose -f docker-compose.prod.yml up`). Pair the origin switch with
-  deploying a collab instance; until then the live demo stays on the Go gateway.
+- **Deploy cutover** — ✅ complete. Production topology is in
+  [`deploy/`](../../deploy/README.md) (`docker compose -f docker-compose.prod.yml up`);
+  `deploy/Caddyfile` now TLS-terminates and `reverse_proxy`s **everything** to the collab
+  `app` on one origin (SPA + REST `/api/rooms` `/auth` `/files` `/wopi` + WS `/yjs`) — no
+  split `/yjs`→collab / else→gateway. The live demo is on collab; the Go gateway is removed
+  (2026-06-28).
+- **Retire the Go gateway's collab role** — ✅ done; the `backend/` gateway was removed
+  wholesale on 2026-06-28, not just its collab role.
+
+## Follow-ups (open)
+
 - **Sheets onto the same server** — point the sheet app at the vendored submodule
   (its server is the source of this extraction, so behaviour is unchanged at the
   `.xlsx` default).
-- **Cosmetics** — a couple of "sheet server" / "workbook" log + comment strings and
-  the `room.xlsxSeed` field name remain in the collab repo; functional, generalize
-  later.
-- **Retire the Go gateway's collab role** once the cutover is verified; keep it for
-  REST/inline host during transition.

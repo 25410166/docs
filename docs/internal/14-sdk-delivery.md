@@ -1,6 +1,6 @@
 # 14 — SDK delivery (Drive integration)
 
-The casual editor ships as an npm package (`@eigenpal/docx-js-editor`)
+The casual editor ships as an npm package (`@casualoffice/docs`)
 so host apps with their own React frontend — Casual Drive today,
 Casual Sheet's host integrators later — embed the editor natively
 without a second container, an iframe boundary, or postMessage
@@ -28,7 +28,7 @@ are the WOPI clients).
 | ------------- | --------------------------------------- | ----------------------------------------- |
 | **Delivery**  | SDK (npm) vs Iframe (postMessage)       | How the editor lands in the host          |
 | **Transport** | FileSource (HTTP) vs WOPI               | How bytes move between host and editor    |
-| **Collab**    | Standalone vs WS gateway (Casual)       | Whether co-edit infrastructure runs       |
+| **Collab**    | Standalone vs collab server (Node)      | Whether co-edit infrastructure runs       |
 
 The three are independent. Drive picks `SDK + FileSource +
 optional collab`. A 3rd-party SharePoint customer picks `Iframe +
@@ -45,7 +45,7 @@ WOPI + optional collab`. Same protocol, different delivery.
 │  Drive (Rust + Axum binary)                  │
 │  ┌────────────────────────────────────────┐  │
 │  │  Drive's React SPA                     │  │
-│  │  npm: @eigenpal/docx-js-editor         │  │
+│  │  npm: @casualoffice/docs         │  │
 │  │  <CasualEditor                         │  │
 │  │    fileSource={driveFs}                │  │
 │  │    docId={…}                           │  │
@@ -56,13 +56,13 @@ WOPI + optional collab`. Same protocol, different delivery.
 └──────────────────────────────────────────────┘
 ```
 
-No Casual gateway. No WS. No iframe boundary. Single Rust binary.
+No collab server. No WS. No iframe boundary. Single Rust binary.
 
 ### Drive + co-edit (two containers, opt-in)
 
 ```
 ┌──────────────────────────────┐    ┌──────────────────────────┐
-│  Drive (Rust + Axum)         │    │  Casual gateway          │
+│  Drive (Rust + Axum)         │    │  collab server           │
 │  Drive's SPA imports SDK     │    │  (stateless Yjs WS broker)│
 │  <CasualEditor               │◄──►│                          │
 │    fileSource={driveFs}      │    │  Per-room Y.Doc          │
@@ -73,11 +73,11 @@ No Casual gateway. No WS. No iframe boundary. Single Rust binary.
 ```
 
 Initial load + final snapshot still flow through Drive's HTTP
-API (via the FileSource). The Casual gateway only carries Yjs
+API (via the FileSource). The collab server only carries Yjs
 updates between connected clients — it doesn't see your bytes.
 
-Drive operator decides per deploy: skip the gateway → simpler +
-cheaper, no co-edit. Add the gateway → multi-user editing.
+Drive operator decides per deploy: skip the collab server →
+simpler + cheaper, no co-edit. Add it → multi-user editing.
 
 ### 3rd-party (existing — WOPI, already shipped)
 
@@ -85,10 +85,10 @@ cheaper, no co-edit. Add the gateway → multi-user editing.
 3rd-party host (SharePoint, custom portal, etc.)
     │ mints WOPI access_token, redirects user
     ▼
-document/ image (Casual gateway + SPA)
+document/ image (collab server + SPA)
     │ /wopi/host?wopiSrc=…&access_token=…
     ▼
-Casual gateway → reaches back to 3rd-party host's /wopi/files/{id}
+collab server → reaches back to 3rd-party host's /wopi/files/{id}
                  for bytes + lock lifecycle (D1-D5)
 ```
 
@@ -109,7 +109,7 @@ Single composable wrapper that bundles four pieces:
 ### Minimal — standalone, no collab, no autosave
 
 ```tsx
-import { CasualEditor } from '@eigenpal/docx-js-editor';
+import { CasualEditor } from '@casualoffice/docs';
 import { DriveFileSource } from './drive-file-source';
 
 const driveFs = new DriveFileSource({ baseUrl: '/api' });
@@ -126,8 +126,8 @@ explicit Save. No collab, no auto-tick.
 ### Standalone with auto-save indicator
 
 ```tsx
-import { CasualEditor, AutosaveStatus } from '@eigenpal/docx-js-editor';
-import type { UseFileSourceAutoSaveReturn } from '@eigenpal/docx-js-editor';
+import { CasualEditor, AutosaveStatus } from '@casualoffice/docs';
+import type { UseFileSourceAutoSaveReturn } from '@casualoffice/docs';
 
 export function FileView({ fileId }: { fileId: string }) {
   const [autosave, setAutosave] = useState<UseFileSourceAutoSaveReturn | null>(null);
@@ -166,14 +166,16 @@ the ticking + saving.
 When `backendUrl` is set:
 - Editor renders with `externalPlugins` from `useCollab` and
   `externalContent: true`.
-- WS opens to `${backendUrl}/doc/${docId}` immediately.
+- `HocuspocusProvider` opens a WS to the bare `${backendUrl}`
+  immediately and carries `docId` in the handshake `name` field
+  (not in the URL path).
 - Awareness publishes `user` so peers render presence + remote
   cursors.
 - Initial document state still loads via `fileSource.open(docId)`
   — the WS only carries Y updates after that.
 
 When `backendUrl` is omitted: no WS, no Yjs runtime, no bundle
-weight (`yjs` / `y-websocket` / `y-prosemirror` are optional
+weight (`yjs` / `@hocuspocus/provider` / `y-prosemirror` are optional
 peerDependencies — uninstalled Drive deploys don't ship them).
 
 ### Imperative ref — flushSave, presence, status
@@ -199,7 +201,7 @@ Drive's SPA ships a FileSource that talks to Drive's HTTP API.
 Five methods to implement:
 
 ```ts
-import type { FileSource, FileEntry } from '@eigenpal/docx-js-editor';
+import type { FileSource, FileEntry } from '@casualoffice/docs';
 
 export class DriveFileSource implements FileSource {
   readonly kind = 'browser' as const;  // pick the closest existing discriminator
@@ -337,14 +339,15 @@ React component regardless of which app it's targeting.
 ## Version compatibility
 
 The SDK is a React component published under semver. Drive
-integrators pin a version range. The editor's gateway (Casual
-gateway, used in collab mode) has its own version line; the
-y-websocket protocol is stable across gateway versions, so any
-SDK version can talk to any reasonably-recent gateway.
+integrators pin a version range. The collab server (Node
+`CasualOffice/collab`, used in collab mode) has its own version
+line; the Hocuspocus/Yjs WS protocol is stable across collab
+server versions, so any SDK version can talk to any
+reasonably-recent collab server.
 
 Concretely:
-- `@eigenpal/docx-js-editor@^1` — Drive's package.json pin.
-- Casual gateway — Drive operator runs whichever container; no
+- `@casualoffice/docs@^1` — Drive's package.json pin.
+- collab server — Drive operator runs whichever container; no
   pin required, the WS protocol is stable.
 - Iframe protocol `v` field (`v: 1`) — covers postMessage shape
   breaks only; doesn't apply to the SDK path.
@@ -362,7 +365,7 @@ explicitly. No silent breaks.
 - ⬜ Signing-mode UI inside `DocxEditor` — the actual dimmed-chrome
   overlay + field highlight + draw/type/upload picker. Wires into
   the `signing` prop sketched above.
-- ⬜ Optional bundle split so `yjs` / `y-websocket` / `y-prosemirror`
+- ⬜ Optional bundle split so `yjs` / `@hocuspocus/provider` / `y-prosemirror`
   truly tree-shake when collab is unused (today's setup makes them
   optional peer deps; the wrapper itself imports `useCollab` so
   any consumer of the wrapper transitively pulls them in via the

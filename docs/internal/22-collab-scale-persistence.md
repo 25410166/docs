@@ -23,10 +23,13 @@ plan. Grounded in the current code, not from memory.
 - **Render is partly optimized.** `PagedEditor` has incremental re-render
   (`RenderPagesUpdateKind === 'incremental'`) + page virtualization ("page
   shells"). But pagination/measure can still be O(doc) on a structural edit.
-- **Backend is stateless.** Go gateway holds one in-memory `Y.Doc` per live room,
-  dropped on drain. First client seeds it from the host's `.docx`; later joiners
-  get the `Y.Doc` over `y-websocket`. **No server snapshot, no versioning, no DB**
-  (persistence is delegated to `host.Integration` per the locked architecture).
+- **Backend is stateless.** The Node/TypeScript `@casualoffice/collab` server
+  (Hocuspocus + Yjs on Fastify, vendored at `./collab`) holds one in-memory `Y.Doc`
+  per live room, dropped on drain. First client seeds it from the host's `.docx`;
+  later joiners get the `Y.Doc` over the Hocuspocus WS. **No server snapshot, no
+  versioning, no DB** (persistence is delegated to the collab server's host storage
+  integration per the locked architecture). _(The in-repo Go gateway that originally
+  filled this role was removed 2026-06-28.)_
 - **Known drop:** raw-XML drawing envelopes (VML/DrawingML/textbox) live on the
   *Document model* (`Shape.rawXml`), **not** in PM. Anything rebuilding the doc
   *from PM* (server snapshot, or a `fromProseDoc` save without the seed bytes)
@@ -36,8 +39,16 @@ plan. Grounded in the current code, not from memory.
 
 ## The four pillars
 
-### A. Collab consistency — zero drops (foundational; do first)
+### A. Collab consistency — zero drops (foundational; do first) — PARTIAL
 A snapshot/version system is worthless if it persists a doc with drawings dropped.
+
+> **Status (2026-07-19):** guard tests now exist —
+> `docx-editor/e2e/editing-experience/collab-convergence.spec.ts` (2-peer
+> convergence, step 3) and
+> `docx-editor/packages/core/src/docx/coedit-envelope-loss.test.ts` (envelope-loss
+> pin behind selective save, steps 1–2). The selective-save default and CRDT
+> round-trip CI gate are still being wired.
+
 1. **Selective save everywhere.** The canonical bytes for a room are the original
    seed `.docx`; saving must be a **selective XML patch against the seed bytes**
    (keep untouched drawings verbatim), never a blind `fromProseDoc` re-serialize.
@@ -81,8 +92,8 @@ reported with a profile pointing at layout compute. Likelier future suspects if 
 ever appears: cold-cache **initial parse/measure** of a huge doc (one-time load, not
 edits), or paint on float-heavy docs.
 
-### C. Server snapshots (fast new-peer sync + safe drain) — keep the gateway stateless
-Persistence stays in `host.Integration`; extend its contract:
+### C. Server snapshots (fast new-peer sync + safe drain) — keep the collab server stateless
+Persistence stays in the collab server's host storage integration; extend its contract:
 - **Y.Doc state snapshot** (binary Yjs state) persisted via the host periodically
   and on drain. A new peer syncs from the **latest snapshot + live deltas** instead
   of replaying from the seed — O(snapshot) join, not O(full history). This is the
@@ -90,8 +101,9 @@ Persistence stays in `host.Integration`; extend its contract:
 - **.docx snapshot** on drain via the **selective patch** (pillar A) so the
   canonical document is persisted with drawings intact (closes the #7 deferred item
   and the envelope loss for the server path).
-- New host methods (sketch): `PutYjsSnapshot(docID, state)` / `GetYjsSnapshot(docID)`
-  and the existing `.docx` `PutFile`. Inline impl for v0; WOPI/JWT later.
+- New collab storage hooks (sketch): `putYjsSnapshot(docID, state)` /
+  `getYjsSnapshot(docID)` and the existing `.docx` `putFile`. Inline impl for v0;
+  WOPI/JWT later.
 
 ### D. Versioning
 - Each persisted `.docx` snapshot is a **version** (timestamp + author + size),
@@ -120,7 +132,7 @@ foundational, and most of it is client-side + testable now. Then C (snapshots),
 then D (versioning). B (latency) can run in parallel.
 
 ## Non-negotiables (carry over from the VF work)
-- Gateway stays **stateless**; all persistence via `host.Integration`.
+- The collab server stays **stateless**; all persistence via the host storage integration.
 - Round-trip stays pristine; the CRDT round-trip + 2-peer convergence guards go
   green and stay in CI.
 - Each change gated; no silent drops — that's the whole point.

@@ -69,6 +69,11 @@ system*, *SDK contract shape*, and *cross-cutting UX* should match sheet.
 
 ## 3. SDK model (the contract shape to mirror — Excalidraw model)
 
+> **Superseded — read doc 38 first.** The canonical SDK contract both editors
+> now conform to lives in `docs/internal/38-unified-sdk-contract.md` (planned in
+> `docs/internal/37-sdk-and-collab-plan.md`). The Excalidraw-shaped sketch below
+> is kept as background; where it and doc 38 differ, **doc 38 wins**.
+
 Sheet's SDK is `@casualoffice/sheets` (published npm). The doc editor's SDK
 should follow the **same shape** (adapted to its stack), so hosts integrate both
 the same way:
@@ -81,8 +86,11 @@ the same way:
     consumes only the editor core. (Sheet's `apps/web` uses `chrome="none"`.)
 - **Imperative API via `onReady(api)`** (sheet: `CasualSheetsAPI`): `getSnapshot`
   / `loadSnapshot` / `getSelection` / `executeCommand` / `setTheme` /
-  `importXlsx` / `exportXlsx` (doc equiv: `importDocx`/`exportDocx`) / `univer`
-  (escape hatch, not semver-covered). Keep the doc API names parallel.
+  `importXlsx` / `exportXlsx` (doc side: the real exported converter symbol is
+  `exportDocxAs` — there is no `importDocx`/`exportDocx` public SDK symbol
+  paralleling these; doc 38 makes the canonical cross-editor names `import` /
+  `export`) / `univer` (escape hatch, not semver-covered). Keep the doc API names
+  parallel per doc 38.
 - **Host-owned persistence — the SDK stores NOTHING.** It emits `onChange`
   (debounced snapshot), `onSave` (Ctrl/Cmd+S), `onExit` (unmount). The host
   decides where bytes go (localStorage demo / WOPI / backend). No
@@ -149,4 +157,6 @@ the same way:
 
 ---
 
-_Source: casual-sheets repo as of 2026-06-21. SDK published `@casualoffice/sheets@0.11.1`._
+_Source: casual-sheets repo as of 2026-06-21. SDK published `@casualoffice/sheets@0.11.1`.
+The §3 contract convergence between the two editors is now formalized in
+`docs/internal/38-unified-sdk-contract.md` (canonical)._

@@ -1,7 +1,50 @@
 # 27 — Production-Grade Suite Tracker
 
-**Date:** 2026-06-26  
-**Status:** Active execution tracker  
+**Date:** 2026-07-19 (audit refresh)  
+**Status:** Active execution tracker — the single live production tracker  
+**Supersedes:** `archive/17-production-readiness-audit.md` (2026-06-19 point-in-time audit, archived 2026-07-19)
+
+---
+
+## 2026-07-19 — Production-readiness audit + hardening pass
+
+A 14-dimension multi-agent audit (7 engineering + 7 UX), each finding code-cited and
+spot-verified against source. Headline: **57/100** — production-capable for single-user
+desktop, but gated below that by release-blocking data-loss and security defects in the
+intended multi-user / WOPI configuration. Full narrative + roadmap live in the audit
+artifact; the concrete gates and their status are tracked here.
+
+### Release gates (must close before a multi-user / WOPI production release)
+
+| # | Gate | Severity | Status |
+| - | ---- | -------- | ------ |
+| 1 | Collab autosave overwrites the stored `.docx` with a blank doc before Y.Doc sync | critical | **Fixed 2026-07-19** — `useCollab` exposes `synced`; `useFileSourceAutoSave` gains an `isReady()` gate; editor is never serialized pre-sync (`useFileSourceAutoSave.test.ts`) |
+| 2 | Two stored/paste XSS vectors (unvalidated hyperlink href + `innerHTML` on live paste) | high | **Fixed 2026-07-19** — `safeUrl()` scheme allow-list at every href sink + inert `DOMParser` paste (`safeUrl.test.ts`) |
+| 3 | WOPI `access_token` leaks in the visible URL + bug-report links; empty-origin embed msgs trusted | medium | **Fixed 2026-07-19** — `stripAccessTokenFromUrl()` on boot; origin+pathname-only report URLs; strict embed origin gate |
+| 4 | Personal-mode optimistic concurrency (If-Match) unwired → silent last-write-wins | critical | **Open** — thread etag end-to-end (`personal.ts`, `useFileSourceAutoSave.ts`) |
+| 5 | WOPI 409 conflict wedges autosave into permanent silent edit loss | high | **Open** — catch `WopiSaveConflictError`, refresh version, durable conflict UX |
+| 6 | Share permissions are an unenforced client-side `?role=` hint; no access UI | high | **Open (Next)** — server-enforced share tokens + collaborator management (overlaps P1.7/P1.9) |
+| 7 | Offline edits volatile despite banner promising "saved locally" | high | **Open (Next)** — add `y-indexeddb` (overlaps P1.6) or correct the banner copy |
+
+Feedback follow-ups (audit quick-wins): false "Saved X ago" after a failed autosave, silent
+manual-save failure, unconfirmed comment-thread delete — tracked in the feedback batch.
+
+### Status reconciliations (2026-07-19)
+
+Corrected against the doc's own 2026-07-04 audit + collab PR #4:
+- **P1.1** (persistent collab storage mandatory in prod) → the `collab-ephemeral-prod` guard shipped (refuses boot on `NODE_ENV=production` + in-memory storage unless `ALLOW_EPHEMERAL`). Remaining prod gap is only `collab-prod-compose-memory` (`REDIS_URL` commented out in prod compose).
+- **P1.11** (flush debounced saves on shutdown) → **Covered**: `collab-sigterm-drops-saves` + `collab-no-drain-snapshot` both fixed in collab PR #4.
+- Editor `find-not-in-headers` → **Fixed**: `handleFind` now uses `getActiveEditorView()`.
+
+### Docs hygiene (2026-07-19)
+
+Whole-corpus staleness triage (37 docs). Deleted `docs/DEPLOYMENT.md` (superseded by
+`deploy/README.md`); archived `05-backend-design`, `09-feature-parity-pipeline`, `12-env-vars`,
+`16-sdk-iframe-architecture`, `17-production-readiness-audit`; corrected the Go→Node
+backend-truth drift and shipped-status drift across 22 docs. This tracker is now the single
+live production tracker.
+
+
 **Target:** A reliable, polished, production-grade self-hosted office suite where Casual Docs can stand credibly against LibreOffice Writer and OnlyOffice Document Editor, and share one collaboration protocol/server with Casual Sheets and Casual Slides.
 
 This tracker is intentionally strict. A task is not done because the feature appears to work in a demo. A task is done only when the acceptance gate, regression coverage, deployment path, recovery behavior, and user-facing UX are complete.

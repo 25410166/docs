@@ -1,11 +1,30 @@
 # 10 — Writing Assistant Design
 
-Status: **Approved for build, P1 in progress.** Last updated 2026-06-01.
+Status: **Shipped.** Last updated 2026-07-19.
+
+> **Update (2026-07-19):** the module has shipped, and the advanced tier
+> has since been rebuilt — see **doc 34 (`34-ai-production-rework.md`)** and
+> **doc 36 (`36-ai-north-star.md`)** for the current AI architecture. Two
+> facts in the original design below are now stale and corrected inline:
+> (a) the advanced tier is no longer transformers.js distilbart/MiniLM — it
+> is **Llama-3.2-1B-Instruct via `@mlc-ai/web-llm`** (WebGPU); and (b) the
+> "no backend, never cloud fallback" stance is **flipped** — doc 34 adds a
+> `WebLlmClient` with a **collab-server Anthropic proxy** path. Strict
+> on-device / no-network now applies **only to the `flan-t5-small` tier**
+> (grammar / tone / summarize-basic).
 
 Browser-only, on-device writing aid (grammar / tone / summarize) bolted
 onto Casual Editor without compromising existing UX. All inference runs
 in a Web Worker against transformers.js. Models load on user opt-in and
-are cached in the browser. No backend, no API keys, no telemetry.
+are cached in the browser. No telemetry.
+
+> **Corrected (2026-07-19):** the "no backend, no API keys" claim held for
+> the original single-tier design but no longer describes the whole module.
+> The strict on-device / no-network guarantee now applies **only to the
+> `flan-t5-small` tier** (grammar / tone / summarize-basic). The advanced
+> tier (`advanced-llm`) runs Llama-3.2-1B on-device via `@mlc-ai/web-llm`,
+> and doc 34 additionally introduces a `WebLlmClient` whose preferred path
+> is a **collab-server Anthropic proxy** (key never reaches the browser).
 
 ---
 
@@ -17,10 +36,16 @@ are cached in the browser. No backend, no API keys, no telemetry.
 - **Wise model use.** Single core model (`flan-t5-small`) covers grammar + tone + basic summarize. Optional advanced upgrades co-load only when the user asks for them.
 - **Worker-isolated.** Inference + load happen off the main thread. Cancellation via AbortController.
 - **Zero impact on existing features** until the user enables the assistant. After enable, no impact on editor responsiveness — model lives in a worker, integration touches only `DecorationLayer` (squiggles) and `TextContextMenu` (selection actions).
-- **Privacy-first.** One-time consent. No text ever leaves the device.
+- **Privacy-first.** One-time consent. On the `flan-t5-small` tier no text
+  ever leaves the device. _(Corrected 2026-07-19: the `advanced-llm` tier's
+  optional collab Anthropic-proxy path — doc 34 — does send text to the
+  proxy; the strict on-device guarantee is tier-scoped, not module-wide.)_
 
 ### Non-goals
-- **Cloud fallback.** Never.
+- **Cloud fallback.** ~~Never.~~ _(Reversed 2026-07-19 — see doc 34: the
+  rebuilt `WebLlmClient` prefers a collab-server Anthropic proxy, with an
+  on-device WebLLM fallback. The no-cloud stance now holds only for the
+  `flan-t5-small` tier.)_
 - **Multi-language v1.** English only. (Models exist for other langs, defer.)
 - **Document-wide rewrites.** v1 operates per selection / per paragraph. "Rewrite my whole doc" is a v2 idea.
 - **Persona / style transfer beyond preset tones.** Just `formal / casual / concise / shorter / longer`.
@@ -114,10 +139,17 @@ Unsupported features render as disabled with the `reason` in a tooltip.
 | Model ID | Quant size | Backends | Used for |
 | --- | --- | --- | --- |
 | `Xenova/flan-t5-small` | ~95 MB | webgpu, wasm-simd, wasm | grammar, tone, summarize-basic |
-| `Xenova/distilbart-cnn-6-6` | ~155 MB | webgpu, wasm-simd | summarize-pro (advanced) |
-| `Xenova/all-MiniLM-L6-v2` | ~23 MB | webgpu, wasm-simd, wasm | doc-wide tone signal (advanced) |
+| `Llama-3.2-1B-Instruct-q4f16_1-MLC` | ~880 MB | webgpu (via `@mlc-ai/web-llm`) | advanced-llm |
 
-All Apache-2.0 / MIT, all in transformers.js's onnx repo, all runnable in WASM-only as a floor.
+The `flan-t5-small` tier is Apache-2.0 / MIT, in transformers.js's onnx
+repo, runnable in WASM-only as a floor.
+
+> **Corrected (2026-07-19):** the advanced tier no longer uses
+> `Xenova/distilbart-cnn-6-6` (summarize-pro) or `Xenova/all-MiniLM-L6-v2`
+> (doc-context) on transformers.js. It was **rebuilt** on
+> **Llama-3.2-1B-Instruct (q4f16) via `@mlc-ai/web-llm`**, WebGPU-only,
+> engine `web-llm` (see `packages/react/src/lib/writer/registry.ts`). It
+> replaces the basic model when active rather than co-residing.
 
 ### Features
 
@@ -126,14 +158,18 @@ All Apache-2.0 / MIT, all in transformers.js's onnx repo, all runnable in WASM-o
 | `grammar` | Grammar polish | flan-t5-small | 1.5 GB | off |
 | `tone` | Tone & style rewrite | flan-t5-small | 1.5 GB | off |
 | `summarize-basic` | Summarize selection | flan-t5-small | 1.5 GB | off (free when grammar/tone is on) |
-| `summarize-pro` | High-quality summarize | flan-t5-small + distilbart | 2 GB | off (advanced) |
-| `doc-context` | Doc-wide tone signal | flan-t5-small + MiniLM | 1.6 GB | off (advanced) |
+| `advanced-llm` | Advanced (Llama-3.2-1B) | llama-3.2-1b (web-llm) | 4 GB | off (advanced) |
 
 `grammar`, `tone`, `summarize-basic` share `flan-t5-small` — picking any one
 of them loads it; turning all three on adds nothing to memory.
 
-`summarize-pro` and `doc-context` are advanced upgrades that co-load with the
-core. Both off → 95 MB. Both on → 273 MB. Still under our 300 MB ceiling.
+> **Corrected (2026-07-19):** the `FeatureId` union shipped as
+> **`grammar | tone | summarize-basic | advanced-llm`** (see
+> `packages/react/src/lib/writer/registry.ts`). The originally-designed
+> `summarize-pro` and `doc-context` features were **not built**; the single
+> `advanced-llm` feature (Llama-3.2-1B via `@mlc-ai/web-llm`, WebGPU-only,
+> ~4 GB device memory) supersedes them and **replaces** the basic model when
+> active rather than co-loading.
 
 ---
 

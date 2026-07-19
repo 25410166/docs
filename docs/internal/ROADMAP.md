@@ -1,17 +1,22 @@
 # Casual Editor — Roadmap & Project Milestones
 
-**The single forward-looking doc: where the project is and where it's going.**
+**The phase-wise product roadmap** — no longer the *only* forward-looking doc.
 Consolidates the resolved fidelity/editability/collab trackers (now in
 `archive/`) and the competitive analysis (`26-competitive-analysis.md`) into one
 phase-wise plan. Living reference/design docs (backend, storage, SDK, iframe,
 writing-assistant, snapshot, collab-scale) stay as-is alongside this.
 
-For the strict production execution checklist, use
-[`27-production-grade-tracker.md`](27-production-grade-tracker.md). The roadmap
+The **current direction** now lives in two dedicated workstreams that this
+roadmap does not supersede: **AI** (`31`–`36`, north star in
+[`36-ai-north-star.md`](36-ai-north-star.md)) and the **SDK + embedded/collab**
+initiative (`37`–`39`, plan in [`37-sdk-and-collab-plan.md`](37-sdk-and-collab-plan.md)).
+
+For the strict production execution checklist — the **live execution tracker** —
+use [`27-production-grade-tracker.md`](27-production-grade-tracker.md). The roadmap
 describes direction; the tracker defines release gates, phase tasks, and
 "done means done" acceptance criteria.
 
-Last updated: 2026-06-25.
+Last updated: 2026-07-19.
 
 **Recently shipped (2026-06-24→25):** Phase A is **complete** (track-changes, version history +
 Google-Docs preview/panel, Strict co-editing). Phase D **equations** is complete (render +
@@ -140,13 +145,26 @@ From the competitive matrix — the capabilities desktop suites have that we don
 - No change ships with the editor-safety / collab-convergence gate red.
 - Render-metric changes are **revert-by-default** unless they net positive on the VF mean.
 - MIT on the editor side — no AGPL code (OnlyOffice is AGPL; do not borrow editor code).
-- Backend stays **stateless** (Yjs in, snapshots out); persistence owned by the host.
+- The Node/TypeScript **`CasualOffice/collab`** server (Hocuspocus + Yjs on Fastify,
+  vendored at `./collab`) stays **stateless** (Yjs in, snapshots out); persistence owned
+  by the host. _(The in-repo Go y-websocket gateway under `backend/` was removed 2026-06-28.)_
 
 ---
 
 ## Pointers
 
 - Competitive analysis → `26-competitive-analysis.md`
+- Collab-server migration (Go gateway → Node `CasualOffice/collab`, removed 2026-06-28) →
+  `23-collab-server-migration.md`
+- Live production execution tracker → `27-production-grade-tracker.md`
+- Visual fidelity to ≥90 / editing-UX bar / header-edit positioned layout → `28-visual-fidelity-to-90.md`,
+  `29-editing-ux-competitive-bar.md`, `30-header-edit-positioned-layout.md`
+- **AI** workstream (architecture, competitive analysis, HF editing gaps, production rework,
+  agentic MCP, north star) → `31-ai-architecture.md`, `32-ai-competitive-analysis.md`,
+  `33-hf-editing-ux-gaps.md`, `34-ai-production-rework.md`, `35-agentic-mcp-architecture.md`,
+  `36-ai-north-star.md`
+- **SDK + embedded/collab** initiative (plan, unified SDK contract, embedded-mode contract) →
+  `37-sdk-and-collab-plan.md`, `38-unified-sdk-contract.md`, `39-embedded-mode-contract.md`
 - Backend / storage / SDK / iframe / writing-assistant / snapshot / collab-scale → the
   numbered design docs that remain in this folder.
 - Resolved trackers (fidelity gaps, gap-matrix, content-drops, overlap, vf-to-80,
