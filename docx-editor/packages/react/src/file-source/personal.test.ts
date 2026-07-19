@@ -189,6 +189,42 @@ describe('PersonalFileSource', () => {
     expect(result.etag).toBe('v5');
   });
 
+  it('save() surfaces a 412 If-Match conflict with the host version (actual)', async () => {
+    const h = makeHarness();
+    h.setRespond(() => jsonRes(412, { error: 'version_conflict' }, { ETag: 'v9' }));
+    let err: unknown;
+    try {
+      await h.source.save('doc_a', new Uint8Array([1]).buffer, { etag: 'v4' });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(PersonalFileSourceError);
+    expect((err as PersonalFileSourceError).status).toBe(412);
+    // The host's CURRENT version is surfaced so the caller can force-save.
+    expect((err as PersonalFileSourceError).actual).toBe('v9');
+  });
+
+  it('after a 412, re-threading the host version (actual) overwrites successfully', async () => {
+    const h = makeHarness();
+    let n = 0;
+    h.setRespond(() => {
+      n += 1;
+      // First save conflicts (stale etag); second carries the host version.
+      return n === 1
+        ? jsonRes(412, { error: 'version_conflict' }, { ETag: 'v9' })
+        : jsonRes(200, { file: file({ id: 'doc_a', etag: 'v10' }) });
+    });
+
+    await expect(
+      h.source.save('doc_a', new Uint8Array([1]).buffer, { etag: 'v4' })
+    ).rejects.toBeInstanceOf(PersonalFileSourceError);
+
+    const result = await h.source.save('doc_a', new Uint8Array([1]).buffer, { etag: 'v9' });
+    expect(result.etag).toBe('v10');
+    // The recovery save carried the adopted version, not the stale one.
+    expect((h.calls[1].init?.headers as Record<string, string>)['If-Match']).toBe('v9');
+  });
+
   it('rename() PATCHes { name } (204) and updates the recent observer', async () => {
     const h = makeHarness();
     h.setRespond(() => jsonRes(200, { files: [file({ id: 'doc_a', name: 'old.docx' })] }));

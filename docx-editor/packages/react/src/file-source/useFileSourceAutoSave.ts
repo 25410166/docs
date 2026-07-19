@@ -292,8 +292,18 @@ export function useFileSourceAutoSave(
   // initialEtag, refreshed from each successful save, and reseeded whenever the
   // doc changes so a stale etag can't leak across documents.
   const lastEtagRef = useRef<string | undefined>(initialEtag);
+  // Seed the concurrency etag from the freshly-opened doc, but NEVER clobber an
+  // etag we've already advanced via a save — initialEtag can resolve late
+  // (undefined → loadState.etag) after a save already ran, which would send a
+  // stale version and cause a spurious conflict. Reset only when the doc changes.
+  const seededDocRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    lastEtagRef.current = initialEtag;
+    if (seededDocRef.current !== docId) {
+      seededDocRef.current = docId;
+      lastEtagRef.current = initialEtag; // new document — take its etag
+    } else if (lastEtagRef.current === undefined && initialEtag !== undefined) {
+      lastEtagRef.current = initialEtag; // same doc, etag resolved after mount
+    }
   }, [docId, initialEtag]);
 
   // Callbacks captured via ref so the tick effect doesn't restart
@@ -361,6 +371,12 @@ export function useFileSourceAutoSave(
           break;
         case 'err':
           if (isConflictError(result.err)) {
+            // Adopt the host's CURRENT version from the conflict error so a
+            // user-initiated flush() ('Save anyway') sends it and overwrites,
+            // instead of re-threading the stale etag and conflicting forever
+            // (WopiSaveConflictError.actual / PersonalFileSourceError.actual).
+            const actual = (result.err as { actual?: string }).actual;
+            if (actual) lastEtagRef.current = actual;
             // Durable conflict: pause the auto-loop and surface it until the
             // user resolves it. Deliberately NOT auto-cleared — a hidden
             // conflict means every further edit is silently lost.
