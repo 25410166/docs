@@ -5822,6 +5822,37 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     setState((prev) => ({ ...prev, zoom }));
   }, []);
 
+  // Fit-to-width on phone mount. A Letter/A4 page (~816px) is far wider than a
+  // phone screen, so at zoom 1.0 the document overflows and the user has to
+  // pinch just to read it. On a phone-width viewport, auto-fit the first page to
+  // the screen once after the first render — only shrinking (never zooming in),
+  // and only when the host didn't pass a custom initialZoom. (tracker 27, mobile.)
+  const didFitToWidthRef = useRef(false);
+  useEffect(() => {
+    if (didFitToWidthRef.current) return;
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    if (initialZoom !== 1) return; // host chose an explicit zoom — respect it
+    if (!window.matchMedia('(max-width: 720px)').matches) return; // phones only
+    let raf = 0;
+    let tries = 0;
+    const attempt = () => {
+      // `.layout-page` offsetWidth is the page's natural (pre-scale) width; at
+      // mount zoom is 1.0 so it reads the true page width regardless of scaling.
+      const page = document.querySelector('.layout-page') as HTMLElement | null;
+      const pageWidth = page?.offsetWidth ?? 0;
+      if (!pageWidth) {
+        if (tries++ < 30) raf = requestAnimationFrame(attempt);
+        return;
+      }
+      const available = window.innerWidth - 16; // small gutter each side
+      const fit = Math.min(1, Math.max(0.25, available / pageWidth));
+      if (fit < 0.98) handleZoomChange(fit); // only shrink to fit
+      didFitToWidthRef.current = true;
+    };
+    raf = requestAnimationFrame(attempt);
+    return () => cancelAnimationFrame(raf);
+  }, [initialZoom, handleZoomChange]);
+
   // Stable PagedEditor onTotalPagesChange — avoids breaking memo() on every render.
   const handleTotalPagesChange = useCallback((totalPages: number) => {
     setScrollPageInfo((prev) => (prev.totalPages === totalPages ? prev : { ...prev, totalPages }));
