@@ -498,6 +498,12 @@ const pagesContainerStyles: CSSProperties = {
   flexDirection: 'column',
   alignItems: 'center',
   overflowAnchor: 'none',
+  // Touch behavior on the editing canvas: allow one-finger scroll in both
+  // axes, but disable the browser's native pinch-zoom and double-tap-zoom so
+  // (a) the custom two-finger zoom in usePinchZoom owns zooming, and (b) a tap
+  // to place the caret is immediate (no 300ms delay) and never zooms the page.
+  // No effect on desktop mouse input. (tracker 27, Next phase — touch editing.)
+  touchAction: 'pan-x pan-y',
 };
 
 const pluginOverlaysStyles: CSSProperties = {
