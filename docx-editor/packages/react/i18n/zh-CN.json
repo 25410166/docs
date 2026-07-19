@@ -689,7 +689,8 @@
     "addComment": "添加批注",
     "replyPlaceholder": "回复或使用 @ 提及他人...",
     "replyCount": "{count, plural, one {# 条回复} other {# 条回复}}",
-    "mentionSuggestions": null
+    "mentionSuggestions": null,
+    "confirmDelete": null
   },
   "trackedChanges": {
     "unknown": "未知",

@@ -699,6 +699,7 @@
     "reopen": "Reopen",
     "moreOptions": "More options",
     "unknown": "Unknown",
+    "confirmDelete": "Delete this comment?",
     "addComment": "Add a comment...",
     "replyPlaceholder": "Reply or add others with @",
     "replyCount": "{count, plural, one {# reply} other {# replies}}",

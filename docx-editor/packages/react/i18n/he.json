@@ -689,7 +689,8 @@
     "addComment": "הוסף תגובה...",
     "replyPlaceholder": "השב או הוסף אחרים עם @",
     "replyCount": "{count, plural, one {תגובה אחת} other {# תגובות}}",
-    "mentionSuggestions": null
+    "mentionSuggestions": null,
+    "confirmDelete": null
   },
   "trackedChanges": {
     "unknown": "לא ידוע",
