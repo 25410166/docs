@@ -166,4 +166,40 @@ describe('performAutoSave', () => {
     expect(result.kind).toBe('ok');
     expect(fs.saveCalls[0].size).toBe(0);
   });
+
+  it('skips with reason "not-ready" and never serializes when isReady() is false', async () => {
+    const fs = fakeFileSource();
+    let serialized = false;
+    const ref: AutoSaveEditorRef = {
+      save: async () => {
+        serialized = true;
+        return new Uint8Array([1]).buffer;
+      },
+    };
+    const result = await performAutoSave({
+      getRef: () => ref,
+      fileSource: fs,
+      docId: 'd',
+      isReady: () => false,
+    });
+    expect(result.kind).toBe('skip');
+    if (result.kind === 'skip') expect(result.reason).toBe('not-ready');
+    // Critical: the editor is never serialized and the store is never touched,
+    // so a blank pre-sync doc can't overwrite the persisted document.
+    expect(serialized).toBe(false);
+    expect(fs.saveCalls.length).toBe(0);
+  });
+
+  it('proceeds normally when isReady() is true', async () => {
+    const fs = fakeFileSource();
+    const bytes = new Uint8Array([0x50, 0x4b]).buffer;
+    const result = await performAutoSave({
+      getRef: () => fakeRef(bytes),
+      fileSource: fs,
+      docId: 'd',
+      isReady: () => true,
+    });
+    expect(result.kind).toBe('ok');
+    expect(fs.saveCalls.length).toBe(1);
+  });
 });

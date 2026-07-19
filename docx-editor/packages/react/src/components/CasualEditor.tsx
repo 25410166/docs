@@ -404,12 +404,21 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
     // Autosave — opt-in via autosave={true}
     // ---------------------------------------------------------------
 
+    // Autosave must not push serialized bytes until the source of truth is
+    // ready. In collab mode the editor mounts with an empty `blankDoc()` seed
+    // and the real content arrives over Yjs — saving before that sync completes
+    // would overwrite the stored .docx with a blank document (audit 2026-07-19).
+    // Non-collab docs are always ready (the FileSource load is the content).
+    const collabSynced = !collabState || collabState.synced === true;
+    const isSaveReady = useCallback(() => collabSynced, [collabSynced]);
+
     const autosaveState = useFileSourceAutoSave({
       fileSource,
       docId,
       editorRef,
       interval: autosaveInterval,
       enabled: autosave,
+      isReady: isSaveReady,
     });
 
     useEffect(() => {

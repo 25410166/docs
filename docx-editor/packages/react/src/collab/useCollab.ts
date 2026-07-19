@@ -48,6 +48,13 @@ export interface CollabState {
   plugins: Plugin[];
   /** Connection state from the Yjs provider. */
   status: CollabStatus;
+  /**
+   * True once the provider has completed its initial server sync — the Y.Doc
+   * now holds the room's real content. Consumers that persist serialized bytes
+   * (autosave) must gate on this so they never overwrite stored content with
+   * the empty seed the editor mounts with before sync arrives.
+   */
+  synced: boolean;
   /** Live snapshot of who's connected, including the local user. */
   peers: CollabPeer[];
   /** True while the server-side AI orchestrator is running a tool loop for this room. */
@@ -232,6 +239,12 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
     }, [room, backend, token]);
 
   const [status, setStatus] = useState<CollabStatus>('connecting');
+  // True once the provider has completed its INITIAL sync with the server —
+  // i.e. the Y.Doc now holds the room's real content, not the empty seed the
+  // editor mounts with. Autosave MUST wait for this before pushing serialized
+  // bytes to the FileSource, or it would overwrite the stored .docx with a
+  // blank document (audit 2026-07-19: collab-autosave-blank-overwrite).
+  const [synced, setSynced] = useState(false);
   const [peers, setPeers] = useState<CollabPeer[]>([]);
   const [aiIsEditing, setAiIsEditing] = useState(false);
   const [aiEditingBy, setAiEditingBy] = useState<string | null>(null);
@@ -272,6 +285,12 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
 
     const onStatus = (e: { status: CollabStatus }) => setStatus(e.status);
 
+    // A fresh provider starts unsynced; reflect its current state, then track
+    // the 'synced' event. HocuspocusProvider fires `synced` with `{ state }`.
+    setSynced(provider.synced === true);
+    const onSynced = (e?: { state?: boolean }) => setSynced(e?.state ?? true);
+    provider.on('synced', onSynced);
+
     const onStateless = ({ payload }: { payload: string }) => {
       try {
         const msg = JSON.parse(payload) as {
@@ -300,6 +319,7 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
 
     return () => {
       provider.off('status', onStatus);
+      provider.off('synced', onSynced);
       provider.off('stateless', onStateless);
       awareness.off('change', refreshPeers);
     };
@@ -317,6 +337,7 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
   return {
     plugins,
     status,
+    synced,
     peers,
     aiIsEditing,
     aiEditingBy,

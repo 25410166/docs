@@ -68,7 +68,7 @@ const SAVE_TIMEOUT_MS = 30000;
  * returned; `err` carries the throw.
  */
 export type AutoSaveTickResult =
-  | { kind: 'skip'; reason: 'no-ref' | 'no-bytes' | 'in-flight' }
+  | { kind: 'skip'; reason: 'no-ref' | 'no-bytes' | 'in-flight' | 'not-ready' }
   | { kind: 'ok'; etag: string; savedAt: Date }
   | { kind: 'err'; err: unknown };
 
@@ -78,6 +78,14 @@ export interface PerformAutoSaveDeps {
   fileSource: FileSource;
   docId: string;
   name?: string;
+  /**
+   * Optional readiness gate. When it returns `false` the tick is SKIPPED
+   * before the editor is even serialized — used to refuse saving before a
+   * collab Y.Doc has completed its initial sync, which would otherwise push
+   * the empty mount-time seed over the stored document (data-loss). Absent →
+   * always ready (single-user / non-collab).
+   */
+  isReady?: () => boolean;
 }
 
 /**
@@ -89,6 +97,10 @@ export interface PerformAutoSaveDeps {
 export async function performAutoSave(deps: PerformAutoSaveDeps): Promise<AutoSaveTickResult> {
   const ref = deps.getRef();
   if (!ref) return { kind: 'skip', reason: 'no-ref' };
+  // Refuse to serialize/push before the source of truth is ready (e.g. collab
+  // still syncing). Guards against overwriting stored content with the empty
+  // seed the editor mounts with.
+  if (deps.isReady && !deps.isReady()) return { kind: 'skip', reason: 'not-ready' };
   try {
     const bytes = await ref.save({ selective: true });
     // When the editor ref is mounted, a null return means serialization
@@ -139,6 +151,13 @@ export interface UseFileSourceAutoSaveOptions {
   /** Hard-off switch. Default true. */
   enabled?: boolean;
   /**
+   * Readiness gate evaluated fresh on every tick. Return `false` to skip the
+   * save (e.g. while a collab Y.Doc is still syncing) so autosave never
+   * overwrites stored content with the editor's empty mount-time seed. Absent
+   * → always ready.
+   */
+  isReady?: () => boolean;
+  /**
    * Optional file-name to attach on first-save (when docId is null
    * — see save() below). The hook doesn't watch this for changes;
    * the host should call FileSource.rename() for that.
@@ -187,6 +206,7 @@ export function useFileSourceAutoSave(
     interval = 30000,
     enabled = true,
     name,
+    isReady,
     onSaved,
     onError,
   } = opts;
@@ -226,10 +246,10 @@ export function useFileSourceAutoSave(
 
   // Snapshot of the host-controlled deps inside a ref so the timing
   // effect can read fresh values without re-firing on every change.
-  const cfgRef = useRef({ fileSource, docId, editorRef, name });
+  const cfgRef = useRef({ fileSource, docId, editorRef, name, isReady });
   useEffect(() => {
-    cfgRef.current = { fileSource, docId, editorRef, name };
-  }, [fileSource, docId, editorRef, name]);
+    cfgRef.current = { fileSource, docId, editorRef, name, isReady };
+  }, [fileSource, docId, editorRef, name, isReady]);
 
   /**
    * Performs exactly one save round-trip and reflects the outcome in
@@ -241,6 +261,9 @@ export function useFileSourceAutoSave(
    */
   const executeOne = useCallback(async (): Promise<void> => {
     const cfg = cfgRef.current;
+    // Not-ready (e.g. collab still syncing): skip silently without flashing a
+    // 'saving' status every tick, and never touch the stored document.
+    if (cfg.isReady && !cfg.isReady()) return;
     setStatus('saving');
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<AutoSaveTickResult>((resolve) => {
@@ -256,6 +279,7 @@ export function useFileSourceAutoSave(
           fileSource: cfg.fileSource,
           docId: cfg.docId,
           name: cfg.name,
+          isReady: cfg.isReady,
         }),
         timeout,
       ]);
