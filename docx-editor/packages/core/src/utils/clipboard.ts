@@ -467,8 +467,12 @@ export function htmlToRuns(html: string, plainTextFallback: string): Run[] {
     return plainTextFallback ? [createTextRun(plainTextFallback)] : [];
   }
 
-  const container = document.createElement('div');
-  container.innerHTML = html;
+  // Parse untrusted clipboard HTML in an INERT document. Nodes created by
+  // DOMParser are not connected to a live browsing context, so `<img src=x
+  // onerror=...>` never loads/fires and `<script>` never runs — unlike
+  // assigning `innerHTML` on a live element, which would execute both.
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  const container = parsed.body;
 
   const runs: Run[] = [];
   processNode(container, runs, {});

@@ -34,6 +34,7 @@ import {
 } from '../prosemirror/utils/tabCalculator';
 import { resolveFontFamily } from '../utils/fontResolver';
 import { colorForAuthor } from '../utils/changeAuthorColor';
+import { safeUrl } from '../utils/safeUrl';
 
 /**
  * CSS class names for paragraph rendering
@@ -380,7 +381,8 @@ function renderTextRun(run: TextRun, doc: Document, resolvedCommentIds?: Set<num
   // Handle hyperlinks
   if (run.hyperlink) {
     const anchor = doc.createElement('a');
-    anchor.href = run.hyperlink.href;
+    const href = safeUrl(run.hyperlink.href);
+    if (href) anchor.href = href;
     // Internal bookmark links (starting with #) should scroll within the document
     // External links should open in a new tab
     if (!run.hyperlink.href.startsWith('#')) {
@@ -693,7 +695,8 @@ export function renderInlineImageRun(run: ImageRun, doc: Document): HTMLElement 
   // existing block-image hyperlink handling in `renderImage.ts`.
   if (run.hlinkHref) {
     const anchor = doc.createElement('a');
-    anchor.href = run.hlinkHref;
+    const href = safeUrl(run.hlinkHref);
+    if (href) anchor.href = href;
     anchor.target = '_blank';
     anchor.rel = 'noopener noreferrer';
     anchor.style.display = 'inline-block';
@@ -772,7 +775,8 @@ function renderBlockImage(run: ImageRun, doc: Document): HTMLElement {
   // external link.
   if (run.hlinkHref) {
     const anchor = doc.createElement('a');
-    anchor.href = run.hlinkHref;
+    const href = safeUrl(run.hlinkHref);
+    if (href) anchor.href = href;
     anchor.target = '_blank';
     anchor.rel = 'noopener noreferrer';
     anchor.appendChild(img);

@@ -13,6 +13,7 @@
 
 import type { ImageFragment, ImageBlock, ImageMeasure } from '../layout-engine/types';
 import type { RenderContext } from './renderPage';
+import { safeUrl } from '../utils/safeUrl';
 
 /**
  * CSS class names for image elements
@@ -199,7 +200,8 @@ export function renderImageFragment(
   // Wrap in hyperlink if image has a link
   if (block.hlinkHref) {
     const linkEl = doc.createElement('a');
-    linkEl.href = block.hlinkHref;
+    const href = safeUrl(block.hlinkHref);
+    if (href) linkEl.href = href;
     linkEl.target = '_blank';
     linkEl.rel = 'noopener noreferrer';
     linkEl.style.display = 'block';

@@ -15,7 +15,10 @@ export function openBugReport(repoUrl = 'https://github.com/CasualOffice/docs'):
   url.searchParams.set('template', 'bug.yml');
   url.searchParams.set('labels', 'bug');
   if (typeof location !== 'undefined') {
-    url.searchParams.set('url', location.href);
+    // Send only origin + pathname — never the query string or hash, which can
+    // carry a WOPI access_token or other secrets we must not leak into a public
+    // GitHub issue draft / browser history.
+    url.searchParams.set('url', `${location.origin}${location.pathname}`);
   }
   url.searchParams.set('env', describeEnv());
   openExternal(url.toString());

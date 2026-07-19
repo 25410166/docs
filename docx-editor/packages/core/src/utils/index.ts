@@ -243,3 +243,6 @@ export {
   createTripleClickParagraphSelector,
 } from './textSelection';
 export type { WordSelectionResult } from './textSelection';
+
+// URL safety (hyperlink scheme allow-listing)
+export { safeUrl, isSafeUrl } from './safeUrl';

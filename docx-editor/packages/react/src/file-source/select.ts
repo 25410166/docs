@@ -84,6 +84,25 @@ export function extractWopiContext(loc?: { pathname: string; search: string }): 
 }
 
 /**
+ * Remove the `access_token` query param from the visible browser URL via
+ * history.replaceState, once it's been captured in memory. A WOPI JWT sitting
+ * in the address bar leaks into browser history, referrers, bookmarks, and any
+ * screen-share; we keep it only in the FileSource instance. No-op outside the
+ * browser or when there's no token to strip.
+ */
+export function stripAccessTokenFromUrl(): void {
+  if (typeof window === 'undefined' || !window.history?.replaceState) return;
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('access_token')) return;
+    url.searchParams.delete('access_token');
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch {
+    /* malformed URL / sandboxed history — nothing safe to do. */
+  }
+}
+
+/**
  * Runs the probe and returns the chosen source. Never throws — every
  * branch has a defined fallback so the editor always boots with
  * *some* FileSource.
@@ -119,12 +138,16 @@ export async function chooseFileSource(opts: ChooseFileSourceOptions = {}): Prom
   //    403 / 401 and the editor's error boundary takes over.
   const wopi = opts.wopiContext ?? extractWopiContext();
   if (wopi) {
-    return new WopiFileSource({
+    const source = new WopiFileSource({
       docId: wopi.docId,
       accessToken: wopi.accessToken,
       baseUrl,
       fetchImpl,
     });
+    // Token is now captured in-memory in the FileSource — wipe it from the
+    // address bar so it can't leak via history / referrer / screen-share.
+    if (!opts.wopiContext) stripAccessTokenFromUrl();
+    return source;
   }
 
   // 2. Personal probe — /auth/me returning 200 means there's a live

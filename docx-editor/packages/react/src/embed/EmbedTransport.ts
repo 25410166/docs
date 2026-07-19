@@ -195,7 +195,10 @@ export class EmbedTransport {
     // MessageEvent isn't always available on the typing side when
     // a stub window is injected; cast pragmatically.
     const msg = ev as unknown as MessageEvent;
-    if (msg.origin && msg.origin !== this.opts.hostOrigin) return;
+    // Reject any message whose origin doesn't match the host exactly — an
+    // empty/absent origin is untrusted, not a free pass. (Mirrors the strict
+    // gate in EmbedHostTransport.onMessage.)
+    if (msg.origin !== this.opts.hostOrigin) return;
     if (!isCasualEnvelope(msg.data)) return;
     void this.dispatch(msg.data as CasualEnvelope);
   }

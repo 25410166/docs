@@ -8,6 +8,7 @@
 
 import { createMarkExtension } from '../create';
 import { isMarkActive } from './markUtils';
+import { safeUrl } from '../../../utils/safeUrl';
 import type { HyperlinkAttrs } from '../../schema/marks';
 import { Plugin, type Command, type EditorState } from 'prosemirror-state';
 import type { ExtensionContext, ExtensionRuntime } from '../types';
@@ -122,7 +123,7 @@ export const HyperlinkExtension = createMarkExtension({
     toDOM(mark) {
       const attrs = mark.attrs as HyperlinkAttrs;
       const domAttrs: Record<string, string> = {
-        href: attrs.href,
+        href: safeUrl(attrs.href),
         target: '_blank',
         rel: 'noopener noreferrer',
       };
