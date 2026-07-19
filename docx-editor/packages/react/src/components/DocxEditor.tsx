@@ -837,6 +837,14 @@ export interface DocxEditorProps {
   /** Translation overrides. Import a locale JSON file and pass it directly. */
   i18n?: Translations;
   /**
+   * BCP-47 language tag for the document CONTENT (e.g. 'en', 'de', 'fr-CA').
+   * Set on the editor root so assistive tech pronounces the content in the
+   * right language (WCAG 3.1.1 Language of Page). Inherited by the editable
+   * surface. Defaults to the host page's `<html lang>`, then 'en'. Pass this
+   * when the document language differs from the host UI language.
+   */
+  documentLang?: string;
+  /**
    * Mount a controllable agent panel on the right side of the editor. The
    * panel is the chrome (header, close button, drag-resize); the consumer
    * supplies whatever content goes inside via `render` — typically a chat
@@ -1951,6 +1959,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     documentNameEditable = true,
     renderTitleBarRight,
     i18n,
+    documentLang,
     agentPanel,
     wordCompat = false,
     docopsTransport,
@@ -9806,6 +9815,14 @@ body { background: white; }
               className={`ep-root docx-editor ${className}`}
               style={containerStyle}
               data-testid="docx-editor"
+              // Document content language for assistive tech (WCAG 3.1.1);
+              // inherited by the editable surface. Host page's <html lang> is a
+              // good default; 'en' as a last resort. Overridable via documentLang.
+              lang={
+                documentLang ||
+                (typeof document !== 'undefined' ? document.documentElement.lang : '') ||
+                'en'
+              }
             >
               {/* Main content area */}
               <div style={mainContentStyle}>
