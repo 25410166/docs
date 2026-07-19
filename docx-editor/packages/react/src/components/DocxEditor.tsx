@@ -3084,7 +3084,9 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
 
   // Command palette state (⌘⇧P / Ctrl+Shift+P). Searchable list of every
   // menu action, sourced from the same callbacks the menus use.
-  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const showCommandPalette = dialogs.isOpen('commandPalette');
+  const setShowCommandPalette = (v: boolean) =>
+    v ? dialogs.open('commandPalette') : dialogs.close('commandPalette');
   const showKeyboardShortcuts = dialogs.isOpen('keyboardShortcuts');
   const setShowKeyboardShortcuts = (v: boolean) =>
     v ? dialogs.open('keyboardShortcuts') : dialogs.close('keyboardShortcuts');
@@ -3094,7 +3096,9 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const showWatermarkDialog = dialogs.isOpen('watermark');
   const setShowWatermarkDialog = (v: boolean) =>
     v ? dialogs.open('watermark') : dialogs.close('watermark');
-  const [showEquationDialog, setShowEquationDialog] = useState(false);
+  const showEquationDialog = dialogs.isOpen('equation');
+  const setShowEquationDialog = (v: boolean) =>
+    v ? dialogs.open('equation') : dialogs.close('equation');
   // Equation dialog prefill — empty for a new insert, or the selected math
   // node's LaTeX/display when editing an existing equation.
   const [equationInitial, setEquationInitial] = useState<{
@@ -3128,13 +3132,17 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // the editor's right-click menu so the Replace button can target the
   // exact span the user selected, even if the cursor moves while the
   // dialog is up.
-  const [showTranslate, setShowTranslate] = useState(false);
+  const showTranslate = dialogs.isOpen('translate');
+  const setShowTranslate = (v: boolean) =>
+    v ? dialogs.open('translate') : dialogs.close('translate');
   const [translateText, setTranslateText] = useState<string | null>(null);
   const [translateRange, setTranslateRange] = useState<{ from: number; to: number } | null>(null);
   // Whole-document translate-and-export dialog. Separate from the
   // selection dialog above because its action (download a translated
   // copy) is distinct from "replace selection in-place".
-  const [showTranslateDocument, setShowTranslateDocument] = useState(false);
+  const showTranslateDocument = dialogs.isOpen('translateDocument');
+  const setShowTranslateDocument = (v: boolean) =>
+    v ? dialogs.open('translateDocument') : dialogs.close('translateDocument');
 
   // Writing Assistant — sheet + rail entry. Boots the controller on
   // mount so capability checks + auto-load run before the sheet opens.
@@ -3349,10 +3357,13 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     };
   }, []);
   // A3 — explore (Wikipedia lookup). Seeds the query from the selection.
-  const [showExplore, setShowExplore] = useState(false);
+  const showExplore = dialogs.isOpen('explore');
+  const setShowExplore = (v: boolean) => (v ? dialogs.open('explore') : dialogs.close('explore'));
   const [exploreQuery, setExploreQuery] = useState<string | null>(null);
   // A6 v0 — citations manager. Local-only storage.
-  const [showCitations, setShowCitations] = useState(false);
+  const showCitations = dialogs.isOpen('citations');
+  const setShowCitations = (v: boolean) =>
+    v ? dialogs.open('citations') : dialogs.close('citations');
   const [citations, setCitations] = useState<Citation[]>(() => loadCitations());
   // Editor preferences — smart quotes / autocorrect runtime toggles.
   // Lazy-init from localStorage and hydrate the core singleton so the
