@@ -3,7 +3,13 @@
  */
 
 import { test, expect } from 'bun:test';
-import { triggerBrowserDownload, documentBaseName } from './download';
+import { triggerBrowserDownload, documentBaseName, createDocxBlob, DOCX_MIME } from './download';
+
+test('createDocxBlob wraps bytes with the OOXML docx MIME type', () => {
+  const blob = createDocxBlob(new Uint8Array([0x50, 0x4b]));
+  expect(blob.type).toBe(DOCX_MIME);
+  expect(blob.size).toBe(2);
+});
 
 test('documentBaseName strips a trailing .docx, trims, and falls back', () => {
   expect(documentBaseName('Report.docx')).toBe('Report');
