@@ -29,6 +29,7 @@ import { ImageWrapDropdown } from './ui/ImageWrapDropdown';
 import { ImageTransformDropdown } from './ui/ImageTransformDropdown';
 import type { TableAction } from './ui/TableToolbar';
 import { cn } from '../lib/utils';
+import { formatShortcut } from '../lib/platform';
 import { ToolbarButton, ToolbarGroup } from './Toolbar';
 import type { ToolbarProps, FormattingAction } from './Toolbar';
 import { EditorToolbarContext } from './EditorToolbarContext';
@@ -371,7 +372,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           onClick={handleUndo}
           disabled={disabled || !canUndo}
           title={t('formattingBar.undo')}
-          shortcut="⌘Z"
+          shortcut={formatShortcut('Ctrl+Z')}
           ariaLabel={t('formattingBar.undo')}
         >
           <MaterialSymbol name="undo" size={ICON_SIZE} />
@@ -380,7 +381,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           onClick={handleRedo}
           disabled={disabled || !canRedo}
           title={t('formattingBar.redo')}
-          shortcut="⌘Y"
+          shortcut={formatShortcut('Ctrl+Y')}
           ariaLabel={t('formattingBar.redo')}
         >
           <MaterialSymbol name="redo" size={ICON_SIZE} />
@@ -464,7 +465,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           active={currentFormatting.bold}
           disabled={disabled}
           title={t('formattingBar.bold')}
-          shortcut="⌘B"
+          shortcut={formatShortcut('Ctrl+B')}
           ariaLabel={t('formattingBar.bold')}
           featureId="bold"
         >
@@ -475,7 +476,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           active={currentFormatting.italic}
           disabled={disabled}
           title={t('formattingBar.italic')}
-          shortcut="⌘I"
+          shortcut={formatShortcut('Ctrl+I')}
           ariaLabel={t('formattingBar.italic')}
           featureId="italic"
         >
@@ -486,7 +487,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           active={currentFormatting.underline}
           disabled={disabled}
           title={t('formattingBar.underline')}
-          shortcut="⌘U"
+          shortcut={formatShortcut('Ctrl+U')}
           ariaLabel={t('formattingBar.underline')}
           featureId="underline"
         >
@@ -497,7 +498,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           active={currentFormatting.strike}
           disabled={disabled}
           title={t('formattingBar.strikethrough')}
-          shortcut="⌘⇧X"
+          shortcut={formatShortcut('Ctrl+Shift+X')}
           ariaLabel={t('formattingBar.strikethrough')}
           featureId="strikethrough"
         >
@@ -578,7 +579,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           onClick={() => handleFormat('insertLink')}
           disabled={disabled}
           title={t('formattingBar.insertLink')}
-          shortcut="⌘K"
+          shortcut={formatShortcut('Ctrl+K')}
           ariaLabel={t('formattingBar.insertLink')}
         >
           <MaterialSymbol name="link" size={ICON_SIZE} />
@@ -612,7 +613,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           active={currentFormatting.superscript}
           disabled={disabled}
           title={t('formattingBar.superscript')}
-          shortcut="⌘."
+          shortcut={formatShortcut('Ctrl+.')}
           ariaLabel={t('formattingBar.superscript')}
         >
           <MaterialSymbol name="superscript" size={ICON_SIZE} />
@@ -622,7 +623,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
           active={currentFormatting.subscript}
           disabled={disabled}
           title={t('formattingBar.subscript')}
-          shortcut="⌘,"
+          shortcut={formatShortcut('Ctrl+,')}
           ariaLabel={t('formattingBar.subscript')}
         >
           <MaterialSymbol name="subscript" size={ICON_SIZE} />
@@ -726,7 +727,7 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
         onClick={() => handleFormat('clearFormatting')}
         disabled={disabled}
         title={t('formattingBar.clearFormatting')}
-        shortcut={'⌘\\'}
+        shortcut={formatShortcut('Ctrl+\\')}
         ariaLabel={t('formattingBar.clearFormatting')}
       >
         <MaterialSymbol name="format_clear" size={ICON_SIZE} />
