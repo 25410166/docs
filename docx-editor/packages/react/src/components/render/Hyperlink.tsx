@@ -27,6 +27,7 @@ import {
   getHyperlinkText,
   getHyperlinkUrl,
 } from '@eigenpal/docx-core/docx';
+import { safeUrl } from '@eigenpal/docx-core/utils';
 
 /**
  * Props for the Hyperlink component
@@ -79,7 +80,7 @@ export function Hyperlink({
   onBookmarkClick,
   disabled = false,
 }: HyperlinkProps): React.ReactElement {
-  const href = getHyperlinkUrl(hyperlink);
+  const href = safeUrl(getHyperlinkUrl(hyperlink)) || undefined;
   const isExternal = isExternalLink(hyperlink);
   const isInternal = isInternalLink(hyperlink);
 
