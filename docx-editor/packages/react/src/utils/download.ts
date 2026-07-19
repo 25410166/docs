@@ -22,3 +22,15 @@ export function triggerBrowserDownload(blob: Blob, fileName: string): void {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+/**
+ * The document's base name for building an export filename: the trimmed title
+ * with any trailing `.docx` stripped, or `fallback` when there's no title.
+ * De-duplicates the same expression that appeared six times across DocxEditor's
+ * save/export/print handlers. `fallback` is a parameter because the callers use
+ * a title-case `Document` for print/PDF titles and lower-case `document` for the
+ * downloaded `.docx` filename — preserved rather than silently unified.
+ */
+export function documentBaseName(documentName: string | undefined, fallback = 'Document'): string {
+  return (documentName?.trim() || fallback).replace(/\.docx$/i, '');
+}
