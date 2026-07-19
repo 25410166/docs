@@ -2,6 +2,14 @@
  * Copyright (c) 2026 Casual Office. All rights reserved.
  */
 
+/** The OOXML MIME type for a Word `.docx` document. */
+export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/** Wrap serialized `.docx` bytes in a Blob with the correct OOXML MIME type. */
+export function createDocxBlob(bytes: BlobPart): Blob {
+  return new Blob([bytes], { type: DOCX_MIME });
+}
+
 /**
  * Trigger a browser file download for `blob` under `fileName`.
  *
@@ -21,4 +29,16 @@ export function triggerBrowserDownload(blob: Blob, fileName: string): void {
   a.download = fileName;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/**
+ * The document's base name for building an export filename: the trimmed title
+ * with any trailing `.docx` stripped, or `fallback` when there's no title.
+ * De-duplicates the same expression that appeared six times across DocxEditor's
+ * save/export/print handlers. `fallback` is a parameter because the callers use
+ * a title-case `Document` for print/PDF titles and lower-case `document` for the
+ * downloaded `.docx` filename — preserved rather than silently unified.
+ */
+export function documentBaseName(documentName: string | undefined, fallback = 'Document'): string {
+  return (documentName?.trim() || fallback).replace(/\.docx$/i, '');
 }

@@ -3,7 +3,24 @@
  */
 
 import { test, expect } from 'bun:test';
-import { triggerBrowserDownload } from './download';
+import { triggerBrowserDownload, documentBaseName, createDocxBlob, DOCX_MIME } from './download';
+
+test('createDocxBlob wraps bytes with the OOXML docx MIME type', () => {
+  const blob = createDocxBlob(new Uint8Array([0x50, 0x4b]));
+  expect(blob.type).toBe(DOCX_MIME);
+  expect(blob.size).toBe(2);
+});
+
+test('documentBaseName strips a trailing .docx, trims, and falls back', () => {
+  expect(documentBaseName('Report.docx')).toBe('Report');
+  expect(documentBaseName('  Report.DOCX  ')).toBe('Report');
+  expect(documentBaseName('Notes')).toBe('Notes');
+  expect(documentBaseName('')).toBe('Document'); // default fallback
+  expect(documentBaseName(undefined)).toBe('Document');
+  expect(documentBaseName('   ', 'document')).toBe('document'); // custom fallback
+  // Only a trailing .docx is stripped, not a mid-name occurrence.
+  expect(documentBaseName('my.docx.report.docx')).toBe('my.docx.report');
+});
 
 // Cast to a loose shape so the test can swap in DOM/URL/timer stubs without
 // fighting the full lib.dom overloads — this is test-only scaffolding.

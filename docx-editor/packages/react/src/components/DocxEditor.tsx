@@ -80,7 +80,7 @@ import { AutosaveRestoreBanner } from './AutosaveRestoreBanner';
 import { writeAutosave, clearLegacyLocalStorageAutosave } from '../utils/autosave';
 import { restoreNativeBuildingBlocks } from '../utils/buildingBlocks';
 import { restoreNativeCitations } from '../utils/citations';
-import { triggerBrowserDownload } from '../utils/download';
+import { triggerBrowserDownload, documentBaseName, createDocxBlob } from '../utils/download';
 import { recordRecentFile } from '../utils/recent-files';
 import { openExternal } from '../utils/openExternal';
 import { CommentMarginMarkers } from './CommentMarginMarkers';
@@ -7799,7 +7799,7 @@ body { background: white; }
     // host's print-to-PDF (same as Export as PDF) — the user prints the saved PDF
     // from their OS viewer. Web keeps the normal print dialog.
     if (onExportPdf) {
-      const base = (documentName?.trim() || 'Document').replace(/\.docx$/i, '');
+      const base = documentBaseName(documentName);
       if (await onExportPdf(`${base}.pdf`)) return;
     }
     triggerPrintFlow('Print');
@@ -7812,7 +7812,7 @@ body { background: white; }
   // than `Print.pdf`. There is no JS API to preselect the PDF
   // destination — the user picks it once in the print dialog.
   const handleExportPdf = useCallback(async () => {
-    const base = (documentName?.trim() || 'Document').replace(/\.docx$/i, '');
+    const base = documentBaseName(documentName);
     // Desktop: route through the host's native print-to-PDF (selectable text,
     // reliable on WebKitGTK) instead of the browser print dialog. If the host
     // didn't handle it (web, or user cancelled the save dialog), fall back.
@@ -7845,10 +7845,8 @@ body { background: white; }
         markDirty(false);
         return;
       }
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
-      const fileName = `${(documentName?.trim() || 'document').replace(/\.docx$/i, '')}.docx`;
+      const blob = createDocxBlob(buffer);
+      const fileName = `${documentBaseName(documentName, 'document')}.docx`;
       triggerBrowserDownload(blob, fileName);
       markDirty(false);
       toast.success(`Saved ${fileName}`);
@@ -7923,10 +7921,8 @@ body { background: white; }
     try {
       const buffer = await handleSave();
       if (!buffer) return;
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
-      const base = (documentName?.trim() || 'document').replace(/\.docx$/i, '');
+      const blob = createDocxBlob(buffer);
+      const base = documentBaseName(documentName, 'document');
       const fileName = `${base}.docx`;
       // Desktop shell: save via the native dialog (picker) so the user
       // controls where the attachment lands; web falls back to a download.
@@ -7956,10 +7952,8 @@ body { background: white; }
     try {
       const buffer = await handleSave();
       if (!buffer) return;
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
-      const base = (documentName?.trim() || 'document').replace(/\.docx$/i, '');
+      const blob = createDocxBlob(buffer);
+      const base = documentBaseName(documentName, 'document');
       const fileName = `Copy of ${base}.docx`;
       // Desktop shell: native Save dialog instead of a phantom download.
       if (onExport && (await onExport(blob, fileName))) {
@@ -7988,7 +7982,7 @@ body { background: white; }
         }
         const { exportDocxAs } = await import('../lib/format-converter');
         const out = await exportDocxAs(new Uint8Array(buffer), target);
-        const base = (documentName?.trim() || 'document').replace(/\.docx$/i, '');
+        const base = documentBaseName(documentName, 'document');
         const mime =
           target === 'odt'
             ? 'application/vnd.oasis.opendocument.text'
