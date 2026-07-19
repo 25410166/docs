@@ -2,6 +2,14 @@
  * Copyright (c) 2026 Casual Office. All rights reserved.
  */
 
+/** The OOXML MIME type for a Word `.docx` document. */
+export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/** Wrap serialized `.docx` bytes in a Blob with the correct OOXML MIME type. */
+export function createDocxBlob(bytes: BlobPart): Blob {
+  return new Blob([bytes], { type: DOCX_MIME });
+}
+
 /**
  * Trigger a browser file download for `blob` under `fileName`.
  *

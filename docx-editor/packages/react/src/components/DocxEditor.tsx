@@ -80,7 +80,7 @@ import { AutosaveRestoreBanner } from './AutosaveRestoreBanner';
 import { writeAutosave, clearLegacyLocalStorageAutosave } from '../utils/autosave';
 import { restoreNativeBuildingBlocks } from '../utils/buildingBlocks';
 import { restoreNativeCitations } from '../utils/citations';
-import { triggerBrowserDownload, documentBaseName } from '../utils/download';
+import { triggerBrowserDownload, documentBaseName, createDocxBlob } from '../utils/download';
 import { recordRecentFile } from '../utils/recent-files';
 import { openExternal } from '../utils/openExternal';
 import { CommentMarginMarkers } from './CommentMarginMarkers';
@@ -7845,9 +7845,7 @@ body { background: white; }
         markDirty(false);
         return;
       }
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
+      const blob = createDocxBlob(buffer);
       const fileName = `${documentBaseName(documentName, 'document')}.docx`;
       triggerBrowserDownload(blob, fileName);
       markDirty(false);
@@ -7923,9 +7921,7 @@ body { background: white; }
     try {
       const buffer = await handleSave();
       if (!buffer) return;
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
+      const blob = createDocxBlob(buffer);
       const base = documentBaseName(documentName, 'document');
       const fileName = `${base}.docx`;
       // Desktop shell: save via the native dialog (picker) so the user
@@ -7956,9 +7952,7 @@ body { background: white; }
     try {
       const buffer = await handleSave();
       if (!buffer) return;
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
+      const blob = createDocxBlob(buffer);
       const base = documentBaseName(documentName, 'document');
       const fileName = `Copy of ${base}.docx`;
       // Desktop shell: native Save dialog instead of a phantom download.
