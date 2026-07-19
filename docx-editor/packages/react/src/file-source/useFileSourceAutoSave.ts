@@ -55,6 +55,20 @@ import type { FileSource } from './types';
  */
 const SAVE_TIMEOUT_MS = 30000;
 
+/**
+ * A save error is a *conflict* when the store rejected the write because our
+ * version is stale — someone else changed the doc (WOPI 409, personal 412).
+ * These must never be retried on the auto-loop: retrying a WOPI 409 re-sends the
+ * same stale version and fails forever (silent loss), and blindly re-saving
+ * would clobber the other writer. Instead the hook pauses and surfaces it, and
+ * only an explicit user-initiated `flush()` (a deliberate overwrite) retries.
+ */
+export function isConflictError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { name?: string; status?: number };
+  return e.name === 'WopiSaveConflictError' || e.status === 412 || e.status === 409;
+}
+
 // ---------------------------------------------------------------
 // Pure controller — extracted so it's bun-unit-testable without a
 // React renderer. The hook below is a thin wrapper that exposes the
@@ -202,9 +216,16 @@ export interface UseFileSourceAutoSaveReturn {
   /** Last error caught — kept for status='error' rendering. */
   lastError: unknown;
   /**
-   * Force a save right now (bypassing the interval). Returns when
-   * the save round-trip finishes. Useful for "Save & close" buttons
-   * or beforeunload handlers the host owns.
+   * True while a version conflict is unresolved. The auto-loop is paused (it
+   * won't overwrite or re-conflict); the host should prompt the user to reload
+   * the current stored version or force-save. Calling `flush()` clears this and
+   * retries as an explicit overwrite.
+   */
+  conflict: boolean;
+  /**
+   * Force a save right now (bypassing the interval), clearing any conflict
+   * pause — i.e. a deliberate overwrite. Returns when the round-trip finishes.
+   * Useful for "Save & close" buttons or a "Save anyway" conflict action.
    */
   flush: () => Promise<void>;
 }
@@ -232,6 +253,11 @@ export function useFileSourceAutoSave(
   const [status, setStatus] = useState<AutoSaveStatus>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [lastError, setLastError] = useState<unknown>(null);
+  // Unresolved version conflict. While true, auto-ticks and hide-flushes are
+  // suppressed so we never silently re-conflict or overwrite the other writer;
+  // an explicit flush() clears it.
+  const [conflict, setConflict] = useState(false);
+  const conflictRef = useRef(false);
 
   // Ref for "is a save currently in flight" — guarding setState
   // doesn't help because React batches updates; a plain mutable ref
@@ -322,6 +348,19 @@ export function useFileSourceAutoSave(
           onSavedRef.current?.(result.savedAt, result.etag);
           break;
         case 'err':
+          if (isConflictError(result.err)) {
+            // Durable conflict: pause the auto-loop and surface it until the
+            // user resolves it. Deliberately NOT auto-cleared — a hidden
+            // conflict means every further edit is silently lost.
+            conflictRef.current = true;
+            setConflict(true);
+            setStatus('error');
+            setLastError(result.err);
+            clearTimeout(errorClearTimerRef.current);
+            errorClearTimerRef.current = undefined;
+            onErrorRef.current?.(result.err);
+            break;
+          }
           setStatus('error');
           setLastError(result.err);
           // Auto-clear the error badge after 60 s so a one-off failure
@@ -378,13 +417,24 @@ export function useFileSourceAutoSave(
     return drain;
   }, [executeOne]);
 
+  // Public save entry point. Unlike the interval/hide callers, this clears an
+  // active conflict pause first — it represents a deliberate user decision to
+  // overwrite (the WopiFileSource has already adopted the host's current
+  // version, so this save succeeds rather than re-conflicting).
+  const flush = useCallback((): Promise<void> => {
+    conflictRef.current = false;
+    setConflict(false);
+    return runSave();
+  }, [runSave]);
+
   // Interval ticker. Re-arms when `enabled` or `interval` change;
   // every other dep is read via ref so the timer survives parent
-  // re-renders.
+  // re-renders. Suppressed while a conflict is unresolved so we don't
+  // silently re-conflict (WOPI) or overwrite the other writer.
   useEffect(() => {
     if (!enabled || interval <= 0) return;
     const id = setInterval(() => {
-      void runSave();
+      if (!conflictRef.current) void runSave();
     }, interval);
     return () => clearInterval(id);
   }, [enabled, interval, runSave]);
@@ -404,8 +454,9 @@ export function useFileSourceAutoSave(
   useEffect(() => {
     if (!enabled) return;
     const flushOnHide = () => {
-      // Don't await — the page may be going away.
-      void runSave();
+      // Don't await — the page may be going away. Skip while a conflict is
+      // unresolved: a hide-flush must not silently overwrite the other writer.
+      if (!conflictRef.current) void runSave();
     };
     const onVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
@@ -432,8 +483,9 @@ export function useFileSourceAutoSave(
       status,
       lastSavedAt,
       lastError,
-      flush: runSave,
+      conflict,
+      flush,
     }),
-    [status, lastSavedAt, lastError, runSave]
+    [status, lastSavedAt, lastError, conflict, flush]
   );
 }

@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'bun:test';
 
-import { performAutoSave, type AutoSaveEditorRef } from './useFileSourceAutoSave';
+import { performAutoSave, isConflictError, type AutoSaveEditorRef } from './useFileSourceAutoSave';
 import type { FileEntry, FileSource } from './types';
 
 /**
@@ -230,5 +230,21 @@ describe('performAutoSave', () => {
     expect(result.kind).toBe('ok');
     // The refreshed etag is returned so the caller can advance the chain.
     if (result.kind === 'ok') expect(result.etag).toBe('v2');
+  });
+});
+
+describe('isConflictError', () => {
+  it('recognises WOPI 409 and personal 412 conflicts', () => {
+    expect(isConflictError({ name: 'WopiSaveConflictError' })).toBe(true);
+    expect(isConflictError({ name: 'PersonalFileSourceError', status: 412 })).toBe(true);
+    expect(isConflictError({ status: 409 })).toBe(true);
+  });
+
+  it('does not treat ordinary errors or non-objects as conflicts', () => {
+    expect(isConflictError(new Error('gateway down'))).toBe(false);
+    expect(isConflictError({ status: 500 })).toBe(false);
+    expect(isConflictError(null)).toBe(false);
+    expect(isConflictError(undefined)).toBe(false);
+    expect(isConflictError('nope')).toBe(false);
   });
 });
