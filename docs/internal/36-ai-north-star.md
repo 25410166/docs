@@ -25,9 +25,9 @@ A user can, **fully offline on their own laptop**:
 ## Objectives (prioritized — attack the ceiling, defend the wedge)
 
 ### O1 — Lift the local-model quality ceiling _(the #1 gap)_
-Local is Qwen-**1.5B**; rivals run GPT-5 / Claude Opus / Gemini 3. This is the single biggest limiter.
-- User-selectable **larger local models** (7B–8B: Qwen2.5-7B, Llama-3.1-8B) via llama.cpp; auto-pick by available RAM; keep 1.5B as the floor.
-- **KR:** a fixed suite of agentic tasks that fail on 1.5B succeed on 7B on real hardware.
+Local is **Llama-3.2-1B**; rivals run GPT-5 / Claude Opus / Gemini 3. This is the single biggest limiter.
+- User-selectable **larger local models** (7B–8B: Qwen2.5-7B, Llama-3.1-8B) via llama.cpp; auto-pick by available RAM; keep 1B as the floor.
+- **KR:** a fixed suite of agentic tasks that fail on 1B succeed on 7B on real hardware.
 
 ### O2 — Close the grounding gap _within_ the privacy constraint
 Rivals ground across Drive/Graph/800+ connectors with citations. We ground only the open doc.
@@ -45,7 +45,7 @@ This is the wedge — make it legible and defended.
 - **KR:** a first-time user understands "my documents never leave my machine" without reading docs.
 
 ### O5 — MCP both directions _(later)_
-We ship the MCP **client**; the **server** (expose the editor to external agents) is deferred to the collab server. Completes the "agent-native, open" story.
+We ship the MCP **client** and a stdio MCP **server** in core (`packages/core/src/mcp/server.ts`); only exposing that server through the collab server (to external network agents) is deferred. Completes the "agent-native, open" story.
 
 ## Non-goals (explicitly)
 
@@ -58,7 +58,7 @@ We ship the MCP **client**; the **server** (expose the editor to external agents
 | Axis | Us today | Target | Field |
 |---|---|---|---|
 | On-device / private | ✅ unique | keep + make legible | ❌ all cloud |
-| Model quality | 🟡 1.5B local | 7B–8B local | ✅ frontier |
+| Model quality | 🟡 1B local | 7B–8B local | ✅ frontier |
 | Grounding | 🟡 open-doc | on-device workspace RAG | ✅ workspace+cites |
 | Agentic (on-device) | 🟡 wired, unverified | verified, guarded | ✅ GA (cloud) |
 | Open-source + real AI UX | ✅ unique | keep | ❌ (open OR AI, never both) |

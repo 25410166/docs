@@ -2,6 +2,8 @@
 
 **Date:** 2026-06-29 · **Method:** fresh web research (source URLs in the working notes; not memory) · **Companion to** [31-ai-architecture.md](31-ai-architecture.md)
 
+> **Note (2026-07-19):** this is a **dated market snapshot** — a point-in-time competitive scan, kept for the landscape it captures. The **current AI strategy** lives in docs [34-ai-production-rework.md](34-ai-production-rework.md), [35-agentic-mcp-architecture.md](35-agentic-mcp-architecture.md), and [36-ai-north-star.md](36-ai-north-star.md).
+
 > Lens: we care less about "can it write text" and more about **can it manipulate/reconstruct the
 > document** — generate whole docs, harmonize formatting, build a TOC, convert selections to
 > tables, turn data into a report. That is the bar Casual Docs is aiming at.
@@ -62,4 +64,4 @@ Two philosophies: Excel's `=COPILOT()` is a **live formula** (recalc/spill/nest 
 2. **Bundle AI, don't bolt on an add-on** — the standalone add-on pricing model collapsed in 2025; credit-metering is the new norm for heavy/agentic features.
 3. **Multi-surface, not one button** — sidebar chat + selection actions + slash/⌘K. Avoid the intrusive always-on floating button.
 4. **Ground on the actual content** — read-the-doc/selection context + citations back to source. RAG-over-the-open-doc is the minimum; workspace RAG is the differentiator the big suites own (we should not try to out-connector them early).
-5. **Realistic positioning for a smaller editor:** win on **doing in-document agentic manipulation exceptionally well** (native, applied, reviewable) rather than competing on workspace-wide RAG or connector breadth. The MCP + DocOps architecture (doc 31) is what makes that native manipulation tractable by reusing existing editor commands.
+5. **Realistic positioning for a smaller editor:** win on **doing in-document agentic manipulation exceptionally well** (native, applied, reviewable) rather than competing on workspace-wide RAG or connector breadth. The MCP + DocOps architecture (doc 31) is what makes that native manipulation tractable by reusing existing editor commands. _(**Positioning-of-record has moved on:** the strategic framing in this section is superseded by [36-ai-north-star.md](36-ai-north-star.md) — treat doc 36 as authoritative for current positioning.)_

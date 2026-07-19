@@ -1,7 +1,7 @@
 # 18 — Co-editing Durable Save: Design Options (Phase 2)
 
-**Date:** 2026-06-19
-**Status:** Design only, no code. Decision pending.
+**Date:** 2026-06-19 (backend premise re-grounded 2026-07-19)
+**Status:** Design only, no code. Decision pending. **NB:** the Go-gateway facts this doc's options B/C were built on were removed 2026-06-28 — the backend is now the Node/TypeScript `CasualOffice/collab` server (Hocuspocus + Yjs on Fastify, vendored at `./collab`), which holds a full authoritative in-memory Y.Doc per room. See the inline `[2026-07-19]` corrections; the options analysis below is retained as history.
 **Context:** `docs/internal/17-production-readiness-audit.md` §2 + its 2026-06-19 backend correction. Proving test: `docx-editor/packages/core/src/docx/coedit-envelope-loss.test.ts`.
 
 ## The problem, stated precisely
@@ -9,7 +9,7 @@
 There are **two distinct** co-editing durability gaps. Conflating them is what made "server-side snapshot" sound like one decision when it's really two.
 
 **Gap 1 — the un-serialized final interval.**
-Persistence today is 100% client-push: `useFileSourceAutoSave` calls `ref.save({selective:true})` on a ~30s schedule, producing full-fidelity `.docx` (selective-save patches the client's own seed bytes, so envelopes survive). If the last client leaves *between* intervals, the edits made since the last autosave exist **only as Yjs updates the gateway relayed but cannot serialize** (no Go CRDT lib; serializer is TS; `DrainFunc(docID)` is a no-op — `cmd/gateway/main.go:846`). Nobody ever turned those edits into bytes, so nobody can recover them.
+Persistence today is 100% client-push: `useFileSourceAutoSave` calls `ref.save({selective:true})` on a ~30s schedule, producing full-fidelity `.docx` (selective-save patches the client's own seed bytes, so envelopes survive). If the last client leaves *between* intervals, the edits made since the last autosave exist **only as Yjs updates the gateway relayed but cannot serialize** (historical Go framing: no Go CRDT lib; serializer is TS; `DrainFunc(docID)` was a no-op — `cmd/gateway/main.go:846`, removed 2026-06-28). Nobody ever turned those edits into bytes, so nobody can recover them. **[2026-07-19] This premise no longer holds:** the Node `CasualOffice/collab` server keeps an authoritative in-memory Y.Doc per room, and its serializer is the same TS pipeline — so drain-time serialization can run in-process (Hocuspocus `onStoreDocument` / unload hook) with no client present. The gap survives only where no drain hook has been wired yet, not because the server structurally cannot serialize.
 
 **Gap 2 — the seed-less peer / from-PM reconstruction.**
 The raw-XML envelopes (`Shape.rawXml`) live on the Document model, not in the Y.Doc. Anything rebuilding a Document *from* the Y.Doc drops inline body drawings — proven: `coedit-envelope-loss.test.ts` shows a from-PM serialize loses `<v:rect>`, and **passing the seed to `fromProseDoc` does not save it** (the body is rebuilt from PM; the seed only restores section scaffolding). Today this only bites if a joiner edits without ever holding the seed — which the shipped wrappers avoid (`CollabApp`/`CasualEditor` seed every joiner). It becomes a *hard* requirement only for a server that serializes the Y.Doc itself.
@@ -18,9 +18,9 @@ The raw-XML envelopes (`Shape.rawXml`) live on the Document model, not in the Y.
 
 ## Verified facts these options build on
 
-- `host.Snapshot(ctx, docID, authToken, contents []byte)` exists (`backend/internal/host/host.go:106`); `Locker` retains the first client's token for drain-time Unlock, so a token is available at drain.
-- `DrainFunc(docID string)` — docID only, no contents (`internal/room/manager.go:243`); wired impl is a logging no-op (`cmd/gateway/main.go:846`).
-- Room relays update frames; it does **not** accumulate Y.Doc state. No Go CRDT dependency.
+- _[historical, Go gateway — removed 2026-06-28]_ `host.Snapshot(ctx, docID, authToken, contents []byte)` existed (`backend/internal/host/host.go:106`); `Locker` retained the first client's token for drain-time Unlock, so a token was available at drain. **[2026-07-19]** the equivalent persistence hooks now live in the Node `CasualOffice/collab` server, not in a Go `host` package.
+- _[historical, Go gateway — removed 2026-06-28]_ `DrainFunc(docID string)` — docID only, no contents (`internal/room/manager.go:243`); wired impl was a logging no-op (`cmd/gateway/main.go:846`). **[2026-07-19]** drain is now a Hocuspocus `onStoreDocument` / document-unload hook in `./collab`, which receives the live Y.Doc.
+- **[2026-07-19] FALSE as written.** The Node room does **not** merely relay frames: Hocuspocus keeps one authoritative in-memory Y.Doc per room and mutates it in place. The "relays, does not accumulate state / no CRDT dependency" claim described the removed Go gateway and no longer holds.
 - Client save preserves envelopes via selective-save against `originalBuffer` (`agent/DocumentAgent.ts:675-693`); a from-scratch `createDocx` does not.
 
 ---
@@ -68,6 +68,8 @@ Gateway accumulates Y.Doc state and, on drain, hands it + the seed to a reintrod
 **Sequence:** room appends each relayed update to a per-room Yjs state (raw update bytes — Yjs merges order-independently) → on drain, gateway POSTs `{ yUpdates, seedBytes, docID }` to a Bun worker → worker: `Y.applyUpdate` → `ySyncPlugin` decode → PM doc → `fromProseDoc(pmDoc, seedModel)` → **selective-save against seed bytes** (so untouched drawings keep original XML → envelopes preserved) → returns `.docx` → gateway `host.Snapshot`.
 
 **Server change:** Y.Doc accumulation in the room; a new Bun worker service + the Go→worker call; extend drain to pass state. **Runtime/Docker:** **reintroduces Bun in the prod image** — reverses the M2 pivot (`d24deaa`) that removed exactly this. **Stateless invariant:** **broken** — the backend now accumulates Y.Doc state and produces documents (it becomes document-aware, the thing the architecture deliberately avoided; ironically the property OT would have given for free — see [[project-production-readiness]]).
+
+> **[2026-07-19] This cost analysis is now moot.** It assumed a stateless Go relay that would have to be made document-aware and grow a separate Bun runtime. The current Node `CasualOffice/collab` server already holds an authoritative in-memory Y.Doc per room and already runs the TS serializer in-process, so C's "server-side serialize on drain" no longer means "reintroduce Bun" or "break statelessness" — those were consequences of the removed Go gateway. What remains of C is just wiring the existing serializer into the Hocuspocus `onStoreDocument` / unload hook.
 
 **Closes:** Gap 1 fully (recovers the un-serialized interval — the server can serialize the merged state with no client present) AND Gap 2 (the worker uses selective-save against the seed, so envelopes survive even for a seed-less peer).
 **Failure modes:** worker pool availability (drain must not block room teardown — fire-and-forget with retry); Yjs-version skew between the Go-accumulated updates and the worker's `yjs` lib; selective-save correctness when many paragraphs changed (falls back to full repack → re-introduces Gap 2 unless the worker also carries the seed model — it does); double-serialize races if a client also pushed at drain (version-guard via `host.ErrConflict`, already modeled at `host.go:163`).

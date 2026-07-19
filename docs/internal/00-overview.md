@@ -132,15 +132,15 @@ This block is informational — concrete dependencies for any given Document mil
 | Milestone | Status | Notes |
 |-----------|--------|-------|
 | **M0 — Editor fork brought up locally** | ✅ done | Bun toolchain installed; Vite demo at localhost:5173. |
-| **M1 — Stateless Go gateway (v0 self-contained)** | ✅ shipped | `backend/cmd/gateway/main.go` — POST /api/docs, GET /api/docs/{id}/download, GET /doc/{id} (WS), GET /health. `inline` host backs the v0 flow. Room manager, broadcast, upload, static-SPA path all unit-tested. |
+| **M1 — Stateless Go gateway (v0 self-contained)** | ✅ shipped *(historical — Go `backend/` removed 2026-06-28; superseded by the Node `@casualoffice/collab` server)* | `backend/cmd/gateway/main.go` *(deleted)* — POST /api/docs, GET /api/docs/{id}/download, GET /doc/{id} (WS), GET /health. `inline` host backed the v0 flow. Room manager, broadcast, upload, static-SPA path all unit-tested. Sync / persistence / REST now live in `@casualoffice/collab` (see [23-collab-server-migration](23-collab-server-migration.md)). |
 | **M2 — Snapshot on drain** | ✅ shipped (client-push) | `DocxEditorRef.save()` produces the `.docx` bytes client-side; `useFileSourceAutoSave` pushes them through `FileSource.save()` (`d24deaa`). The original Bun-worker-pool-on-drain plan was **explicitly dropped** to keep Bun out of the production image. A server-side serializer remains a deprioritised fallback for the no-client-present case ([`18-server-snapshot-design.md`](18-server-snapshot-design.md)). |
 | **Phase C — Personal auth** | ✅ shipped end-to-end | bcrypt + SQLite `UserStore`, signup/login/logout + `/auth/me`, per-user file scoping + CRUD, `Profile` sidecar, `casual-docs` admin CLI + `/admin/users` routes (`backend/internal/auth/personal/`). |
 | **Phase D — WOPI (M3)** | ✅ shipped end-to-end | D1 WOPI client + JWKS JWT verifier (alg-confusion defence); D2 `/wopi/host` embed redirect; D3 `WopiFileSource` + token threading; D4 `host.Locker` Lock/Unlock; D5 per-room `RefreshLock` ticker (`backend/internal/host/wopi/`, `backend/internal/auth/wopi/`). |
 | **M4 — Tauri desktop binary** | paused | Early scaffolding only. Fidelity floor (≥ 90 %) is now cleared, so M4 is technically *unblocked*, but the user has paused this milestone — do not start the desktop build until they explicitly green-light it. |
 
-## Status (2026-06-21)
+## Status (2026-07-19)
 
-Pivot completed 2026-05-16; the project is well past it. Phase C (Personal auth) and Phase D (WOPI) both shipped end-to-end; M2 snapshot ships via client-side push. AGPL code purged from the fork; statelessness preserved (no DB). The editor fork is **inlined** (no separate `.git/`). Recent work: PRs #10–#16, focused on real-world visual fidelity (`sds-anti-t-zh`, `medical-incident-form`, `Form025U`), tracked in [`19-content-drops-and-inconsistencies.md`](archive/19-content-drops-and-inconsistencies.md) and [`20-overlap-and-interaction.md`](archive/20-overlap-and-interaction.md). Go toolchain pinned to 1.25.
+Pivot completed 2026-05-16; the project is well past it. Phase C (Personal auth) and Phase D (WOPI) both shipped end-to-end; M2 snapshot ships via client-side push. The in-repo **Go** y-websocket gateway (`backend/`) was **removed 2026-06-28** — all sync / presence / persistence / REST work now lives in the Node/TypeScript `@casualoffice/collab` server (Hocuspocus + Yjs on Fastify), vendored at `./collab`. AGPL code purged from the fork; statelessness preserved (no DB). The editor fork is **inlined** (no separate `.git/`). Recent work: PRs #10–#16, focused on real-world visual fidelity (`sds-anti-t-zh`, `medical-incident-form`, `Form025U`), tracked in [`19-content-drops-and-inconsistencies.md`](archive/19-content-drops-and-inconsistencies.md) and [`20-overlap-and-interaction.md`](archive/20-overlap-and-interaction.md).
 
 **Editor side:**
 - Round-trip audit harness — eliminated ~2,400 dropped tags across 16+ commits.
@@ -151,8 +151,9 @@ Pivot completed 2026-05-16; the project is well past it. Phase C (Personal auth)
 - **CI green-up** — three sweeps fixed stale e2e selectors (list/indent aria-labels gained shortcut chips; broadened file `accept`; hyperlinks "New" button moved into File dropdown; help-menu URL points at the `CasualOffice` org; demo-docx fidelity tests wrapped in `expect.poll` to avoid race conditions).
 - **Live editor features** — the writing assistant (`src/lib/writer`, `AISuggestionPanel`, `WritingAssistantSheet`) and the embed/iframe SDK (`src/embed/protocol.ts`, `@casualoffice/docs` package) are shipped and live.
 
-**Backend side (since pivot):**
-- M1 shipped — see milestone table above.
+**Backend side (current — Node `@casualoffice/collab`):**
+- Realtime sync / presence / snapshots / REST (`/api/rooms`, `/auth`, `/files`, `/wopi`) are owned by the Node/TypeScript `@casualoffice/collab` server (Hocuspocus + Yjs on Fastify), vendored at `./collab`, which also serves the bundled SPA. See [23-collab-server-migration](23-collab-server-migration.md).
+- M1's stateless **Go** gateway (`backend/`) shipped the v0 flow but was **removed 2026-06-28** — historical; see milestone table above.
 - Three-way fidelity harness in CI: us vs LibreOffice vs OnlyOffice DocumentBuilder.
 
 **Infrastructure:**

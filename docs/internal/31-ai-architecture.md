@@ -1,6 +1,6 @@
 # 31 — AI Architecture: JSON DocOps IR + MCP Tools (Docs & Sheets)
 
-**Date:** 2026-06-29 · **Status:** Phase 0 + Phase 1 + Phase 2 (collab WS + desktop loop) + Phase 3 (tracked-change tools, composite tools, generative table, step budgets) shipped · **Companion:** [32-ai-competitive-analysis.md](32-ai-competitive-analysis.md)
+**Date:** 2026-07-19 · **Status:** Phase 0 + Phase 1 + Phase 2 (collab WS + desktop loop) + Phase 3 (tracked-change tools, composite tools, generative table, `create_document`, step budgets) shipped for Docs; only the Sheets catalog/bridge remains · **Companion:** [32-ai-competitive-analysis.md](32-ai-competitive-analysis.md)
 **Scope:** Casual Docs (this repo) + Casual Sheets, with server (collab) and desktop (Rust) execution.
 
 ---
@@ -96,6 +96,8 @@ The editor never knows which orchestrator drives it. The LLM never sees editor i
 | `list_styles` | `{}` | `{fonts[], headingStyles[], paragraphStyles[], inconsistencies[]}` |
 | `get_doc_stats` | `{}` | `{pages, words, sections, hasToc, hasHeaders, headingLevelsUsed[]}` |
 | `find_text` | `{query, limit?}` | `[{blockId, snippet, offsetHint}]` |
+| `search_document` | `{query, k?}` | top-k relevant passages `[{blockId, headingPath, snippet}]` — BM25 over the current doc (`packages/docops/src/retrieval/bm25.ts`) |
+| `search_workspace` | `{query, k?}` | passages across the open folder's other files, each tagged with its source (`retrieval/workspace.ts`) — advertised only when a workspace is indexed |
 | `get_table` | `{blockId}` | `{rows, cols, cells[][]}` |
 | `get_pasted_data` | `{}` | `{kind:'tsv'|'html'|'none', rows[][], source}` |
 
@@ -215,10 +217,10 @@ stream assistant text + per-step progress to the chat UI
 
 ## 7. Phasing
 
-- **Phase 0 — contract + skeleton.** ✅ `@casualoffice/docops` package (IR + tool catalog); bridge implementing 5 read tools (`get_outline`, `get_selection`, `get_doc_stats`, `list_styles`, `find_text`) + 2 write tools wrapping existing commands (`convert_range_to_table`, `insert_toc`); `DocOpsPanel` in-process orchestrator (Haiku, multi-turn loop); rail button behind `window.__casualFeatures__.docops` flag.
+- **Phase 0 — contract + skeleton.** ✅ `@casualoffice/docops` package (IR + tool catalog); bridge implementing 5 read tools (`get_outline`, `get_selection`, `get_doc_stats`, `list_styles`, `find_text`) + 2 write tools wrapping existing commands (`convert_range_to_table`, `insert_toc`); `DocOpsPanel` in-process orchestrator (Haiku, multi-turn loop); assistant panel enabled via the `ai` prop (`ai={{ enabled: true }}`) as of PR #285 — the `window.__casualFeatures__.docops` global is now a deprecated fallback (`packages/react/src/docops/ai-prop.ts`).
 - **Phase 1 — core mutations + suggestion mode.** ✅ 3 suggestion-mode write tools (`suggest_text_change`, `set_paragraph_style`, `add_comment`) wired through `DocsBridgeActions` → `DocxEditorRef`; system prompt updated for tracked-change UX.
-- **Phase 2 — topology.** ✅ `collab/src/ai.ts` — WebSocket endpoint `/api/ai`; server holds the full LLM tool loop; `tool_use` blocks routed back to originating client over WS; client executes via `DocsBridge` and returns `tool_result`. `CollabTransport` (WS-based, `drivesLoop=true`) in editor. `DesktopTransport` (`drivesLoop=true`) drives the same loop in JS via per-round Tauri invoke — no Rust changes needed; Rust makes single LLM calls, JS owns the tool loop and streaming.
-- **Phase 3 — generative + parity.** ✅ `rewrite_selection`, `delete_paragraphs`, `insert_paragraph_after` (tracked-change write tools); `get_block` (composite read); `harmonize_styles` (bulk heading-remap + font unification, undoable); `insert_report_from_data` (Heading 2 + bordered table from structured rows/columns, inserts at anchor or end-of-doc); agentic step budgets (`LlmCallPayload.maxToolRounds` / `DocxEditorProps.docopsMaxToolRounds`, cap-hit notice surfaced in panel). Pending: `create_document`, Sheets catalog/bridge.
+- **Phase 2 — topology.** ✅ `collab/src/ai.ts` — WebSocket endpoint `/api/ai`; server holds the full LLM tool loop; `tool_use` blocks routed back to originating client over WS; client executes via `DocsBridge` and returns `tool_result`. `CollabTransport` (WS-based) in editor. `DesktopTransport` drives the loop in JS via per-round Tauri invoke — no Rust changes needed; Rust makes single LLM calls, JS owns the tool loop and streaming. Both transports are now `drivesLoop=false` (PR #279): each `call()` is a single LLM round and the JS-side `runAgent` path owns the multi-round loop, so the Agent toggle (gated on `!transport.drivesLoop`) surfaces on both web and desktop.
+- **Phase 3 — generative + parity.** ✅ `rewrite_selection`, `delete_paragraphs`, `insert_paragraph_after` (tracked-change write tools); `get_block` (composite read); `harmonize_styles` (bulk heading-remap + font unification, undoable); `insert_report_from_data` (Heading 2 + bordered table from structured rows/columns, inserts at anchor or end-of-doc); agentic step budgets (`LlmCallPayload.maxToolRounds` / `DocxEditorProps.docopsMaxToolRounds`, cap-hit notice surfaced in panel); `create_document` (shipped — `packages/docops/src/catalog.ts` + `packages/react/src/docops/bridge.ts`). Pending: the Sheets catalog/bridge.
 
 ---
 

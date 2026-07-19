@@ -263,7 +263,7 @@ dev server, upload a doc, and click Share.
 
 ## 🛠 Built on
 
-The editor under [`docx-editor/`](./docx-editor/) is a fork of [eigenpal/docx-editor](https://github.com/eigenpal/docx-editor) (MIT). The fork's modifications, the Go gateway, and this repository are **Apache-2.0**. The AGPL `@eigenpal/docx-editor-agents` package was removed; only MIT code remains in the editor tree.
+The editor under [`docx-editor/`](./docx-editor/) is a fork of [eigenpal/docx-editor](https://github.com/eigenpal/docx-editor) (MIT). The fork's modifications and this repository are **Apache-2.0**. The AGPL `@eigenpal/docx-editor-agents` package was removed; only MIT code remains in the editor tree.
 
 ## 📄 License
 

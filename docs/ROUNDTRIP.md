@@ -2,7 +2,7 @@
 
 How we make sure a `.docx` opened and saved by Casual Editor stays byte-faithful to Microsoft Word's representation.
 
-For deeper internals, see [`internal/01-fidelity-gaps.md`](./internal/01-fidelity-gaps.md) and [`internal/03-gap-matrix.md`](./internal/03-gap-matrix.md).
+For deeper internals, see [`internal/28-visual-fidelity-to-90.md`](./internal/28-visual-fidelity-to-90.md).
 
 ---
 
@@ -53,13 +53,13 @@ Each fidelity gap fix is pinned by:
 1. A unit test in `docx-editor/packages/core/src/docx/__tests__/*.test.ts` that asserts the parse→serialize round-trip preserves the relevant attribute(s).
 2. Where the gap produces a visible output difference, an e2e spec in `docx-editor/e2e/tests/` that opens the fixture and asserts the rendered DOM matches expectations.
 
-Both are required before a fidelity PR lands. The pattern means a regression always trips at least one of CI's 800+ e2e tests.
+Both are required before a fidelity PR lands. The pattern means a regression always trips at least one of CI's e2e specs.
 
 ---
 
-## Current status (re-audited 2026-05-24)
+## Current status (re-audited 2026-06-27)
 
-**39 of 39 fixtures** round-trip with zero per-tag drops = **100 % pristine**.
+**60 of 60 fixtures** round-trip with zero per-tag drops = **100 % pristine**.
 Target was ≥ 90 % before the desktop ship — **floor cleared**. The
 previously-deferred VML cluster (~108 dropped tags across
 medical-incident-form + sds-real-world) closed in commit `302c210`
@@ -70,7 +70,7 @@ What this *does not* claim: it's not byte-equal (attribute ordering
 etc. may differ — tag-count parity is stricter than byte-equal in
 practice but weaker than literal byte-equal), and it's not visual
 fidelity. The remaining open gaps in
-[`internal/03-gap-matrix.md`](./internal/03-gap-matrix.md) are about
+[`internal/28-visual-fidelity-to-90.md`](./internal/28-visual-fidelity-to-90.md) are about
 on-screen rendering, not whether bytes survive a load → save cycle.
 
 The full per-tag history (~2,400 dropped tags eliminated across 16+

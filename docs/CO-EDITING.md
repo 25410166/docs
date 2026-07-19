@@ -22,9 +22,9 @@ Y.Doc ⇄ ySyncPlugin ⇄ ProseMirror
 
 - Each open document maps to a single `Y.Doc` shared by all peers in the room.
 - `y-prosemirror`'s `ySyncPlugin` keeps the Y.Doc and ProseMirror state coherent in both directions — local edits become Y.Doc updates; remote Y.Doc updates become PM transactions.
-- Updates travel over the [y-websocket protocol](https://github.com/yjs/y-websocket) — a binary message format the server forwards verbatim.
+- Updates travel over the [y-websocket protocol](https://github.com/yjs/y-websocket) — a binary message format the collab server merges into its authoritative Y.Doc and re-broadcasts.
 
-The gateway never interprets CRDT contents. It is a **pure relay** that fans incoming WS frames out to every other peer in the same room.
+The collab server holds one authoritative `Y.Doc` per room. It applies each incoming update to that server-side doc, re-broadcasts the merged result to the other peers, and syncs a freshly-joined peer from the server's current state (not from a replay of raw frames).
 
 ---
 
@@ -42,7 +42,7 @@ Awareness state is ephemeral. Peers re-broadcast on tab focus and reconnect, so 
 
 ## Rooms
 
-A room is keyed by `docId`. The gateway creates the room lazily on the first peer's WS connection and tears it down when the last peer disconnects.
+A room is keyed by `docId`. The collab server creates the room lazily on the first peer's WS connection and tears it down when the last peer disconnects.
 
 ```
 Lifecycle:
@@ -52,16 +52,16 @@ Lifecycle:
   process restart           → all rooms gone; next peer reconnect re-seeds via GetFile
 ```
 
-This means **the gateway never stores documents.** Persistence is the host's job (`inline`, `wopi`, or `jwtapi`).
+This means **the collab server never stores documents.** Persistence is the host's job (`inline`, `wopi`, or `jwtapi`).
 
 ---
 
 ## Password protection
 
-Rooms can be created with a password. The gateway gates the WS upgrade:
+Rooms can be created with a password. The collab server gates the WS upgrade:
 
 - Client sends password as `?p=<pw>` on the WS URL.
-- Gateway SHA-256s it, constant-time compares against the room's stored hash, closes with code `4401` on mismatch.
+- The server SHA-256s it, constant-time compares against the room's stored hash, closes with code `4401` on mismatch.
 
 This is sufficient for casual share-link workflows. For stronger auth, integrate via the `jwtapi` host (signed tokens with claim-based permissions).
 
@@ -69,9 +69,9 @@ This is sufficient for casual share-link workflows. For stronger auth, integrate
 
 ## View-only enforcement
 
-View-only joiners cannot mutate the document. Enforcement happens at the Y.Doc transaction layer in the editor (rejecting outgoing updates) **and** at the gateway (rejecting incoming updates from view-only sessions).
+View-only joiners cannot mutate the document. Enforcement happens at the Y.Doc transaction layer in the editor (rejecting outgoing updates) **and** at the collab server (refusing to apply updates from view-only sessions).
 
-This belt-and-suspenders design means a malicious client editing the bundle still can't write to the shared Y.Doc, because the gateway's room registry tracks each peer's permission level and drops disallowed updates before fanout.
+This belt-and-suspenders design means a malicious client editing the bundle still can't write to the shared Y.Doc, because the collab server marks such connections read-only per each peer's permission level and never applies their updates to the authoritative doc.
 
 ---
 
