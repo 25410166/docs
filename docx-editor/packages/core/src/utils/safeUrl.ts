@@ -17,20 +17,12 @@
  */
 
 /** Schemes a hyperlink is allowed to navigate to. */
-const ALLOWED_SCHEMES = new Set([
-  'http:',
-  'https:',
-  'mailto:',
-  'tel:',
-  'ftp:',
-  'sms:',
-]);
+const ALLOWED_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:', 'ftp:', 'sms:']);
 
 // Control characters (including TAB/LF/CR) are used to smuggle blocked schemes
 // past naive checks — e.g. `java<TAB>script:` or `java<LF>script:`. Strip them
 // first. Built from a pure-ASCII source string so no raw control bytes live in
 // this file.
-// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = new RegExp('[\\u0000-\\u001F\\u007F-\\u009F]', 'g');
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 
