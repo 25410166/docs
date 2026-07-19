@@ -286,6 +286,7 @@ import { Toaster, toast } from 'sonner';
 import { getBuiltinTableStyle, type TableStylePreset } from './ui/TableStyleGallery';
 import { DocumentAgent } from '@eigenpal/docx-core/agent';
 import { DefaultLoadingIndicator, DefaultPlaceholder, ParseError } from './DocxEditorHelpers';
+import { useDialogs } from '../hooks/useDialogs';
 import {
   parseDocx,
   getFootnoteText,
@@ -3032,15 +3033,21 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const hyperlinkDialog = useHyperlinkDialog();
 
   // Page setup dialog state
-  const [showPageSetup, setShowPageSetup] = useState(false);
+  // Modal dialog open/close state, centralised in one registry
+  // (docs/internal/40 — DocxEditor decomposition, batch 1).
+  const dialogs = useDialogs();
+  const showPageSetup = dialogs.isOpen('pageSetup');
+  const setShowPageSetup = (v: boolean) => (v ? dialogs.open('pageSetup') : dialogs.close('pageSetup'));
   const handleOpenPageSetup = useCallback(() => setShowPageSetup(true), []);
 
   // File → Properties dialog state.
-  const [showFileProperties, setShowFileProperties] = useState(false);
+  const showFileProperties = dialogs.isOpen('fileProperties');
+  const setShowFileProperties = (v: boolean) => (v ? dialogs.open('fileProperties') : dialogs.close('fileProperties'));
   const handleOpenFileProperties = useCallback(() => setShowFileProperties(true), []);
 
   // Word count dialog state (Ctrl+Shift+C, also surfaced via Edit menu).
-  const [showWordCount, setShowWordCount] = useState(false);
+  const showWordCount = dialogs.isOpen('wordCount');
+  const setShowWordCount = (v: boolean) => (v ? dialogs.open('wordCount') : dialogs.close('wordCount'));
   const handleOpenWordCount = useCallback(() => setShowWordCount(true), []);
 
   // Voice typing — inserts recognized text at the active editor's
@@ -3065,7 +3072,8 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   }, [voiceTyping]);
 
   // Help → About dialog state.
-  const [showAbout, setShowAbout] = useState(false);
+  const showAbout = dialogs.isOpen('about');
+  const setShowAbout = (v: boolean) => (v ? dialogs.open('about') : dialogs.close('about'));
   const handleShowAbout = useCallback(() => setShowAbout(true), []);
   const handleReportBug = useCallback(() => {
     void import('./report-bug').then((m) => m.openBugReport());
@@ -3074,9 +3082,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // Command palette state (⌘⇧P / Ctrl+Shift+P). Searchable list of every
   // menu action, sourced from the same callbacks the menus use.
   const [showCommandPalette, setShowCommandPalette] = useState(false);
-  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
-  const [showPreferences, setShowPreferences] = useState(false);
-  const [showWatermarkDialog, setShowWatermarkDialog] = useState(false);
+  const showKeyboardShortcuts = dialogs.isOpen('keyboardShortcuts');
+  const setShowKeyboardShortcuts = (v: boolean) => (v ? dialogs.open('keyboardShortcuts') : dialogs.close('keyboardShortcuts'));
+  const showPreferences = dialogs.isOpen('preferences');
+  const setShowPreferences = (v: boolean) => (v ? dialogs.open('preferences') : dialogs.close('preferences'));
+  const showWatermarkDialog = dialogs.isOpen('watermark');
+  const setShowWatermarkDialog = (v: boolean) => (v ? dialogs.open('watermark') : dialogs.close('watermark'));
   const [showEquationDialog, setShowEquationDialog] = useState(false);
   // Equation dialog prefill — empty for a new insert, or the selected math
   // node's LaTeX/display when editing an existing equation.
@@ -3084,12 +3095,14 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     latex: string;
     display: 'inline' | 'block';
   }>({ latex: '', display: 'inline' });
-  const [showAccessibility, setShowAccessibility] = useState(false);
+  const showAccessibility = dialogs.isOpen('accessibility');
+  const setShowAccessibility = (v: boolean) => (v ? dialogs.open('accessibility') : dialogs.close('accessibility'));
   const [accessibilityIssues, setAccessibilityIssues] = useState<AccessibilityIssue[]>([]);
   // Building blocks (C6): persisted snippet list + a snapshot of whatever
   // the editor selection contained at the moment the dialog opened, so
   // saving works even after focus has shifted to the dialog input.
-  const [showBuildingBlocks, setShowBuildingBlocks] = useState(false);
+  const showBuildingBlocks = dialogs.isOpen('buildingBlocks');
+  const setShowBuildingBlocks = (v: boolean) => (v ? dialogs.open('buildingBlocks') : dialogs.close('buildingBlocks'));
   const [buildingBlocks, setBuildingBlocks] = useState<BuildingBlock[]>(() => loadBuildingBlocks());
   const [pendingBuildingBlock, setPendingBuildingBlock] = useState<{
     content: unknown;
@@ -3098,7 +3111,8 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // A4 — dictionary lookup. Captures the selected word at open time so
   // the dialog can show "looking up <word>" loading state without a
   // re-fetch on every render.
-  const [showDictionary, setShowDictionary] = useState(false);
+  const showDictionary = dialogs.isOpen('dictionary');
+  const setShowDictionary = (v: boolean) => (v ? dialogs.open('dictionary') : dialogs.close('dictionary'));
   const [dictionaryWord, setDictionaryWord] = useState<string | null>(null);
   // A5 — translate selection. Captures the selection text at open time.
   // `translateRange` is also captured when the dialog is opened from
