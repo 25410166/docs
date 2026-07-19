@@ -80,6 +80,7 @@ import { AutosaveRestoreBanner } from './AutosaveRestoreBanner';
 import { writeAutosave, clearLegacyLocalStorageAutosave } from '../utils/autosave';
 import { restoreNativeBuildingBlocks } from '../utils/buildingBlocks';
 import { restoreNativeCitations } from '../utils/citations';
+import { triggerBrowserDownload } from '../utils/download';
 import { recordRecentFile } from '../utils/recent-files';
 import { openExternal } from '../utils/openExternal';
 import { CommentMarginMarkers } from './CommentMarginMarkers';
@@ -7847,14 +7848,8 @@ body { background: white; }
       const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       });
-      const url = URL.createObjectURL(blob);
-      const a = window.document.createElement('a');
-      a.href = url;
       const fileName = `${(documentName?.trim() || 'document').replace(/\.docx$/i, '')}.docx`;
-      a.download = fileName;
-      a.click();
-      // Defer revoke so Safari has time to start the download.
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      triggerBrowserDownload(blob, fileName);
       markDirty(false);
       toast.success(`Saved ${fileName}`);
     } catch (err) {
@@ -7937,12 +7932,7 @@ body { background: white; }
       // controls where the attachment lands; web falls back to a download.
       const savedViaHost = onExport ? await onExport(blob, fileName) : false;
       if (!savedViaHost) {
-        const url = URL.createObjectURL(blob);
-        const a = window.document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 0);
+        triggerBrowserDownload(blob, fileName);
       }
 
       const subject = encodeURIComponent(base);
@@ -7976,12 +7966,7 @@ body { background: white; }
         toast.success(`Saved ${fileName}`);
         return;
       }
-      const url = URL.createObjectURL(blob);
-      const a = window.document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      triggerBrowserDownload(blob, fileName);
       toast.success(`Downloaded ${fileName}`);
     } finally {
       setIsSaving(false);
@@ -8022,12 +8007,7 @@ body { background: white; }
           toast.success(`Saved ${fileName}`, { id: toastId });
           return;
         }
-        const url = URL.createObjectURL(blob);
-        const a = window.document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 0);
+        triggerBrowserDownload(blob, fileName);
         toast.success(`Downloaded ${fileName}`, { id: toastId });
       } catch (error) {
         toast.error(`Failed to export as ${label}`, { id: toastId });
