@@ -1067,7 +1067,7 @@
     "linkLabel": "Share link",
     "copy": "Copy",
     "copied": "Copied",
-    "secureNote": "The role is set by a link parameter today. Server-enforced secure links are coming soon.",
+    "secureNote": "The role is set by a link parameter, so a view or comment link can currently be changed to edit by removing it from the URL. Only share these links with people you trust until server-enforced secure links land.",
     "done": "Done"
   },
   "presence": {

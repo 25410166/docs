@@ -4,10 +4,12 @@
 
 // Default reconnecting/offline indicator for the SDK. A thin strip
 // rendered above the editing surface whenever the Yjs provider isn't
-// `connected`. The editor stays usable — edits buffer locally and
-// flush on reconnect — but the user sees that their changes aren't
-// being broadcast right now. Theme-token styled via --doc-* vars so
-// it inherits the host's light/dark surface.
+// `connected`. The editor stays usable — edits buffer in this tab's
+// in-memory Y.Doc and flush on reconnect — but they are NOT yet
+// persisted to disk (no y-indexeddb provider), so closing the tab
+// while offline loses them. The copy reflects that honestly until
+// offline persistence lands (tracker 27, Next phase). Theme-token
+// styled via --doc-* vars so it inherits the host's light/dark surface.
 import type { CSSProperties } from 'react';
 import type { CollabStatus } from './useCollab';
 
@@ -37,7 +39,7 @@ const byStatus: Record<Exclude<CollabStatus, 'connected'>, CSSProperties> = {
 const labels: Record<Exclude<CollabStatus, 'connected'>, string> = {
   connecting: 'Reconnecting to the session…',
   disconnected:
-    "You're offline — edits are saved locally and will sync when the connection comes back.",
+    "You're offline — keep this tab open and your edits will sync when the connection returns.",
 };
 
 /**
