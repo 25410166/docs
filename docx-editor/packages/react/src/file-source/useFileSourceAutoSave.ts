@@ -223,6 +223,12 @@ export interface UseFileSourceAutoSaveReturn {
    */
   conflict: boolean;
   /**
+   * True when the last save attempt failed and none has succeeded since — even
+   * after the transient error badge auto-clears. Consumers use this to avoid
+   * showing a stale "Saved" while edits are actually un-persisted.
+   */
+  pendingError: boolean;
+  /**
    * Force a save right now (bypassing the interval), clearing any conflict
    * pause — i.e. a deliberate overwrite. Returns when the round-trip finishes.
    * Useful for "Save & close" buttons or a "Save anyway" conflict action.
@@ -257,6 +263,11 @@ export function useFileSourceAutoSave(
   // suppressed so we never silently re-conflict or overwrite the other writer;
   // an explicit flush() clears it.
   const [conflict, setConflict] = useState(false);
+  // True while the most recent save attempt FAILED and no successful save has
+  // landed since. Survives the 60 s error-badge auto-clear, so the UI never
+  // reverts to a lying "Saved X ago" with a pre-failure timestamp while edits
+  // are actually un-persisted (audit: false 'Saved' after a failed autosave).
+  const [pendingError, setPendingError] = useState(false);
   const conflictRef = useRef(false);
 
   // Ref for "is a save currently in flight" — guarding setState
@@ -343,6 +354,7 @@ export function useFileSourceAutoSave(
           setLastSavedAt(result.savedAt);
           setStatus('saved');
           setLastError(null);
+          setPendingError(false);
           clearTimeout(errorClearTimerRef.current);
           errorClearTimerRef.current = undefined;
           onSavedRef.current?.(result.savedAt, result.etag);
@@ -356,6 +368,7 @@ export function useFileSourceAutoSave(
             setConflict(true);
             setStatus('error');
             setLastError(result.err);
+            setPendingError(true);
             clearTimeout(errorClearTimerRef.current);
             errorClearTimerRef.current = undefined;
             onErrorRef.current?.(result.err);
@@ -363,6 +376,7 @@ export function useFileSourceAutoSave(
           }
           setStatus('error');
           setLastError(result.err);
+          setPendingError(true);
           // Auto-clear the error badge after 60 s so a one-off failure
           // doesn't haunt the title bar forever (autosave-stale-error-status).
           clearTimeout(errorClearTimerRef.current);
@@ -484,8 +498,9 @@ export function useFileSourceAutoSave(
       lastSavedAt,
       lastError,
       conflict,
+      pendingError,
       flush,
     }),
-    [status, lastSavedAt, lastError, conflict, flush]
+    [status, lastSavedAt, lastError, conflict, pendingError, flush]
   );
 }
