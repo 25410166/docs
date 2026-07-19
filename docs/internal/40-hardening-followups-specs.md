@@ -102,3 +102,50 @@ Platform-dependent tests: override `navigator.platform` via `page.addInitScript`
 ## Not worth chasing (verified low-value or false)
 
 - The audit referenced a "`formatShortcut()` helper" and an "existing `confirmModal`" as if wiring were trivial — the helper existed (`lib/platform.ts`, used in #321) but **no confirm modal existed** (#320 added an inline two-step confirm instead). Verify such references against source before planning.
+
+---
+
+## Context-bus execution — accurate prop map (2026-07-20, grounded)
+
+Correction to §6's earlier framing: the dialog-open handlers are **not** props on the
+`EditorToolbar` component's own interface (they're declared in `Toolbar.tsx` / `TitleBar.tsx`
+and threaded via `EditorToolbarContext`), which an interface-only grep misses. The real
+surface, read from `DocxEditor.tsx` `<EditorToolbar>` (81 props) and its consumers:
+
+### The 81 EditorToolbar props, clustered by concern
+
+| Cluster | Props | Target |
+| ------- | ----- | ------ |
+| **Dialogs** (~19) | onOpenWordCount, onOpenPreferences, onOpenAccessibility, onOpenBuildingBlocks, onOpenCitations, onOpenCommandPalette, onOpenDictionary, onOpenKeyboardShortcuts, onOpenWatermark, onOpenBookmarks, onOpenBordersShading, onOpenCharacterSpacing, onOpenImageProperties, onOpenInsertSymbol, onOpenParagraphDialog, onOpenVersionHistory, onPageSetup, onFileProperties, onShowAbout | `DialogContext` |
+| **View state** (~11) | onToggleGrammar, onToggleOutline, onToggleShowFormattingMarks, onToggleShowRuler, onToggleSpellcheck, onPaintFormat, grammarEnabled, outlineVisible, showFormattingMarks, rulerVisible, spellcheckEnabled, paintFormatArmed | `ViewStateContext` |
+| **Formatting** | currentFormatting, onFormat, documentStyles, fontFamilies, colorTheme, onSetColorTheme, theme | `FormattingContext` |
+| **Document IO** | onSave, onNew, onMakeCopy, onOpen, onExportPdf, onExportMd, onExportOdt, onEmailAsAttachment, onPrint, isDirty, isSaving | `DocumentIOContext` (after useDocumentIO lands) |
+| **Insert** | onInsertImage/Table/Shape/TextBox/Field/Footnote/TOC/PageBreak/SectionBreak/HorizontalRule | `InsertContext` |
+| **Undo/redo** | onUndo, onRedo, canUndo, canRedo | keep or SelectionContext |
+| **Misc / image+table** | onZoomChange, zoom, showZoomControl, onRefocusEditor, onReportBug, imageContext, tableContext, onImageTransform, onImageWrapType, onTableAction, onConvertSelectionToTable, onConvertTableToText, onAddComment, className, style, disabled, showPrintButton, showTableInsert | case-by-case |
+
+### DialogContext — the real scope (do NOT under-estimate)
+
+- **~12 of the 19** dialog handlers map 1:1 to the shipped `useDialogs` registry keys
+  (wordCount, preferences, accessibility, buildingBlocks, citations, commandPalette,
+  dictionary, keyboardShortcuts, watermark, pageSetup, fileProperties, about). The other
+  7 (bookmarks, bordersShading, characterSpacing, imageProperties, insertSymbol,
+  paragraphDialog, versionHistory) are **not yet on the registry** — migrate them first
+  (same adapter pattern as batches 1–2) or leave their props for a later batch.
+- Each of the 12 is referenced **4–7 times** across BOTH `Toolbar.tsx` and `TitleBar.tsx`
+  (interface decl + destructure + nested menu-config `onClick`s) — roughly **~100 edits**.
+- Plan: (1) `DialogProvider value={dialogs}` around the toolbar tree in DocxEditor;
+  (2) `const dialogs = useContext(DialogContext)` in `Toolbar.tsx` AND `TitleBar.tsx`;
+  (3) convert every `onClick: onOpenWordCount` → `onClick: () => dialogs.open('wordCount')`;
+  (4) delete the 12 props from both consumers' interfaces AND the `<EditorToolbar>` call
+  site. Typecheck is the completeness net (a removed-but-referenced prop errors).
+- **Verify:** open all 12 dialogs via BOTH the menu bar and the command palette; run
+  `toolbar-state.spec.ts`, `comments-sidebar.spec.ts`, and the per-dialog specs
+  (word-count, accessibility, dictionary, watermark, citations, keyboard-shortcuts,
+  file-properties, help-menu/About). This is a full-attention PR, not a tail slice.
+
+### Recommended order (revised)
+1. ViewStateContext (~11 props, self-contained UI state — lowest risk of the clusters).
+2. DialogContext (~12 props + the 7-dialog registry migration — medium, ~100 edits).
+3. useDocumentIO (handleSave/loadBuffer — high, 39-fixture gate) THEN DocumentIOContext.
+4. Formatting / Insert contexts last (largest, most entangled with selection state).
