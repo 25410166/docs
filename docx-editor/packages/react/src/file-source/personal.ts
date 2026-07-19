@@ -59,11 +59,19 @@ export interface PersonalFileSourceOptions {
 export class PersonalFileSourceError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string) {
+  /**
+   * On a 412 If-Match conflict, the host's CURRENT version (from the response
+   * ETag). Lets a caller re-thread it and force-save (overwrite) instead of
+   * re-sending the stale version and 412-ing forever. Mirrors
+   * `WopiSaveConflictError.actual`.
+   */
+  readonly actual?: string;
+  constructor(status: number, code: string, message: string, actual?: string) {
     super(message);
     this.name = 'PersonalFileSourceError';
     this.status = status;
     this.code = code;
+    this.actual = actual;
   }
 }
 
@@ -224,7 +232,10 @@ export class PersonalFileSource implements FileSource {
       } catch {
         // Non-JSON error body — keep the synthesized envelope.
       }
-      throw new PersonalFileSourceError(res.status, code, message);
+      // A 412 If-Match conflict carries the host's current version in the
+      // response ETag; surface it so the caller can force-save against it.
+      const actual = res.status === 412 ? (res.headers.get('ETag') ?? undefined) : undefined;
+      throw new PersonalFileSourceError(res.status, code, message, actual);
     }
     return res;
   }
