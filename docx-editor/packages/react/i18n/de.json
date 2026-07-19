@@ -689,7 +689,8 @@
     "addComment": "Kommentar hinzufügen...",
     "replyPlaceholder": "Antworten oder andere mit @ erwähnen",
     "replyCount": "{count, plural, one {# Antwort} other {# Antworten}}",
-    "mentionSuggestions": null
+    "mentionSuggestions": null,
+    "confirmDelete": null
   },
   "trackedChanges": {
     "unknown": "Unbekannt",

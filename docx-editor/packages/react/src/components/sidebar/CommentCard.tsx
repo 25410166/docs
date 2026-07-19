@@ -45,6 +45,10 @@ export function CommentCard({
   knownAuthors = [],
 }: CommentCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Two-step confirm for the destructive, non-undoable delete: the first click
+  // arms it, the second (a distinct button) commits — so a comment thread can't
+  // be lost to a stray click (audit: unconfirmed comment-thread delete).
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -52,7 +56,12 @@ export function CommentCard({
   // so keyboard users can act without reaching for the mouse. Also
   // click-outside-to-close so opening the menu doesn't trap focus.
   useEffect(() => {
-    if (!menuOpen) return;
+    // Re-arm the confirm each time the menu closes so it never re-opens
+    // pre-confirmed.
+    if (!menuOpen) {
+      setConfirmingDelete(false);
+      return;
+    }
     // Auto-focus first menu item when the popup mounts.
     const first = menuRef.current?.querySelector('button');
     first?.focus();
@@ -174,34 +183,87 @@ export function CommentCard({
                   padding: '4px 0',
                 }}
               >
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDelete?.(comment.id);
-                  }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '8px 16px',
-                    border: 'none',
-                    background: 'none',
-                    textAlign: 'left',
-                    fontSize: 14,
-                    color: 'var(--doc-text-on-surface, #1f2937)',
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                  onMouseOver={(e) => {
-                    (e.target as HTMLElement).style.backgroundColor =
-                      'var(--doc-bg-hover, #f1f3f4)';
-                  }}
-                  onMouseOut={(e) => {
-                    (e.target as HTMLElement).style.backgroundColor = 'transparent';
-                  }}
-                >
-                  {t('common.delete')}
-                </button>
+                {!confirmingDelete ? (
+                  <button
+                    role="menuitem"
+                    data-testid="comment-delete"
+                    onClick={() => setConfirmingDelete(true)}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      padding: '8px 16px',
+                      border: 'none',
+                      background: 'none',
+                      textAlign: 'left',
+                      fontSize: 14,
+                      color: 'var(--doc-text-on-surface, #1f2937)',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                    onMouseOver={(e) => {
+                      (e.target as HTMLElement).style.backgroundColor =
+                        'var(--doc-bg-hover, #f1f3f4)';
+                    }}
+                    onMouseOut={(e) => {
+                      (e.target as HTMLElement).style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    {t('common.delete')}
+                  </button>
+                ) : (
+                  <div style={{ padding: '8px 12px' }} role="group" aria-label={t('common.delete')}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        marginBottom: 8,
+                        color: 'var(--doc-text-on-surface, #1f2937)',
+                      }}
+                    >
+                      {t('comments.confirmDelete')}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        role="menuitem"
+                        data-testid="comment-delete-confirm"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onDelete?.(comment.id);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '6px 10px',
+                          border: 'none',
+                          borderRadius: 6,
+                          background: 'var(--doc-danger, #d93025)',
+                          color: '#fff',
+                          fontSize: 13,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        {t('common.delete')}
+                      </button>
+                      <button
+                        role="menuitem"
+                        data-testid="comment-delete-cancel"
+                        onClick={() => setConfirmingDelete(false)}
+                        style={{
+                          flex: 1,
+                          padding: '6px 10px',
+                          border: '1px solid var(--doc-border, #dadce0)',
+                          borderRadius: 6,
+                          background: 'none',
+                          color: 'var(--doc-text-on-surface, #1f2937)',
+                          fontSize: 13,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -689,7 +689,8 @@
     "addComment": "Yorum ekle...",
     "replyPlaceholder": "Yanıtla veya @ ile başkalarını ekle",
     "replyCount": "{count, plural, one {# yanıt} other {# yanıt}}",
-    "mentionSuggestions": null
+    "mentionSuggestions": null,
+    "confirmDelete": null
   },
   "trackedChanges": {
     "unknown": "Bilinmiyor",
