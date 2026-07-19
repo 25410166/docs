@@ -202,4 +202,33 @@ describe('performAutoSave', () => {
     expect(result.kind).toBe('ok');
     expect(fs.saveCalls.length).toBe(1);
   });
+
+  it('forwards the etag to FileSource.save as If-Match (optimistic concurrency)', async () => {
+    let seenEtag: string | undefined = 'not-called';
+    const fs: FileSource = {
+      kind: 'personal',
+      label: 'T',
+      list: async () => [],
+      open: async () => ({ bytes: new ArrayBuffer(0), name: 'x', etag: 'v1' }),
+      save: async (_id, _bytes, opts) => {
+        seenEtag = opts?.etag;
+        return { id: 'd', etag: 'v2' };
+      },
+      rename: async () => undefined,
+      delete: async () => undefined,
+      watchRecent: () => () => undefined,
+      rememberLastOpened: async () => undefined,
+      lastOpened: async () => null,
+    };
+    const result = await performAutoSave({
+      getRef: () => fakeRef(new Uint8Array([1]).buffer),
+      fileSource: fs,
+      docId: 'd',
+      etag: 'v1',
+    });
+    expect(seenEtag).toBe('v1');
+    expect(result.kind).toBe('ok');
+    // The refreshed etag is returned so the caller can advance the chain.
+    if (result.kind === 'ok') expect(result.etag).toBe('v2');
+  });
 });

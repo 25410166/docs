@@ -289,7 +289,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
 
     const [loadState, setLoadState] = useState<
       | { kind: 'loading' }
-      | { kind: 'ready'; buffer: ArrayBuffer; fileName: string }
+      | { kind: 'ready'; buffer: ArrayBuffer; fileName: string; etag?: string }
       | { kind: 'error'; err: Error }
     >({ kind: 'loading' });
 
@@ -300,7 +300,12 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
         try {
           const result = await fileSource.open(docId);
           if (cancelled) return;
-          setLoadState({ kind: 'ready', buffer: result.bytes, fileName: result.name });
+          setLoadState({
+            kind: 'ready',
+            buffer: result.bytes,
+            fileName: result.name,
+            etag: result.etag,
+          });
         } catch (err) {
           if (cancelled) return;
           setLoadState({ kind: 'error', err: err instanceof Error ? err : new Error(String(err)) });
@@ -419,6 +424,7 @@ export const CasualEditor = forwardRef<CasualEditorRef, CasualEditorProps>(
       interval: autosaveInterval,
       enabled: autosave,
       isReady: isSaveReady,
+      initialEtag: loadState.kind === 'ready' ? loadState.etag : undefined,
     });
 
     useEffect(() => {

@@ -79,6 +79,13 @@ export interface PerformAutoSaveDeps {
   docId: string;
   name?: string;
   /**
+   * Last-known etag for optimistic concurrency. Threaded into
+   * `FileSource.save(...)` as `If-Match` so a concurrent host-side change
+   * surfaces as a 412/conflict instead of silently clobbering the other
+   * writer. Undefined on first save.
+   */
+  etag?: string;
+  /**
    * Optional readiness gate. When it returns `false` the tick is SKIPPED
    * before the editor is even serialized — used to refuse saving before a
    * collab Y.Doc has completed its initial sync, which would otherwise push
@@ -110,7 +117,10 @@ export async function performAutoSave(deps: PerformAutoSaveDeps): Promise<AutoSa
     if (!bytes) {
       return { kind: 'err', err: new Error('Document serialization returned no bytes') };
     }
-    const result = await deps.fileSource.save(deps.docId, bytes, { name: deps.name });
+    const result = await deps.fileSource.save(deps.docId, bytes, {
+      name: deps.name,
+      etag: deps.etag,
+    });
     return { kind: 'ok', etag: result.etag, savedAt: new Date() };
   } catch (err) {
     return { kind: 'err', err };
@@ -157,6 +167,13 @@ export interface UseFileSourceAutoSaveOptions {
    * → always ready.
    */
   isReady?: () => boolean;
+  /**
+   * Etag captured from `FileSource.open()`. Seeds the optimistic-concurrency
+   * chain: it's sent as `If-Match` on the next save and refreshed from every
+   * save result, so a concurrent host-side change surfaces as a conflict
+   * instead of a silent last-write-wins overwrite. Reseeds when `docId` changes.
+   */
+  initialEtag?: string;
   /**
    * Optional file-name to attach on first-save (when docId is null
    * — see save() below). The hook doesn't watch this for changes;
@@ -207,6 +224,7 @@ export function useFileSourceAutoSave(
     enabled = true,
     name,
     isReady,
+    initialEtag,
     onSaved,
     onError,
   } = opts;
@@ -233,6 +251,13 @@ export function useFileSourceAutoSave(
   // save has actually run, even if another save was in flight when they
   // called (audit: autosave-pagehide-no-await coupling).
   const inFlightPromiseRef = useRef<Promise<void> | null>(null);
+  // Last-known etag for optimistic concurrency. Seeded from open() via
+  // initialEtag, refreshed from each successful save, and reseeded whenever the
+  // doc changes so a stale etag can't leak across documents.
+  const lastEtagRef = useRef<string | undefined>(initialEtag);
+  useEffect(() => {
+    lastEtagRef.current = initialEtag;
+  }, [docId, initialEtag]);
 
   // Callbacks captured via ref so the tick effect doesn't restart
   // when the host passes a fresh arrow on every render. Same trick
@@ -280,11 +305,15 @@ export function useFileSourceAutoSave(
           docId: cfg.docId,
           name: cfg.name,
           isReady: cfg.isReady,
+          etag: lastEtagRef.current,
         }),
         timeout,
       ]);
       switch (result.kind) {
         case 'ok':
+          // Advance the concurrency chain so the NEXT save's If-Match matches
+          // the version we just wrote.
+          lastEtagRef.current = result.etag;
           setLastSavedAt(result.savedAt);
           setStatus('saved');
           setLastError(null);
