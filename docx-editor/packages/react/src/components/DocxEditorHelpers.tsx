@@ -129,7 +129,18 @@ export function DefaultPlaceholder(): React.ReactElement {
 /**
  * Parse error display
  */
-export function ParseError({ message }: { message: string }): React.ReactElement {
+export function ParseError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  /**
+   * Recovery action for the "Try again" button. Defaults to a full page reload
+   * (re-fetches the source, recovering from transient failures). Hosts can pass
+   * a smarter retry (e.g. re-open from their own storage).
+   */
+  onRetry?: () => void;
+}): React.ReactElement {
   const { t } = useTranslation();
   return (
     <div
@@ -157,7 +168,31 @@ export function ParseError({ message }: { message: string }): React.ReactElement
         </svg>
       </div>
       <h3 style={{ color: 'var(--doc-error)', marginBottom: '8px' }}>{t('errors.failedToLoad')}</h3>
-      <p style={{ color: 'var(--doc-text-muted)', maxWidth: '400px' }}>{message}</p>
+      <p style={{ color: 'var(--doc-text-muted)', maxWidth: '400px', marginBottom: '20px' }}>
+        {message}
+      </p>
+      {/* Recovery affordance so a parse failure isn't a dead-end. */}
+      <button
+        type="button"
+        data-testid="parse-error-retry"
+        onClick={() => {
+          if (onRetry) onRetry();
+          else if (typeof window !== 'undefined') window.location.reload();
+        }}
+        style={{
+          padding: '8px 20px',
+          borderRadius: 8,
+          border: 'none',
+          background: 'var(--doc-primary, #2563eb)',
+          color: '#fff',
+          fontSize: 14,
+          fontWeight: 500,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}
+      >
+        {t('errors.tryAgain')}
+      </button>
     </div>
   );
 }
