@@ -20,11 +20,17 @@ on:
     branches: [main]
     paths:
       - 'docx-editor/packages/core/**'
+      # The visible pages are driven by the React paged editor, so a change
+      # there (e.g. PagedEditor.tsx) can move rendered fidelity too — watch it.
+      - 'docx-editor/packages/react/src/paged-editor/**'
+      - 'docx-editor/packages/react/src/**/*.css'
       - 'docx-editor/scripts/visual-fidelity/**'
       - 'docx-editor/e2e/fixtures/repr-*.docx'
   pull_request:
     paths:
       - 'docx-editor/packages/core/**'
+      - 'docx-editor/packages/react/src/paged-editor/**'
+      - 'docx-editor/packages/react/src/**/*.css'
       - 'docx-editor/scripts/visual-fidelity/**'
       - 'docx-editor/e2e/fixtures/repr-*.docx'
   workflow_dispatch:

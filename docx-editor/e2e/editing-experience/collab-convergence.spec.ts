@@ -26,6 +26,14 @@
  *
  * When COLLAB_E2E is unset the suite records a skipped test so the gap is
  * visible in the report rather than silently absent.
+ *
+ * CI-FEASIBLE PATH FORWARD (planned — 2026-07-19 audit, tracker 27):
+ * Replace the flaky public y-webrtc signaling with a deterministic in-process
+ * server: add `@hocuspocus/server` as a devDep and, in a dedicated CI job,
+ * spawn it on an ephemeral port, then drive two `HocuspocusProvider` clients
+ * (the SAME provider production uses) against it and assert Y.Doc convergence.
+ * This exercises the real wire protocol without the collab server repo (which
+ * is a separate, currently-unvendored submodule) and without public signaling.
  */
 
 import { test, expect, chromium } from '@playwright/test';
