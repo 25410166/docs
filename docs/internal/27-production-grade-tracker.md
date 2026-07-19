@@ -21,13 +21,18 @@ artifact; the concrete gates and their status are tracked here.
 | 1 | Collab autosave overwrites the stored `.docx` with a blank doc before Y.Doc sync | critical | **Fixed 2026-07-19** — `useCollab` exposes `synced`; `useFileSourceAutoSave` gains an `isReady()` gate; editor is never serialized pre-sync (`useFileSourceAutoSave.test.ts`) |
 | 2 | Two stored/paste XSS vectors (unvalidated hyperlink href + `innerHTML` on live paste) | high | **Fixed 2026-07-19** — `safeUrl()` scheme allow-list at every href sink + inert `DOMParser` paste (`safeUrl.test.ts`) |
 | 3 | WOPI `access_token` leaks in the visible URL + bug-report links; empty-origin embed msgs trusted | medium | **Fixed 2026-07-19** — `stripAccessTokenFromUrl()` on boot; origin+pathname-only report URLs; strict embed origin gate |
-| 4 | Personal-mode optimistic concurrency (If-Match) unwired → silent last-write-wins | critical | **Open** — thread etag end-to-end (`personal.ts`, `useFileSourceAutoSave.ts`) |
-| 5 | WOPI 409 conflict wedges autosave into permanent silent edit loss | high | **Open** — catch `WopiSaveConflictError`, refresh version, durable conflict UX |
+| 4 | Personal-mode optimistic concurrency (If-Match) unwired → silent last-write-wins | critical | **Fixed 2026-07-19 (PR #311)** — etag threaded through `useFileSourceAutoSave`; conflict now 412s instead of clobbering |
+| 5 | WOPI 409 conflict wedges autosave into permanent silent edit loss | high | **Fixed 2026-07-19 (PR #311)** — 409 adopts host version; hook enters a durable conflict pause instead of infinite stale-retry |
 | 6 | Share permissions are an unenforced client-side `?role=` hint; no access UI | high | **Open (Next)** — server-enforced share tokens + collaborator management (overlaps P1.7/P1.9) |
 | 7 | Offline edits volatile despite banner promising "saved locally" | high | **Open (Next)** — add `y-indexeddb` (overlaps P1.6) or correct the banner copy |
 
-Feedback follow-ups (audit quick-wins): false "Saved X ago" after a failed autosave, silent
-manual-save failure, unconfirmed comment-thread delete — tracked in the feedback batch.
+Feedback follow-ups: **Fixed 2026-07-19 (PR #313)** — manual-save failure toast + no false
+"Saved X ago" after a failed autosave (`pendingError` → "Unsaved changes"). Remaining audit
+quick-win: unconfirmed comment-thread delete.
+
+**Now-phase status:** all 6 release gates that block a multi-user/WOPI production release are
+closed (PRs #310–#313). Remaining hardening is the Next/Later roadmap (share-token
+enforcement, offline persistence, incremental layout, `DocxEditor.tsx` decomposition).
 
 ### Status reconciliations (2026-07-19)
 
