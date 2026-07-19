@@ -49,17 +49,21 @@ export function AutosaveStatus({
     return () => clearInterval(id);
   }, [state.lastSavedAt]);
 
-  const label = render(state.status, state.lastSavedAt, formatLastSaved);
+  const label = render(state.status, state.lastSavedAt, state.pendingError, formatLastSaved);
   if (label === null) return null;
+
+  // A failed save (even after its badge auto-clears) is a problem state — never
+  // paint it in the neutral "saved" color.
+  const isProblem = state.status === 'error' || state.pendingError;
 
   return (
     <span
       className={className}
       data-testid={testId}
-      data-status={state.status}
+      data-status={isProblem && state.status !== 'error' ? 'unsaved' : state.status}
       aria-live="polite"
       aria-atomic="true"
-      style={state.status === 'error' ? errorStyle : baseStyle}
+      style={isProblem ? errorStyle : baseStyle}
     >
       {state.status === 'saving' && (
         <span aria-hidden="true" data-testid={`${testId}-spinner`} style={spinnerStyle} />
@@ -72,6 +76,7 @@ export function AutosaveStatus({
 function render(
   status: AutoSaveStatus,
   lastSavedAt: Date | null,
+  pendingError: boolean,
   formatLastSaved: (d: Date) => string
 ): string | null {
   switch (status) {
@@ -82,6 +87,10 @@ function render(
     case 'saved':
       return lastSavedAt ? `Saved ${formatLastSaved(lastSavedAt)}` : 'Saved';
     case 'idle':
+      // If the last save FAILED (and none has succeeded since), the badge has
+      // auto-cleared but the doc is NOT saved — say so rather than lying with a
+      // stale "Saved X ago".
+      if (pendingError) return 'Unsaved changes';
       // After at least one successful save, keep showing "Saved X
       // ago" so the indicator doesn't go dark between ticks. Before
       // any save, render nothing.

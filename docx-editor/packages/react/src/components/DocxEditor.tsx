@@ -7749,7 +7749,14 @@ body { background: white; }
     setIsSaving(true);
     try {
       const buffer = await handleSave();
-      if (!buffer) return;
+      if (!buffer) {
+        // Serialization failed silently — don't leave the user believing the
+        // save worked (audit: manual Save failed with no feedback).
+        toast.error(
+          "Couldn't save — the document failed to serialize. Your edits are still here; try again."
+        );
+        return;
+      }
       // Checkpoint a version on explicit save (Google-Docs parity). No-op
       // when nothing changed since the last capture, so repeated saves don't
       // pile up identical entries.
@@ -7776,10 +7783,15 @@ body { background: white; }
       setTimeout(() => URL.revokeObjectURL(url), 0);
       markDirty(false);
       toast.success(`Saved ${fileName}`);
+    } catch (err) {
+      // A throw from serialization / blob / download must surface — otherwise
+      // Ctrl+S silently fails and the user loses work believing it saved.
+      toast.error("Couldn't save the document. Your edits are still here; try again.");
+      emitError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setIsSaving(false);
     }
-  }, [handleSave, documentName, markDirty, onSave, versionCapture]);
+  }, [handleSave, documentName, markDirty, onSave, versionCapture, emitError]);
 
   // Autosave to IndexedDB (sheet parity). A periodic interval polls the
   // dirty flag every 30s; if dirty, it serializes and writes the buffer.
