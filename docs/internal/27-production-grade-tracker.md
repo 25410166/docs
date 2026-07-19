@@ -31,8 +31,15 @@ Feedback follow-ups: **Fixed 2026-07-19 (PR #313)** — manual-save failure toas
 quick-win: unconfirmed comment-thread delete.
 
 **Now-phase status:** all 6 release gates that block a multi-user/WOPI production release are
-closed (PRs #310–#313). Remaining hardening is the Next/Later roadmap (share-token
-enforcement, offline persistence, incremental layout, `DocxEditor.tsx` decomposition).
+closed (PRs #310–#313). The safe, verifiable Next-phase slices then shipped as PRs #314–#322
+(fidelity-gate coverage, honest offline/share copy, real 2-client convergence net, touch
+editing + mobile fit-to-width, content-language a11y, comment-delete confirm, cross-platform
+shortcut hints, parse-error recovery) — readiness **57 → 70**.
+
+**Remaining work** is infra-gated or large & delicate. Each has a ready-to-execute spec in
+[40-hardening-followups-specs.md](./40-hardening-followups-specs.md): offline persistence,
+touch drag-select, roving-tabindex toolbar, screenshot suite, server-enforced share tokens,
+and the `DocxEditor.tsx` decomposition (the architecture lever).
 
 ### Status reconciliations (2026-07-19)
 
