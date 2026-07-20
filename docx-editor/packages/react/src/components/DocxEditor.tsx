@@ -59,7 +59,7 @@ import { TablePropertiesSection } from './sidebar/TablePropertiesSection';
 import { TextBoxPropertiesSection } from './sidebar/TextBoxPropertiesSection';
 import { useEditHistory } from '../hooks/useEditHistory';
 import { useVersionHistoryCapture } from '../version-history/useVersionHistoryCapture';
-import { downloadServerVersion, type ServerVersionBackend } from '../version-history/server-source';
+import { type ServerVersionBackend } from '../version-history/server-source';
 import { useVoiceTyping } from '../hooks/useVoiceTyping';
 import { VoiceTypingIndicator } from './ui/VoiceTypingIndicator';
 import { UnifiedSidebar } from './UnifiedSidebar';
@@ -289,8 +289,8 @@ import { getBuiltinTableStyle, type TableStylePreset } from './ui/TableStyleGall
 import { DocumentAgent } from '@eigenpal/docx-core/agent';
 import { DefaultLoadingIndicator, DefaultPlaceholder, ParseError } from './DocxEditorHelpers';
 import { useDialogs } from '../hooks/useDialogs';
+import { useDocumentLoad } from '../hooks/useDocumentLoad';
 import {
-  parseDocx,
   getFootnoteText,
   setFootnotePlainText,
   getEndnoteText,
@@ -3553,10 +3553,6 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const [hyperlinkPopupData, setHyperlinkPopupData] = useState<HyperlinkPopupData | null>(null);
 
   // Monotonically increasing generation counter to discard stale async loads
-  const loadGenerationRef = useRef(0);
-  // Real on-disk byte size of the most recently loaded document (Properties).
-  const loadedSizeRef = useRef<number | null>(null);
-
   // Reset internal state when loading a new document (clears stale refs, comments, tracked changes, etc.)
   const resetForNewDocument = useCallback(() => {
     commentsLoadedRef.current = false;
@@ -3592,77 +3588,11 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     [resetForNewDocument, history]
   );
 
-  // Load a DOCX buffer (used by ref method and internally)
-  const loadBuffer = useCallback(
-    async (buffer: DocxInput) => {
-      // Capture the REAL on-disk size of the loaded bytes (not an in-memory
-      // serialization estimate) for the Properties dialog.
-      loadedSizeRef.current =
-        buffer instanceof Blob
-          ? buffer.size
-          : buffer instanceof ArrayBuffer
-            ? buffer.byteLength
-            : ArrayBuffer.isView(buffer)
-              ? buffer.byteLength
-              : null;
-      const generation = ++loadGenerationRef.current;
-      resetForNewDocument();
-      // Loading a fresh buffer wipes the prior edit state, so the new
-      // document starts clean.
-      markDirty(false);
-      setState((prev) => ({ ...prev, isLoading: true, parseError: null }));
-      try {
-        const doc = await parseDocx(buffer);
-        // Discard result if a newer load was started while we were parsing
-        if (loadGenerationRef.current !== generation) return;
-        loadParsedDocument(doc);
-      } catch (error) {
-        if (loadGenerationRef.current !== generation) return;
-        const message = error instanceof Error ? error.message : 'Failed to parse document';
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          parseError: message,
-        }));
-        emitError(error instanceof Error ? error : new Error(message));
-      }
-    },
-    [resetForNewDocument, loadParsedDocument, emitError]
-  );
-
-  // Restore a server-persisted revision: download its .docx from the
-  // host and load it into the editor. In a live collab room the load
-  // flows through the same PM path, so peers converge on the restored
-  // content. Surfaces failures via onError rather than throwing.
-  const handleRestoreServerVersion = useCallback(
-    (version: number) => {
-      if (!versionBackend) return;
-      void (async () => {
-        try {
-          const buf = await downloadServerVersion(versionBackend, version);
-          await loadBuffer(buf);
-        } catch (err) {
-          emitError(err instanceof Error ? err : new Error(String(err)));
-        }
-      })();
-    },
-    [versionBackend, loadBuffer, emitError]
-  );
-
-  // React to document/documentBuffer prop changes
-  useEffect(() => {
-    // External content mode: caller (e.g. ySyncPlugin) populates PM directly — skip the load.
-    if (externalContent) return;
-
-    if (!documentBuffer) {
-      if (initialDocument) {
-        loadParsedDocument(initialDocument);
-      }
-      return;
-    }
-
-    loadBuffer(documentBuffer);
-  }, [documentBuffer, initialDocument, externalContent]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Load path (buffer parse, generation guard, server-version restore, and the
+  // documentBuffer/initialDocument effect) lives in useDocumentLoad — see the
+  // hook call further below, after markDirty is defined. `resetForNewDocument`
+  // and `loadParsedDocument` stay here because the imperative ref API and the
+  // agent bridge reuse them.
 
   // Create/update agent when document changes
   useEffect(() => {
@@ -3738,6 +3668,32 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     },
     [onDirtyChange, emitEvent]
   );
+
+  // Document load path (Spec #6): buffer parse + generation guard + Properties
+  // size + server-version restore + the documentBuffer/initialDocument effect.
+  // State writes go through narrow callbacks so the hook never touches the
+  // component's giant state object directly.
+  const handleLoadStart = useCallback(
+    () => setState((prev) => ({ ...prev, isLoading: true, parseError: null })),
+    []
+  );
+  const handleLoadError = useCallback(
+    (message: string) => setState((prev) => ({ ...prev, isLoading: false, parseError: message })),
+    []
+  );
+  const { loadBuffer, handleRestoreServerVersion, loadedSizeRef } = useDocumentLoad({
+    documentBuffer,
+    initialDocument,
+    externalContent,
+    versionBackend,
+    resetForNewDocument,
+    loadParsedDocument,
+    markDirty,
+    emitError,
+    onLoadStart: handleLoadStart,
+    onLoadError: handleLoadError,
+  });
+
   // True while a save / download is in flight — drives the
   // "Saving…" indicator in the title bar.
   const [isSaving, setIsSaving] = useState(false);
