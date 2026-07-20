@@ -1122,7 +1122,11 @@ function convertTableCell(
       contentNodes.push(convertParagraph(content, styleResolver, undefined, conditionalStyle?.rPr));
     } else if (content.type === 'table') {
       // Nested tables - recursively convert
-      contentNodes.push(convertTable(content, styleResolver));
+      // Thread `theme` so a nested table's themeColor shading/borders resolve to
+      // the document palette — the top-level and header/footer paths already
+      // pass it; without it, nested tables fell back to the default Office
+      // palette (wrong shading/border colors).
+      contentNodes.push(convertTable(content, styleResolver, theme));
     }
   }
 
