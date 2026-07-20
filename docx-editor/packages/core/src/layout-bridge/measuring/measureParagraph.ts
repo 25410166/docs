@@ -739,8 +739,14 @@ export function measureParagraph(
         // Use image height plus margins as line height (already in pixels)
         currentLine.maxImageHeightPx = imageHeight + distTop + distBottom;
 
-        // Start a new line after the image for subsequent content
-        startNewLine(runIndex + 1, 0);
+        // Start a new line after the image for subsequent content — but only
+        // when there IS more content. If the block image is the paragraph's
+        // last run, starting a line here pushes a phantom empty line (~18px +
+        // pagination drift) because finalizeLine() has no empty-line guard; the
+        // image's own line is finalized after the loop instead.
+        if (runIndex + 1 < runs.length) {
+          startNewLine(runIndex + 1, 0);
+        }
         continue;
       }
 

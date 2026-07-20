@@ -191,6 +191,20 @@ export function parseHyperlink(
         hyperlink.children.push(parseBookmarkEnd(child));
         break;
 
+      case 'ins':
+      case 'del': {
+        // A tracked change (inserted / deleted) can wrap the link's display
+        // runs. `hyperlink.children` doesn't model tracked-change marks, so
+        // flatten to the underlying runs — this at least preserves the link
+        // text, which previously fell through and rendered as an empty link.
+        for (const gc of getChildElements(child)) {
+          if (getLocalName(gc.name) === 'r') {
+            hyperlink.children.push(parseRun(gc, styles, theme, rels, media));
+          }
+        }
+        break;
+      }
+
       // Note: hyperlinks can technically contain other elements like
       // fldSimple, but these are rare. Add support as needed.
     }
