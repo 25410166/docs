@@ -1682,6 +1682,15 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
     // Stable ref for drag-extend callback (avoids circular deps with getPositionFromMouse)
     const dragExtendRef = useRef<(cx: number, cy: number) => void>(() => {});
 
+    // Touch drag-select (mobile): a one-finger drag scrolls by default; a
+    // long-press then arms a text selection that the same finger extends. These
+    // refs track that gesture; the native touch listeners are wired further down
+    // (after getPositionFromMouse + the drag teardown are defined). See the
+    // `touchstart`/`touchmove`/`touchend` effect.
+    const touchLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const touchSelectActiveRef = useRef(false);
+    const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
     // Store callbacks in refs to avoid infinite re-render loops
     // when parent passes unstable callback references
     const onSelectionChangeRef = useRef(onSelectionChange);
@@ -3982,6 +3991,133 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
         window.removeEventListener('mouseup', handleMouseUp);
       };
     }, [handleMouseMove, handleMouseUp]);
+
+    // Touch drag-select (mobile). Additive to the mouse path — the desktop
+    // selection handlers are untouched. A one-finger drag scrolls as usual;
+    // holding still for LONG_PRESS_MS arms a text selection that the same
+    // finger then extends (reusing the mouse drag core: dragAnchorRef /
+    // isDraggingRef / dragExtendRef). A 2nd finger at any point aborts so
+    // usePinchZoom owns the gesture.
+    //
+    // Listeners are attached natively (not via React's onTouch* props) so
+    // touchmove is non-passive and can preventDefault() to suppress page
+    // scroll while a selection drag is active — React registers its root touch
+    // listeners as passive, where preventDefault() is a no-op.
+    useEffect(() => {
+      const el = pagesContainerRef.current;
+      if (el === null || readOnly) return;
+
+      const LONG_PRESS_MS = 450;
+      const MOVE_TOLERANCE = 10; // px — moving further before the timer fires = scroll intent
+
+      const clearLongPress = () => {
+        if (touchLongPressTimerRef.current !== null) {
+          clearTimeout(touchLongPressTimerRef.current);
+          touchLongPressTimerRef.current = null;
+        }
+      };
+
+      const endTouchSelection = () => {
+        touchSelectActiveRef.current = false;
+        isDraggingRef.current = false;
+        isCellDraggingRef.current = false;
+        cellDragLastPmPosRef.current = null;
+        cellDragOverflowXRef.current = null;
+        stopDragAutoScroll();
+        // Keep dragAnchorRef for a potential follow-up shift extension.
+      };
+
+      const onTouchStart = (e: TouchEvent) => {
+        // Multi-touch → pinch/zoom territory; make sure no stale selection drag
+        // is running and let usePinchZoom handle it.
+        if (e.touches.length !== 1) {
+          clearLongPress();
+          if (touchSelectActiveRef.current) endTouchSelection();
+          return;
+        }
+        if (!hiddenPMRef.current) return;
+        const t = e.touches[0];
+        touchStartRef.current = { x: t.clientX, y: t.clientY };
+        clearLongPress();
+        touchLongPressTimerRef.current = setTimeout(() => {
+          touchLongPressTimerRef.current = null;
+          if (!hiddenPMRef.current) return;
+          const pmPos = getPositionFromMouse(t.clientX, t.clientY);
+          if (pmPos === null) return;
+          // Arm a plain text selection anchored at the long-press point.
+          dragAnchorRef.current = pmPos;
+          isDraggingRef.current = true;
+          touchSelectActiveRef.current = true;
+          cellDragAnchorPosRef.current = null;
+          isCellDraggingRef.current = false;
+          cellDragLastPmPosRef.current = null;
+          cellDragOverflowXRef.current = null;
+          setSelectedImageInfo(null);
+          hiddenPMRef.current.setSelection(pmPos);
+          hiddenPMRef.current.focus();
+          setIsFocused(true);
+          navigator.vibrate?.(15); // haptic cue that selection armed (feature-detected)
+        }, LONG_PRESS_MS);
+      };
+
+      const onTouchMove = (e: TouchEvent) => {
+        if (e.touches.length !== 1) {
+          // 2nd finger arrived → abort selection, hand off to pinch-zoom.
+          clearLongPress();
+          if (touchSelectActiveRef.current) endTouchSelection();
+          return;
+        }
+        const t = e.touches[0];
+        if (touchSelectActiveRef.current) {
+          // Extend selection; preventDefault stops the page from scrolling.
+          e.preventDefault();
+          dragExtendRef.current(t.clientX, t.clientY);
+          updateDragScroll(t.clientX, t.clientY);
+          return;
+        }
+        // Still waiting on the long-press: if the finger moves past the
+        // tolerance it's a scroll, not a press — cancel so scrolling proceeds.
+        const start = touchStartRef.current;
+        if (start !== null) {
+          const dx = t.clientX - start.x;
+          const dy = t.clientY - start.y;
+          if (dx * dx + dy * dy > MOVE_TOLERANCE * MOVE_TOLERANCE) {
+            clearLongPress();
+          }
+        }
+      };
+
+      const onTouchEnd = (e: TouchEvent) => {
+        clearLongPress();
+        if (touchSelectActiveRef.current) {
+          // Suppress the emulated mouse events that would otherwise collapse
+          // the just-made selection back to a caret.
+          e.preventDefault();
+          endTouchSelection();
+        }
+        touchStartRef.current = null;
+      };
+
+      el.addEventListener('touchstart', onTouchStart, { passive: true });
+      el.addEventListener('touchmove', onTouchMove, { passive: false });
+      el.addEventListener('touchend', onTouchEnd);
+      el.addEventListener('touchcancel', onTouchEnd);
+
+      return () => {
+        clearLongPress();
+        el.removeEventListener('touchstart', onTouchStart);
+        el.removeEventListener('touchmove', onTouchMove);
+        el.removeEventListener('touchend', onTouchEnd);
+        el.removeEventListener('touchcancel', onTouchEnd);
+      };
+    }, [
+      readOnly,
+      getPositionFromMouse,
+      updateDragScroll,
+      stopDragAutoScroll,
+      setIsFocused,
+      setSelectedImageInfo,
+    ]);
 
     /**
      * Handle mousemove on pages to show table row/column insert buttons.
