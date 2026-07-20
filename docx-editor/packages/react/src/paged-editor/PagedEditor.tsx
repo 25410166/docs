@@ -38,6 +38,7 @@ import type { EditorView } from 'prosemirror-view';
 // Internal components
 import { HiddenProseMirror, type HiddenProseMirrorRef } from './HiddenProseMirror';
 import { SelectionOverlay } from './SelectionOverlay';
+import { SelectionHandles, type HandleAnchor } from './SelectionHandles';
 import { MobileFormatBar } from '../components/ui/MobileFormatBar';
 import { usePinchZoom } from '../components/hooks/usePinchZoom';
 import { ImageSelectionOverlay, type ImageSelectionInfo } from './ImageSelectionOverlay';
@@ -1690,6 +1691,11 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
     const touchLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const touchSelectActiveRef = useRef(false);
     const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+    // Touch selection-handle drag: which handle is moving + the pinned
+    // (opposite) endpoint's document position it extends from.
+    const handleDraggingRef = useRef<'start' | 'end' | null>(null);
+    const handleFixedPosRef = useRef<number | null>(null);
 
     // Store callbacks in refs to avoid infinite re-render loops
     // when parent passes unstable callback references
@@ -4119,6 +4125,59 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
       setSelectedImageInfo,
     ]);
 
+    // Selection-handle drag (touch). Pin the endpoint NOT being dragged, then
+    // move the other to the finger. Reuses the same pixel→position mapper and
+    // setSelection the mouse/touch selection paths use.
+    const handleSelectionHandleDragStart = useCallback((which: 'start' | 'end') => {
+      const view = hiddenPMRef.current?.getView();
+      if (!view) return;
+      const { from, to } = view.state.selection;
+      handleDraggingRef.current = which;
+      handleFixedPosRef.current = which === 'start' ? to : from;
+    }, []);
+
+    const handleSelectionHandleDragMove = useCallback(
+      (clientX: number, clientY: number) => {
+        if (handleDraggingRef.current === null || handleFixedPosRef.current === null) return;
+        if (!hiddenPMRef.current) return;
+        const pmPos = getPositionFromMouse(clientX, clientY);
+        if (pmPos === null) return;
+        hiddenPMRef.current.setSelection(handleFixedPosRef.current, pmPos);
+        updateDragScroll(clientX, clientY);
+      },
+      [getPositionFromMouse, updateDragScroll]
+    );
+
+    const handleSelectionHandleDragEnd = useCallback(() => {
+      handleDraggingRef.current = null;
+      handleFixedPosRef.current = null;
+      stopDragAutoScroll();
+      hiddenPMRef.current?.focus();
+    }, [stopDragAutoScroll]);
+
+    // Anchor points for the two handles, in pages-container-relative coords
+    // (same space SelectionOverlay paints in). First rect = selection start,
+    // last rect = selection end.
+    const selectionHandleAnchors = useMemo<{
+      start: HandleAnchor | null;
+      end: HandleAnchor | null;
+    }>(() => {
+      if (selectionRects.length === 0) return { start: null, end: null };
+      const first = selectionRects[0];
+      const last = selectionRects[selectionRects.length - 1];
+      return {
+        start: { x: first.x, y: first.y, height: first.height },
+        end: { x: last.x + last.width, y: last.y, height: last.height },
+      };
+    }, [selectionRects]);
+
+    // Only offer touch handles on touch-capable devices — on a mouse-only
+    // desktop they'd be visual noise.
+    const isTouchCapable = useMemo(
+      () => typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0,
+      []
+    );
+
     /**
      * Handle mousemove on pages to show table row/column insert buttons.
      * Detects proximity to table row/column boundaries and shows a floating "+" button.
@@ -5099,6 +5158,18 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
             pageGap={pageGap}
             readOnly={readOnly}
           />
+
+          {/* Draggable start/end selection handles (touch only) */}
+          {!readOnly && isTouchCapable && (
+            <SelectionHandles
+              start={selectionHandleAnchors.start}
+              end={selectionHandleAnchors.end}
+              visible={isFocused && selectionRects.length > 0}
+              onDragStart={handleSelectionHandleDragStart}
+              onDragMove={handleSelectionHandleDragMove}
+              onDragEnd={handleSelectionHandleDragEnd}
+            />
+          )}
 
           {/* Floating format chip — appears above a non-collapsed
            *  selection. Two variants render simultaneously; the
