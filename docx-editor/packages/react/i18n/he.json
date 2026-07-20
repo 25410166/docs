@@ -956,7 +956,8 @@
     "unsavedTitle": "המסמך כולל שינויים שלא נשמרו",
     "savedTitle": "כל השינויים נשמרו",
     "unsavedAriaLabel": "שינויים שלא נשמרו",
-    "savedAriaLabel": "כל השינויים נשמרו"
+    "savedAriaLabel": "כל השינויים נשמרו",
+    "openDiscardConfirm": null
   },
   "loading": {
     "label": "טוען"

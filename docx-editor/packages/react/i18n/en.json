@@ -990,7 +990,8 @@
     "unsavedTitle": "Document has unsaved changes",
     "savedTitle": "All changes saved",
     "unsavedAriaLabel": "Unsaved changes",
-    "savedAriaLabel": "All changes saved"
+    "savedAriaLabel": "All changes saved",
+    "openDiscardConfirm": "You have unsaved changes that will be lost if you open another document. Open anyway?"
   },
   "loading": {
     "label": "Loading"

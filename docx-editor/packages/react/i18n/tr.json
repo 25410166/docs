@@ -959,7 +959,8 @@
     "unsavedTitle": "Belgede kaydedilmemiş değişiklikler var",
     "savedTitle": "Tüm değişiklikler kaydedildi",
     "unsavedAriaLabel": "Kaydedilmemiş değişiklikler",
-    "savedAriaLabel": "Tüm değişiklikler kaydedildi"
+    "savedAriaLabel": "Tüm değişiklikler kaydedildi",
+    "openDiscardConfirm": null
   },
   "loading": {
     "label": "Yükleniyor"

@@ -8095,6 +8095,14 @@ body { background: white; }
       // Reset so picking the same file twice still fires `change`.
       event.target.value = '';
       if (!file) return;
+      // Opening a file replaces the in-window document via loadBuffer
+      // (resetForNewDocument + markDirty(false)), discarding unsaved edits.
+      // The beforeunload guard only covers tab close/reload — not in-app
+      // document replacement — so confirm before discarding unsaved work.
+      if (isDirtyRef.current && typeof window !== 'undefined') {
+        const proceed = window.confirm(t('unsaved.openDiscardConfirm'));
+        if (!proceed) return;
+      }
       try {
         const buffer = await file.arrayBuffer();
         // .odt / .md / .txt → DOCX via the WASM worker, then feed the existing
@@ -8129,7 +8137,7 @@ body { background: white; }
         emitError(error instanceof Error ? error : new Error('Failed to open document'));
       }
     },
-    [loadBuffer, onDocumentNameChange, emitError, onFileOpened]
+    [loadBuffer, onDocumentNameChange, emitError, onFileOpened, t]
   );
 
   // ============================================================================
