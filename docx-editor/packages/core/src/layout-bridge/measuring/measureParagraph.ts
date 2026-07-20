@@ -44,6 +44,14 @@ const DEFAULT_LINE_HEIGHT_MULTIPLIER = 1.0; // OOXML spec default: single spacin
 // Prevents premature line breaks due to measurement rounding
 const WIDTH_TOLERANCE = 0.5;
 
+// Minimum text-column width (px, ~1 inch) left when a floating image's wrap
+// exclusion would otherwise consume (almost) the whole line. Without a floor,
+// adjustedWidth collapses to 1px for an oversized / near-full-width float, text
+// breaks to ~1 char per line, and the paragraph height explodes — shoving
+// following content off the page. The floor is capped to the body width so a
+// genuinely narrow column/page still wraps at its real width.
+const MIN_FLOAT_WRAP_WIDTH = 96;
+
 /**
  * Compute the width a tab character should advance to reach the next tab stop.
  *
@@ -619,9 +627,16 @@ export function measureParagraph(
       paragraphYOffset
     );
 
-    // Body content width minus floating image margins
+    // Body content width minus floating image margins, floored so an oversized
+    // float can't collapse the text column to ~1px (which would break text to
+    // one char per line and blow up the paragraph height). The floor never
+    // exceeds the body width, so a legitimately narrow column still wraps at
+    // its true width (and can't overflow the page — see the negative-indent
+    // fix). A proper full-width float should skip the line past the image;
+    // tracked as a follow-up.
+    const minColumnWidth = Math.min(MIN_FLOAT_WRAP_WIDTH, bodyContentWidth);
     const adjustedWidth = Math.max(
-      1,
+      minColumnWidth,
       bodyContentWidth - floatingMargins.leftMargin - floatingMargins.rightMargin
     );
 
