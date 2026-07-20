@@ -635,6 +635,9 @@ function addNodeToHyperlink(hyperlink: Hyperlink, node: PMNode): void {
     const run = createRunFromText(node.text, nonLinkMarks);
     hyperlink.children.push(run);
   }
+  // Atom nodes (image/tab/break) can't carry the hyperlink mark in this schema,
+  // so they never reach here — the main extract loop emits them as standalone
+  // runs adjacent to the hyperlink (content preserved; see toProseDoc note).
 }
 
 /**

@@ -1674,10 +1674,15 @@ function convertHyperlink(
       // Add link mark to run marks
       const allMarks = [...runMarks, linkMark];
 
+      // Route every child through the same converter regular runs use, so
+      // non-text content inside a hyperlink (a clickable image, a tab in a
+      // TOC leader, a line break, a symbol glyph) is preserved instead of
+      // silently dropped. Previously only `text` was emitted. Text/symbol
+      // carry the link mark; atom nodes (image/tab/break) can't hold marks in
+      // this schema, so they survive as inline content but not clickable — a
+      // fidelity follow-up would map an in-hyperlink image to its hlinkRId.
       for (const content of child.content) {
-        if (content.type === 'text' && content.text) {
-          nodes.push(schema.text(content.text, allMarks));
-        }
+        nodes.push(...convertRunContent(content, allMarks));
       }
     }
   }
