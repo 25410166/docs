@@ -189,6 +189,8 @@ embedded. Full-attention PR.
 
 ### Data-integrity + correctness audit backlog (2026-07-21)
 
+**Update (2026-07-21, later):** R2 → #342, R3 → #345, R5 → #344, R6 → #343 are now **fixed** (each with a regression test). Remaining below: **R1** (architectural) and **D4** (defensive) plus the runners-up.
+
 Multi-agent hunt over save/data-loss + parse/render/serialize. **Shipped:**
 File▸Open discards unsaved edits → #338; block-SDT alias/tag not XML-escaped → #339;
 edits-during-async-serialize dropped → #340 (dedicated-verified). Remaining, code-cited,
