@@ -216,16 +216,25 @@ export interface UseFileSourceAutoSaveReturn {
   /** Last error caught — kept for status='error' rendering. */
   lastError: unknown;
   /**
-   * True while a version conflict is unresolved. The auto-loop is paused (it
-   * won't overwrite or re-conflict); the host should prompt the user to reload
-   * the current stored version or force-save. Calling `flush()` clears this and
-   * retries as an explicit overwrite.
+   * True while a version conflict (the stored file changed underneath us) is
+   * unresolved. The auto-loop is paused — it will NOT save again on its own, so
+   * every edit made from here on is un-persisted until the conflict is resolved
+   * by calling `flush()` (an explicit overwrite / "Save anyway") or reloading.
+   *
+   * INTEGRATION CONTRACT — the host MUST surface this (or `pendingError` /
+   * `status === 'error'`, all of which stay set durably during a conflict) and
+   * offer the user a resolve action wired to `flush()`. A host that ignores all
+   * of these signals will silently drop edits while paused. Because the signals
+   * are durable (unlike a transient error, they do not auto-clear), surfacing
+   * any ONE of them is enough to prevent silent data loss.
    */
   conflict: boolean;
   /**
    * True when the last save attempt failed and none has succeeded since — even
    * after the transient error badge auto-clears. Consumers use this to avoid
-   * showing a stale "Saved" while edits are actually un-persisted.
+   * showing a stale "Saved" while edits are actually un-persisted. Stays set
+   * for the whole duration of an unresolved `conflict` (the auto-clear timer is
+   * cancelled), so it doubles as a durable "unsaved changes" signal there.
    */
   pendingError: boolean;
   /**
