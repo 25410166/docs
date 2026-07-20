@@ -36,10 +36,19 @@ closed (PRs #310–#313). The safe, verifiable Next-phase slices then shipped as
 editing + mobile fit-to-width, content-language a11y, comment-delete confirm, cross-platform
 shortcut hints, parse-error recovery) — readiness **57 → 70**.
 
+**Then (2026-07-21):** three hands-on bug reports + a two-agent data-integrity/correctness
+audit → every HIGH/MED finding fixed with a regression test (crit data-loss and crash-on-open
+repro-confirmed first); the full **`useDocumentIO` decomposition** (load/print/save all in
+hooks, #352–#355); and the **roving-tabindex a11y toolbar** (#356). Dimension rises:
+correctness 4→5, architecture 2→4, a11y 3→4, security/collaboration held at 4 — readiness
+**70 → 81**. Full ledger in the readiness-proof artifact.
+
 **Remaining work** is infra-gated or large & delicate. Each has a ready-to-execute spec in
-[40-hardening-followups-specs.md](./40-hardening-followups-specs.md): offline persistence,
-touch drag-select, roving-tabindex toolbar, screenshot suite, server-enforced share tokens,
-and the `DocxEditor.tsx` decomposition (the architecture lever).
+[40-hardening-followups-specs.md](./40-hardening-followups-specs.md): offline persistence
+(needs a real-browser IndexedDB pass), touch drag-select, screenshot suite (Linux runner),
+server-enforced share tokens (separate collab repo), 100-page performance (O(doc-size)/keystroke
+layout), the off-screen `role=textbox` magnifier a11y fix, and the remaining ViewState/Formatting
+context extraction. The clean, self-contained, verifiable-in-repo slices are all shipped.
 
 ### Status reconciliations (2026-07-19)
 
@@ -65,9 +74,24 @@ live production tracker.
   context; DocxEditor's `<EditorToolbar>` call site 81 → 63 props. **Non-breaking** —
   `Toolbar`/`ToolbarProps`/`FormattingBar` are published API, so their prop contracts were
   left intact. Verified typecheck + 61 e2e.
-- **Still open (dedicated sessions):** `useDocumentIO` (handleSave/loadBuffer behind the
-  39-fixture round-trip gate), ViewState/Formatting/Insert contexts. Specs in
+- **`useDocumentIO` decomposition — COMPLETE (2026-07-21).** The entire document IO is now
+  out of the god-component and in hooks: `useDocumentLoad` (parse/generation-guard/restore,
+  #352), `usePrintFlow` (print + Export-as-PDF, #353), and the crown-jewel `useDocumentSave`
+  (#355 — a verbatim move of `handleSave` + its two reply-marker helpers, preserving the
+  mutation order and the comments-by-value / refs-never-snapshotted invariants). Guarded by a
+  new `handleSave` characterization e2e (#354, tracked-change save→reload), the footnote/
+  endnote save e2e, the ParagraphChangeTracker unit tests, and the 39-fixture round-trip gate.
+- **Still open (dedicated sessions):** ViewState/Formatting/Insert contexts (entangled with
+  the controlled/uncontrolled prop pattern — lower value now that IO is out). Specs in
   [40-hardening-followups-specs.md](./40-hardening-followups-specs.md).
+
+### Accessibility (2026-07-21)
+
+- **Roving-tabindex formatting toolbar (#356)** — the WAI-ARIA toolbar keyboard pattern: the
+  bar is a single tab stop with Left/Right/Home/End navigation (was ~30 separate tab stops).
+  Container-level `useRovingTabindex` hook; verified with a keyboard-nav e2e + 80 regression
+  e2e. With content-language (#319), two of the three flagged a11y gaps are closed; only the
+  off-screen `role=textbox` magnifier-tracking issue remains.
 
 ### Hands-on product bugs (2026-07-21) — all fixed
 
