@@ -95,7 +95,7 @@ import { undo as pmUndo, redo as pmRedo } from 'prosemirror-history';
 import type { ReactSidebarItem } from '../plugin-api/types';
 import type { HeadingInfo } from '@eigenpal/docx-core/utils';
 import { checkAccessibility, type AccessibilityIssue } from '@eigenpal/docx-core/utils';
-import type { Comment, BlockContent, ParagraphContent } from '@eigenpal/docx-core/types/content';
+import type { Comment } from '@eigenpal/docx-core/types/content';
 import { ErrorBoundary, ErrorProvider } from './ErrorBoundary';
 import type { TableAction } from './ui/TableToolbar';
 import { mapHexToHighlightName } from './toolbarUtils';
@@ -289,6 +289,7 @@ import { DefaultLoadingIndicator, DefaultPlaceholder, ParseError } from './DocxE
 import { useDialogs } from '../hooks/useDialogs';
 import { useDocumentLoad } from '../hooks/useDocumentLoad';
 import { usePrintFlow } from '../hooks/usePrintFlow';
+import { useDocumentSave } from '../hooks/useDocumentSave';
 import {
   getFootnoteText,
   setFootnotePlainText,
@@ -443,13 +444,6 @@ import {
 } from '@eigenpal/docx-core/prosemirror/commands';
 import { deleteCellSelection } from 'prosemirror-tables';
 import { collectHeadings } from '@eigenpal/docx-core/utils';
-import {
-  getChangedParagraphIds,
-  hasStructuralChanges,
-  hasUntrackedChanges,
-  hasNonParagraphBlockChanges,
-  clearTrackedChanges,
-} from '@eigenpal/docx-core/prosemirror/extensions';
 
 // Paginated editor
 import { PagedEditor, type PagedEditorRef, DEFAULT_PAGE_WIDTH } from '../paged-editor/PagedEditor';
@@ -1560,151 +1554,6 @@ const PENDING_COMMENT_ID = -1;
  */
 function bumpNextCommentIdAtLeast(value: number): void {
   if (value > nextCommentId) nextCommentId = value;
-}
-
-/**
- * Inject commentRangeStart/End/Reference for reply comments.
- * Replies share the parent comment's text range in document.xml.
- * Without these markers, Pages/Word can't find the reply.
- */
-function injectReplyRangeMarkers(content: BlockContent[], comments: Comment[]): void {
-  const replies = comments.filter((c) => c.parentId != null);
-  if (replies.length === 0) return;
-
-  // Build parentId → reply IDs map
-  const replyIdsByParent = new Map<number, number[]>();
-  for (const r of replies) {
-    const arr = replyIdsByParent.get(r.parentId!);
-    if (arr) arr.push(r.id);
-    else replyIdsByParent.set(r.parentId!, [r.id]);
-  }
-
-  // Walk document content and find parent commentRangeStart/End locations
-  function walkBlocks(blocks: BlockContent[]): void {
-    for (const block of blocks) {
-      if (block.type === 'paragraph') {
-        // Skip paragraphs without any comment range markers
-        if (
-          !block.content.some((i) => i.type === 'commentRangeStart' || i.type === 'commentRangeEnd')
-        )
-          continue;
-        const newItems: ParagraphContent[] = [];
-        for (const item of block.content) {
-          if (item.type === 'commentRangeStart') {
-            newItems.push(item);
-            // Add reply range starts right after parent's start
-            const replyIds = replyIdsByParent.get(item.id);
-            if (replyIds) {
-              for (const rid of replyIds) {
-                newItems.push({ type: 'commentRangeStart', id: rid });
-              }
-            }
-          } else if (item.type === 'commentRangeEnd') {
-            // Parent's rangeEnd first, then reply rangeEnds (parallel, not nested)
-            newItems.push(item);
-            const replyIds = replyIdsByParent.get(item.id);
-            if (replyIds) {
-              for (const rid of replyIds) {
-                newItems.push({ type: 'commentRangeEnd', id: rid });
-              }
-            }
-          } else {
-            newItems.push(item);
-          }
-        }
-        block.content = newItems;
-      } else if (block.type === 'table') {
-        for (const row of block.rows) {
-          for (const cell of row.cells) {
-            walkBlocks(cell.content);
-          }
-        }
-      }
-    }
-  }
-
-  walkBlocks(content);
-}
-
-/**
- * Inject commentRangeStart/End for comments that reply to tracked changes.
- * TC replies' parents are insertion/deletion nodes (not comments), so
- * injectReplyRangeMarkers can't find them. This function finds the TC
- * content nodes and wraps them with comment range markers.
- */
-function injectTCReplyRangeMarkers(content: BlockContent[], comments: Comment[]): void {
-  // Find replies whose parentId is a tracked change (not a real comment)
-  const commentIds = new Set(comments.map((c) => c.id));
-  const tcReplies = comments.filter((c) => c.parentId != null && !commentIds.has(c.parentId));
-  if (tcReplies.length === 0) return;
-
-  // Build revisionId → reply comment IDs
-  const replyIdsByRevision = new Map<number, number[]>();
-  for (const r of tcReplies) {
-    const arr = replyIdsByRevision.get(r.parentId!);
-    if (arr) arr.push(r.id);
-    else replyIdsByRevision.set(r.parentId!, [r.id]);
-  }
-
-  function walkBlocks(blocks: BlockContent[]): void {
-    for (const block of blocks) {
-      if (block.type === 'paragraph') {
-        // Check if any insertion/deletion in this paragraph matches a TC reply
-        const hasTC = block.content.some(
-          (item) =>
-            (item.type === 'insertion' || item.type === 'deletion') &&
-            replyIdsByRevision.has(item.info.id)
-        );
-        if (!hasTC) continue;
-
-        const newItems: ParagraphContent[] = [];
-        const items = block.content;
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-          if (
-            (item.type === 'insertion' || item.type === 'deletion') &&
-            replyIdsByRevision.has(item.info.id)
-          ) {
-            const replyIds = replyIdsByRevision.get(item.info.id)!;
-            // Add commentRangeStart BEFORE the TC content
-            for (const rid of replyIds) {
-              newItems.push({ type: 'commentRangeStart', id: rid });
-            }
-            newItems.push(item);
-            // Check if the next item is the other half of a replacement pair
-            // (adjacent del+ins with same author+date). If so, include it inside
-            // the comment range so we don't break del-ins adjacency.
-            const next = items[i + 1];
-            if (
-              next &&
-              (next.type === 'insertion' || next.type === 'deletion') &&
-              next.type !== item.type &&
-              next.info.author === item.info.author &&
-              next.info.date === item.info.date
-            ) {
-              newItems.push(next);
-              i++; // skip the paired item
-            }
-            // Add commentRangeEnd AFTER both TC items
-            for (const rid of replyIds) {
-              newItems.push({ type: 'commentRangeEnd', id: rid });
-            }
-          } else {
-            newItems.push(item);
-          }
-        }
-        block.content = newItems;
-      } else if (block.type === 'table') {
-        for (const row of block.rows) {
-          for (const cell of row.cells) {
-            walkBlocks(cell.content);
-          }
-        }
-      }
-    }
-  }
-
-  walkBlocks(content);
 }
 
 const EMPTY_ANCHOR_POSITIONS = new Map<string, number>();
@@ -7559,128 +7408,20 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     };
   }, [scrollContainerEl]);
 
-  // Handle save
-  const handleSave = useCallback(
-    async (options?: { selective?: boolean }): Promise<ArrayBuffer | null> => {
-      if (!agentRef.current) return null;
-
-      try {
-        const agentDoc = agentRef.current.getDocument();
-
-        // Get the document from the PM editor state — this runs fromProseDoc which
-        // converts PM comment marks into commentRangeStart/End in the document body.
-        // The agent's internal document has the original parsed content and won't
-        // include markers for newly added comments.
-        const pmDoc = pagedEditorRef.current?.getDocument();
-        if (pmDoc?.package?.document) {
-          agentDoc.package.document.content = pmDoc.package.document.content;
-        }
-
-        // Sync React comments state (including new replies) back to the document model
-        agentDoc.package.document.comments = comments;
-
-        // Apply pending footnote text edits to the save document so they persist
-        // (the surgical footnotes.xml regeneration in rezip keys off `edited`).
-        if (footnoteEditsRef.current.size > 0 && agentDoc.package.footnotes) {
-          for (const [id, text] of footnoteEditsRef.current) {
-            const fn = agentDoc.package.footnotes.find((f) => f.id === id);
-            if (fn) {
-              setFootnotePlainText(fn, text);
-              fn.edited = true;
-            }
-          }
-        }
-        if (endnoteEditsRef.current.size > 0 && agentDoc.package.endnotes) {
-          for (const [id, text] of endnoteEditsRef.current) {
-            const en = agentDoc.package.endnotes.find((e) => e.id === id);
-            if (en) {
-              setEndnotePlainText(en, text);
-              en.edited = true;
-            }
-          }
-        }
-        // Apply pending core-property edits to the save doc (collab peers may
-        // have set these via the observer; ensure the saver writes them).
-        if (Object.keys(propsEditsRef.current).length > 0) {
-          agentDoc.package.properties = {
-            ...(agentDoc.package.properties ?? {}),
-            ...propsEditsRef.current,
-          };
-        }
-
-        // Inject commentRangeStart/End for reply comments that share the parent's range.
-        // Pages/Word require every comment (including replies) to have range markers in document.xml.
-        injectReplyRangeMarkers(agentDoc.package.document.content, comments);
-        // Also inject range markers for comments that reply to tracked changes.
-        injectTCReplyRangeMarkers(agentDoc.package.document.content, comments);
-
-        // Build selective save options from change tracker state
-        const useSelective = options?.selective !== false;
-        const view = pagedEditorRef.current?.getView();
-        let selectiveOptions: Parameters<typeof agentRef.current.toBuffer>[0] = undefined;
-
-        if (useSelective && view) {
-          const editorState = view.state;
-          // Force full repack if any reply comments exist (both comment replies and
-          // tracked-change replies need range markers injected into document.xml,
-          // which selective save can't handle since the affected paragraphs may not
-          // be in changedParaIds)
-          const hasInjectedReplies = comments.some((c) => c.parentId != null);
-          // Non-paragraph block changes (textBox / image / shape / table)
-          // bypass the paraId-keyed selective path entirely — the
-          // changed paraId set is empty for a drawing-only transaction
-          // and the round-trip would silently drop the new node. Treat
-          // them as untracked so the serializer falls back to a full
-          // re-pack. See ParagraphChangeTrackerExtension for the source
-          // of this signal.
-          selectiveOptions = {
-            selective: {
-              changedParaIds: getChangedParagraphIds(editorState),
-              structuralChange: hasStructuralChanges(editorState) || hasInjectedReplies,
-              hasUntrackedChanges:
-                hasUntrackedChanges(editorState) ||
-                hasNonParagraphBlockChanges(editorState) ||
-                // Footnote/endnote edits live outside the PM doc (in
-                // footnotes.xml/endnotes.xml), so the paraId-keyed selective path
-                // can't see them — force a full repack so the override runs.
-                footnoteEditsRef.current.size > 0 ||
-                endnoteEditsRef.current.size > 0 ||
-                Object.keys(propsEditsRef.current).length > 0,
-            },
-          };
-        }
-
-        // A selective save serialized ONLY these paragraph ids (captured at t0,
-        // before the async serialize below). We clear exactly them afterwards so
-        // that edits — local keystrokes OR remote collab transactions — that land
-        // on other paragraphs DURING the serialize keep their tracker entries and
-        // get re-serialized next save. A blanket clear dropped them permanently
-        // (not in the saved bytes, yet no longer tracked). Only safe when the save
-        // took the selective path: a full repack forces the plain 'clear' so its
-        // structural/untracked flags reset as before.
-        const selective = selectiveOptions?.selective;
-        const servedParaIds =
-          selective && !selective.structuralChange && !selective.hasUntrackedChanges
-            ? selective.changedParaIds
-            : undefined;
-
-        const buffer = await agentRef.current.toBuffer(selectiveOptions);
-
-        // Clear change tracker after successful save
-        if (view) {
-          view.dispatch(clearTrackedChanges(view.state, servedParaIds));
-        }
-
-        onSave?.(buffer);
-        emitEvent('save', buffer);
-        return buffer;
-      } catch (error) {
-        emitError(error instanceof Error ? error : new Error('Failed to save document'));
-        return null;
-      }
-    },
-    [onSave, emitError, emitEvent, comments]
-  );
+  // Document SAVE path — extracted to useDocumentSave (Spec #6, crown jewel).
+  // Verbatim move; the identical dep array preserves comments-by-value and
+  // refs-never-snapshotted. See the hook for the mutation-order contract.
+  const { handleSave } = useDocumentSave({
+    agentRef,
+    pagedEditorRef,
+    comments,
+    footnoteEditsRef,
+    endnoteEditsRef,
+    propsEditsRef,
+    onSave,
+    emitEvent,
+    emitError,
+  });
 
   // Handle error from editor
   const handleEditorError = useCallback(
