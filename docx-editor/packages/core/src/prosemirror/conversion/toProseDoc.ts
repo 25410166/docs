@@ -979,6 +979,19 @@ function convertTableRow(
     );
   }
 
+  // A row whose cells are ALL vMerge="continue" (fully covered by a vertical
+  // merge from the row above) skips every cell, leaving `cells` empty — which
+  // is invalid for tableRow ((tableCell | tableHeader)+) and throws "Invalid
+  // content for node tableRow" during conversion, crashing the WHOLE document
+  // on open. Emit a spanning placeholder cell so the row stays schema-valid;
+  // prosemirror-tables' fixTables reconciles the merge geometry on the next
+  // transaction. (The empty-cell and empty-doc cases are already guarded.)
+  if (cells.length === 0) {
+    const colCount = Math.max(1, columnWidths?.length ?? 1);
+    const nodeType = isHeaderRow ? 'tableHeader' : 'tableCell';
+    cells.push(schema.node(nodeType, { colspan: colCount }, [schema.node('paragraph', {}, [])]));
+  }
+
   return schema.node('tableRow', attrs, cells);
 }
 
