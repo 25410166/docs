@@ -15,6 +15,25 @@ import type { ImageFragment, ImageBlock, ImageMeasure } from '../layout-engine/t
 import type { RenderContext } from './renderPage';
 import { safeUrl } from '../utils/safeUrl';
 
+// Soft placeholder box for images we can't paint (unsupported EMF/WMF/EPS
+// format, or a linked/unresolved image with no inline bytes).
+const PLACEHOLDER_CSS = [
+  'display:flex',
+  'align-items:center',
+  'justify-content:center',
+  'width:100%',
+  'height:100%',
+  'border:1px dashed #cbd5e1',
+  'background:#f8fafc',
+  'color:#64748b',
+  'font:11px/1.3 system-ui, sans-serif',
+  'box-sizing:border-box',
+  'border-radius:4px',
+  'padding:6px',
+  'text-align:center',
+  'user-select:none',
+].join(';');
+
 /**
  * CSS class names for image elements
  */
@@ -137,6 +156,20 @@ export function renderImageFragment(
     containerEl.dataset.pmEnd = String(fragment.pmEnd);
   }
 
+  // A linked (r:link) image, or one whose binary is missing/mis-pathed, reaches
+  // the painter with no inline bytes (empty src). Putting that into <img> shows
+  // a broken-image icon; render a soft placeholder instead. The blip rId is
+  // preserved on the model, so a round-trip save keeps the reference.
+  if (!block.src) {
+    const placeholder = doc.createElement('div');
+    placeholder.style.cssText = PLACEHOLDER_CSS;
+    placeholder.textContent = '[Linked image]';
+    placeholder.title =
+      "This image is linked or its data isn't embedded in this file. The reference is preserved on save.";
+    containerEl.appendChild(placeholder);
+    return containerEl;
+  }
+
   // Detect formats that browsers can't render natively. The bytes are
   // still preserved in the source data URL (so a round-trip save keeps
   // the original EMF / WMF / EPS), but trying to put them in <img>
@@ -147,22 +180,7 @@ export function renderImageFragment(
   if (m) {
     const label = (m[2] ?? 'image').toUpperCase();
     const placeholder = doc.createElement('div');
-    placeholder.style.cssText = [
-      'display:flex',
-      'align-items:center',
-      'justify-content:center',
-      'width:100%',
-      'height:100%',
-      'border:1px dashed #cbd5e1',
-      'background:#f8fafc',
-      'color:#64748b',
-      'font:11px/1.3 system-ui, sans-serif',
-      'box-sizing:border-box',
-      'border-radius:4px',
-      'padding:6px',
-      'text-align:center',
-      'user-select:none',
-    ].join(';');
+    placeholder.style.cssText = PLACEHOLDER_CSS;
     placeholder.textContent = `[${label}]`;
     placeholder.title = `Image is in ${label} format — web previews can't render it. The original file content is preserved on save.`;
     containerEl.appendChild(placeholder);
