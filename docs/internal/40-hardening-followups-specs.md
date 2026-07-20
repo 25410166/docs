@@ -186,3 +186,24 @@ are uniform and bucket B is preserved. Convert `Toolbar.tsx` + `TitleBar.tsx` to
 the completeness net. Verify: open EVERY dialog from BOTH the menu bar and the command
 palette, plus confirm character-spacing/borders capture selection and About hides when
 embedded. Full-attention PR.
+
+### Data-integrity + correctness audit backlog (2026-07-21)
+
+Multi-agent hunt over save/data-loss + parse/render/serialize. **Shipped:**
+File▸Open discards unsaved edits → #338; block-SDT alias/tag not XML-escaped → #339;
+edits-during-async-serialize dropped → #340 (dedicated-verified). Remaining, code-cited,
+each needs its own adversarial verification before fixing:
+
+**Data-integrity**
+- **D4 — conflict pause can silently stop persistence** (`file-source/useFileSourceAutoSave.ts:383-390,464-470,486-490`). After a 409/412 the autosave loop pauses until an explicit `flush()`. Correct only if the host renders conflict UI wired to `flush()`; a mis-wired host silently stops saving. Defensive: make `conflict` impossible to ignore (emit via `onError` on each suppressed tick). By-design pause (#330), low urgency.
+
+**Parse / render / serialize** (severity — likelihood)
+- **R1 (HIGH) — cross-paragraph complex fields (TOC/INCLUDETEXT) drop content + break field structure.** `docx/paragraphParser.ts:1140-1189`, loop ends 1407 with no flush of `inComplexField`; field state is per-`<w:p>` local. A field whose `begin…end` straddles paragraphs never closes → begin-paragraph runs dropped, structure destroyed on save. Fix needs field state to persist across paragraphs at the caller level — **architectural, larger**.
+- **R2 (HIGH) — non-text inside `<w:hyperlink>` (image, tab, break, symbol) silently dropped.** `prosemirror/conversion/toProseDoc.ts:1677-1681` only emits `text`; symmetric loss in `fromProseDoc` `addNodeToHyperlink`. Clickable images vanish; TOC leader tabs collapse. Fix: route hyperlink children through `convertRunContent`. Contained.
+- **R3 (HIGH) — row fully covered by vMerge → empty `tableRow` → schema-invalid PM doc (breaks painter / `fixTables`).** `toProseDoc.ts:982`; empty-cell (1117) and empty-doc (138) are guarded, empty-row is not (also zero-row `<w:tbl>` at 760). Fix: push a spanning placeholder cell or drop the row. Contained.
+- **R5 (HIGH misrender) — full-width floating-image exclusion shrinks text to ~1 char/line + height blowup.** `layout-painter/renderPage.ts:825,828` (no upper cap on margins) → `measureParagraph.ts:623-626` clamps width to 1. Fix: cap so `leftMargin+rightMargin <= contentWidth - minTextWidth`; advance line Y past the zone when full-width. Also cell twin `renderTable.ts:239/245`.
+- **R6 (MED) — linked / unresolved-binary images dropped instead of degrading.** `docx/runParser.ts:698` requires `drawing.image.src`; a linked (`r:link`) or missing-binary image loses its `rId` on load → gone on round-trip. Fix: keep the drawing when `image.rId` present (placeholder).
+
+**Runners-up (real, lower severity):** hyperlink text inside `<w:ins>`/`<w:del>` or `<w:fldSimple>` dropped (`docx/hyperlinkParser.ts:181-196`); nested table loses theme-resolved shading (`toProseDoc.ts:1112`, missing `theme` arg — render-only); trailing block/`topAndBottom` image emits a phantom empty line (`measureParagraph.ts:728`); over-spanned row cells paint at width 0 (`renderTable.ts:719/757`).
+
+**Verified robust (no action):** `parseDocx` degrades gracefully on missing parts/rels; style `basedOn` cycle-guarded; numbering lookups range/null-checked; table column-width normalized against zero/negative; tab-loop infinite only if `defaultTabInterval<=0` which is never parsed (unreachable).
