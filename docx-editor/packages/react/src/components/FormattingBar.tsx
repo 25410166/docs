@@ -11,6 +11,7 @@
 
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from '../i18n';
+import { useRovingTabindex } from '../hooks/useRovingTabindex';
 import type { ReactNode } from 'react';
 import type { ColorValue, ParagraphAlignment } from '@eigenpal/docx-core/types/document';
 import { FontPicker } from './ui/FontPicker';
@@ -124,6 +125,11 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
   const openParagraphDialog = onOpenParagraphDialog ?? dialogActions.openParagraphDialog;
 
   const barRef = useRef<HTMLDivElement>(null);
+
+  // WAI-ARIA toolbar keyboard pattern: make the whole formatting bar a single
+  // tab stop with Left/Right/Home/End navigation (only for the real
+  // role="toolbar" bar, not the inline display:contents variant).
+  useRovingTabindex(barRef, !inline);
 
   // ── Handlers ──────────────────────────────────────────────────────────
 
