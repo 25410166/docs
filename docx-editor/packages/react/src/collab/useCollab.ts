@@ -27,6 +27,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { HocuspocusProvider } from '@hocuspocus/provider';
+import { IndexeddbPersistence } from 'y-indexeddb';
 import { ySyncPlugin, yCursorPlugin, yUndoPlugin, ySyncPluginKey } from 'y-prosemirror';
 import type { Plugin } from 'prosemirror-state';
 import { createStrictCoEditingPlugin } from './strictCoEditing';
@@ -183,60 +184,86 @@ export interface UseCollabOptions {
  * loader doesn't overwrite the Yjs-populated PM state.
  */
 export function useCollab({ room, backend, user, token }: UseCollabOptions): CollabState {
-  const { ydoc, provider, plugins, metaMap, footnotesMap, endnotesMap, propsMap, commentsMap } =
-    useMemo(() => {
-      const ydoc = new Y.Doc();
-      // Hocuspocus carries the document name in the handshake (`name`),
-      // not the URL path — so `backend` is the bare ws endpoint. A
-      // truthy token lets the handshake complete past an onAuthenticate
-      // hook even for anonymous sessions.
-      const provider = new HocuspocusProvider({
-        url: backend,
-        name: room,
-        document: ydoc,
-        token: token ?? 'anon',
-      });
-      const fragment = ydoc.getXmlFragment('prosemirror');
-      // Hocuspocus creates awareness by default; guard the type union so
-      // the cursor plugin is only wired when it's actually present.
-      const awareness = provider.awareness;
-      const plugins = [
-        ySyncPlugin(fragment),
-        ...(awareness
-          ? [
-              yCursorPlugin(awareness),
-              // Strict / paragraph-lock co-editing (opt-in; off by default).
-              // Locks are derived from peers' cursor awareness; only LOCAL
-              // edits are gated — remote Yjs sync transactions pass through.
-              createStrictCoEditingPlugin({
-                getLocks: peerLocksFromAwareness(awareness),
-                subscribeToLockChanges: subscribeAwareness(awareness),
-                isRemoteTransaction: (tr) => tr.getMeta(ySyncPluginKey) != null,
-              }),
-            ]
-          : []),
-        yUndoPlugin(),
-      ];
-      const metaMap = ydoc.getMap('meta');
-      // Footnote text edits don't live in the ProseMirror document (footnotes are
-      // a separate part of the .docx), so they don't travel over ySyncPlugin.
-      // A dedicated shared map in the SAME Y.Doc gives them the same realtime
-      // sync + offline resilience as the body content. Keyed by footnote id
-      // (string) → current plain text.
-      const footnotesMap = ydoc.getMap<string>('footnotes');
-      const endnotesMap = ydoc.getMap<string>('endnotes');
-      // Core document properties (title / subject / creator / keywords /
-      // description) edited via File → Properties. Not in the PM tree; keyed by
-      // field name → value so two peers editing different fields merge.
-      const propsMap = ydoc.getMap<string>('props');
-      // Comment threads (text / replies / resolved) live in React state, not the
-      // PM tree, so the highlight marks sync but the thread content wouldn't.
-      // A shared map keyed by comment id (string) → Comment JSON gives them the
-      // same realtime sync. Replies are separate Comment entries (parentId).
-      const commentsMap = ydoc.getMap<unknown>('comments');
-      return { ydoc, provider, plugins, metaMap, footnotesMap, endnotesMap, propsMap, commentsMap };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [room, backend, token]);
+  const {
+    ydoc,
+    provider,
+    idbPersistence,
+    plugins,
+    metaMap,
+    footnotesMap,
+    endnotesMap,
+    propsMap,
+    commentsMap,
+  } = useMemo(() => {
+    const ydoc = new Y.Doc();
+    // Hocuspocus carries the document name in the handshake (`name`),
+    // not the URL path — so `backend` is the bare ws endpoint. A
+    // truthy token lets the handshake complete past an onAuthenticate
+    // hook even for anonymous sessions.
+    const provider = new HocuspocusProvider({
+      url: backend,
+      name: room,
+      document: ydoc,
+      token: token ?? 'anon',
+    });
+    // Offline durability: mirror the Y.Doc into IndexedDB keyed by room. On
+    // reload the doc hydrates from IndexedDB immediately — so edits survive a
+    // refresh or an offline session, and reconnecting merges them up via the
+    // CRDT. This does NOT change the autosave safety gate: `synced` tracks the
+    // PROVIDER's initial sync (below), not IndexedDB, so autosave still waits
+    // for the server before it can serialize — no blank-doc overwrite.
+    const idbPersistence = new IndexeddbPersistence(room, ydoc);
+    const fragment = ydoc.getXmlFragment('prosemirror');
+    // Hocuspocus creates awareness by default; guard the type union so
+    // the cursor plugin is only wired when it's actually present.
+    const awareness = provider.awareness;
+    const plugins = [
+      ySyncPlugin(fragment),
+      ...(awareness
+        ? [
+            yCursorPlugin(awareness),
+            // Strict / paragraph-lock co-editing (opt-in; off by default).
+            // Locks are derived from peers' cursor awareness; only LOCAL
+            // edits are gated — remote Yjs sync transactions pass through.
+            createStrictCoEditingPlugin({
+              getLocks: peerLocksFromAwareness(awareness),
+              subscribeToLockChanges: subscribeAwareness(awareness),
+              isRemoteTransaction: (tr) => tr.getMeta(ySyncPluginKey) != null,
+            }),
+          ]
+        : []),
+      yUndoPlugin(),
+    ];
+    const metaMap = ydoc.getMap('meta');
+    // Footnote text edits don't live in the ProseMirror document (footnotes are
+    // a separate part of the .docx), so they don't travel over ySyncPlugin.
+    // A dedicated shared map in the SAME Y.Doc gives them the same realtime
+    // sync + offline resilience as the body content. Keyed by footnote id
+    // (string) → current plain text.
+    const footnotesMap = ydoc.getMap<string>('footnotes');
+    const endnotesMap = ydoc.getMap<string>('endnotes');
+    // Core document properties (title / subject / creator / keywords /
+    // description) edited via File → Properties. Not in the PM tree; keyed by
+    // field name → value so two peers editing different fields merge.
+    const propsMap = ydoc.getMap<string>('props');
+    // Comment threads (text / replies / resolved) live in React state, not the
+    // PM tree, so the highlight marks sync but the thread content wouldn't.
+    // A shared map keyed by comment id (string) → Comment JSON gives them the
+    // same realtime sync. Replies are separate Comment entries (parentId).
+    const commentsMap = ydoc.getMap<unknown>('comments');
+    return {
+      ydoc,
+      provider,
+      idbPersistence,
+      plugins,
+      metaMap,
+      footnotesMap,
+      endnotesMap,
+      propsMap,
+      commentsMap,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room, backend, token]);
 
   const [status, setStatus] = useState<CollabStatus>('connecting');
   // True once the provider has completed its INITIAL sync with the server —
@@ -329,10 +356,13 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
   // destruction closes the WS and frees the awareness listeners.
   useEffect(() => {
     return () => {
+      // Close the IndexedDB connection but KEEP the persisted data for the next
+      // load; then tear down the provider (WS + awareness) and the Y.Doc.
+      idbPersistence.destroy();
       provider.destroy();
       ydoc.destroy();
     };
-  }, [provider, ydoc]);
+  }, [provider, ydoc, idbPersistence]);
 
   return {
     plugins,
