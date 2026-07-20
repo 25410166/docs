@@ -956,7 +956,8 @@
     "unsavedTitle": "文档有未保存的更改",
     "savedTitle": "所有更改已保存",
     "unsavedAriaLabel": "有未保存的更改",
-    "savedAriaLabel": "所有更改已保存"
+    "savedAriaLabel": "所有更改已保存",
+    "openDiscardConfirm": null
   },
   "loading": {
     "label": "正在加载"

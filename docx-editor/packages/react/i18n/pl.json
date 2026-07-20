@@ -956,7 +956,8 @@
     "unsavedTitle": "Dokument ma niezapisane zmiany",
     "savedTitle": "Wszystkie zmiany zapisane",
     "unsavedAriaLabel": "Niezapisane zmiany",
-    "savedAriaLabel": "Wszystkie zmiany zapisane"
+    "savedAriaLabel": "Wszystkie zmiany zapisane",
+    "openDiscardConfirm": null
   },
   "loading": {
     "label": "Ładowanie"

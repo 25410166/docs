@@ -956,7 +956,8 @@
     "unsavedTitle": "Dokument hat nicht gespeicherte Änderungen",
     "savedTitle": "Alle Änderungen gespeichert",
     "unsavedAriaLabel": "Nicht gespeicherte Änderungen",
-    "savedAriaLabel": "Alle Änderungen gespeichert"
+    "savedAriaLabel": "Alle Änderungen gespeichert",
+    "openDiscardConfirm": null
   },
   "loading": {
     "label": "Wird geladen"
