@@ -695,7 +695,15 @@ function parseRunContents(
         // the shape pipeline already draws. Skip those here — same rule the
         // AlternateContent branch below already applies ("skip shapes").
         const drawing = parseDrawingContent(child, rels, media);
-        if (drawing?.image?.src) {
+        // Keep a drawing that carries a real image reference: either resolved
+        // bytes (`src`) OR a blip relationship id (`rId`) whose data we couldn't
+        // resolve — a LINKED (r:link) image or a missing/mis-pathed binary.
+        // Previously the `src`-only guard dropped those entirely, losing the
+        // image and its rId on round-trip. A shape-only drawing (<wps:wsp>, no
+        // <a:blip>) has neither src nor rId, so it stays skipped as before (the
+        // shape pipeline draws it); the painter renders a placeholder for the
+        // src-less case.
+        if (drawing?.image?.src || drawing?.image?.rId) {
           contents.push(drawing);
         }
         break;
