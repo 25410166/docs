@@ -51,3 +51,96 @@ test.describe('Paged Editor - Touch caret', () => {
     expect(content.startsWith('XHello')).toBe(false);
   });
 });
+
+/**
+ * Touch drag-select — long-press then drag selects a range. Playwright's
+ * `touchscreen` only exposes `tap`, so the drag is driven through CDP
+ * `Input.dispatchTouchEvent`. As in the mouse selection specs, a real range is
+ * proven by typing a replacement char: if text was selected it's replaced.
+ */
+test.describe('Paged Editor - Touch drag-select', () => {
+  let editor: EditorPage;
+
+  test.beforeEach(async ({ page }) => {
+    editor = new EditorPage(page);
+    await editor.goto();
+    await editor.waitForReady();
+    await editor.newDocument();
+    await editor.focus();
+    await editor.typeText('AAAA BBBB CCCC DDDD');
+    await page.waitForTimeout(200);
+  });
+
+  async function lineY(page: import('@playwright/test').Page): Promise<{
+    x: number;
+    y: number;
+    width: number;
+  }> {
+    const span = page.locator('.layout-page-content span', { hasText: 'AAAA' }).first();
+    const box = await span.boundingBox();
+    if (!box) throw new Error('no span box');
+    return { x: box.x, y: box.y + box.height / 2, width: box.width };
+  }
+
+  test('long-press then drag selects the dragged-over range', async ({ page }) => {
+    const { x, y, width } = await lineY(page);
+    const startX = x + width * 0.02;
+    const endX = x + width * 0.62;
+
+    const cdp = await page.context().newCDPSession(page);
+    // Press and hold past the ~450ms long-press threshold to arm selection.
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: startX, y }],
+    });
+    await page.waitForTimeout(600);
+    // Drag to the end point in steps — extends the selection.
+    const steps = 6;
+    for (let i = 1; i <= steps; i++) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: startX + ((endX - startX) * i) / steps, y }],
+      });
+      await page.waitForTimeout(20);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(150);
+
+    // Typing replaces the selected range (start → mid-CCCC).
+    await page.keyboard.type('X');
+    await page.waitForTimeout(150);
+    const body = (await page.locator('.paged-editor__pages').innerText()).trim();
+    expect(body.startsWith('X')).toBe(true);
+    expect(body).not.toContain('AAAA');
+    expect(body).toContain('DDDD');
+  });
+
+  test('a quick drag (no long-press) does not select — the gesture scrolls', async ({ page }) => {
+    const { x, y, width } = await lineY(page);
+    const startX = x + width * 0.02;
+    const endX = x + width * 0.62;
+
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: startX, y }],
+    });
+    // Move immediately, well before the long-press threshold → scroll intent.
+    for (let i = 1; i <= 6; i++) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: startX + ((endX - startX) * i) / 6, y }],
+      });
+      await page.waitForTimeout(10);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(120);
+
+    // No range was armed, so nothing is replaced — all four words survive.
+    await page.keyboard.type('X');
+    await page.waitForTimeout(120);
+    const body = (await page.locator('.paged-editor__pages').innerText()).trim();
+    expect(body).toContain('AAAA');
+    expect(body).toContain('DDDD');
+  });
+});
