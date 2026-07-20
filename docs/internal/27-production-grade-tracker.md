@@ -24,7 +24,7 @@ artifact; the concrete gates and their status are tracked here.
 | 4 | Personal-mode optimistic concurrency (If-Match) unwired → silent last-write-wins | critical | **Fixed 2026-07-19 (PR #311)** — etag threaded through `useFileSourceAutoSave`; conflict now 412s instead of clobbering |
 | 5 | WOPI 409 conflict wedges autosave into permanent silent edit loss | high | **Fixed 2026-07-19 (PR #311)** — 409 adopts host version; hook enters a durable conflict pause instead of infinite stale-retry |
 | 6 | Share permissions are an unenforced client-side `?role=` hint; no access UI | high | **Open (Next)** — server-enforced share tokens + collaborator management (overlaps P1.7/P1.9) |
-| 7 | Offline edits volatile despite banner promising "saved locally" | high | **Open (Next)** — add `y-indexeddb` (overlaps P1.6) or correct the banner copy |
+| 7 | Offline edits volatile despite banner promising "saved locally" | high | **Fixed 2026-07-21 (PR #358)** — `IndexeddbPersistence` mirrors the room Y.Doc to IndexedDB; edits survive reload/offline and replay on reconnect. Browser-verified in real Chromium incl. a reload with the WS server **down** (restore can only come from IndexedDB). `synced` still gates on the WS provider, preserving gate 1's blank-doc-overwrite protection |
 
 Feedback follow-ups: **Fixed 2026-07-19 (PR #313)** — manual-save failure toast + no false
 "Saved X ago" after a failed autosave (`pendingError` → "Unsaved changes"). Remaining audit
@@ -43,12 +43,19 @@ hooks, #352–#355); and the **roving-tabindex a11y toolbar** (#356). Dimension 
 correctness 4→5, architecture 2→4, a11y 3→4, security/collaboration held at 4 — readiness
 **70 → 81**. Full ledger in the readiness-proof artifact.
 
-**Remaining work** is infra-gated or large & delicate. Each has a ready-to-execute spec in
-[40-hardening-followups-specs.md](./40-hardening-followups-specs.md): offline persistence
-(needs a real-browser IndexedDB pass), touch drag-select, screenshot suite (Linux runner),
+**Then (2026-07-21, cont.):** the two remaining browser-verifiable slices shipped —
+**offline persistence** (y-indexeddb, gate 7; verified in real Chromium incl. a server-down
+reload, #358) and the full **touch selection** story: long-press **drag-select** (#359) plus
+draggable **selection handles** (#361), all CDP-touch e2e'd with the desktop path untouched.
+Plus a contained fidelity fix — hyperlink text from a wrapped `fldSimple` (#360). Dimension
+rises: mobile 3→4, and gate 7 (last durability gate) closed — readiness **81 → 84**.
+
+**Remaining work** is infra-gated or large & delicate: screenshot suite (Linux runner),
 server-enforced share tokens (separate collab repo), 100-page performance (O(doc-size)/keystroke
-layout), the off-screen `role=textbox` magnifier a11y fix, and the remaining ViewState/Formatting
-context extraction. The clean, self-contained, verifiable-in-repo slices are all shipped.
+layout), the off-screen `role=textbox` magnifier a11y fix, soft-keyboard viewport handling, and
+the remaining ViewState/Formatting context extraction (assessed as largely lateral churn — the
+props are already context-fed via `EditorToolbarContext`, not drilled). The clean,
+self-contained, verifiable-in-repo slices are all shipped.
 
 ### Status reconciliations (2026-07-19)
 
