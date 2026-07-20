@@ -9,7 +9,7 @@
  * options. Reuses the editor's existing wrap + resize commands; this is a
  * presentation layer, not a new command path.
  */
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties, type JSX } from 'react';
 
 interface WrapOption {
   value: string;
