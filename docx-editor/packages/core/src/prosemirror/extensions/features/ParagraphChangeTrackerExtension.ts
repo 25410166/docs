@@ -206,14 +206,33 @@ function createParagraphChangeTrackerPlugin(): Plugin<ParagraphChangeTrackerStat
         };
       },
       apply(tr: Transaction, prevState: ParagraphChangeTrackerState): ParagraphChangeTrackerState {
-        // Check for explicit clear meta
-        if (tr.getMeta(paragraphChangeTrackerKey) === 'clear') {
+        const meta = tr.getMeta(paragraphChangeTrackerKey);
+        // Full clear — reset everything (post-save, non-selective).
+        if (meta === 'clear') {
           return {
             changedParaIds: new Set(),
             structuralChange: false,
             hasUntrackedChanges: false,
             paragraphCount: prevState.paragraphCount,
             changedBlockTypes: new Set(),
+          };
+        }
+        // Selective clear — remove ONLY the paragraph ids that were actually
+        // serialized into the just-saved buffer (captured before the async
+        // serialize). Edits (local keystrokes or remote collab transactions)
+        // that landed on OTHER paragraphs during the serialize keep their
+        // tracker entries, so the next save re-serializes them instead of the
+        // stale cached XML. Without this, a blanket wipe dropped those edits
+        // permanently (they were not in the saved bytes yet no longer tracked).
+        if (meta && typeof meta === 'object' && Array.isArray(meta.clearServed)) {
+          const served = new Set<string>(meta.clearServed as string[]);
+          const remaining = new Set<string>();
+          for (const id of prevState.changedParaIds) {
+            if (!served.has(id)) remaining.add(id);
+          }
+          return {
+            ...prevState,
+            changedParaIds: remaining,
           };
         }
 
@@ -411,9 +430,21 @@ export function hasNonParagraphBlockChanges(state: EditorState): boolean {
 }
 
 /**
- * Create a transaction that clears the change tracker
+ * Create a transaction that clears the change tracker.
+ *
+ * @param servedParaIds When provided, performs a SELECTIVE clear: only these
+ *   paragraph ids (the ones actually serialized into the just-saved buffer,
+ *   captured BEFORE the async serialize) are removed from the tracker. Edits
+ *   that landed on other paragraphs during the serialize keep their entries so
+ *   the next save re-serializes them. Pass this only when the save took the
+ *   selective path (no structural / untracked changes at capture time), so the
+ *   preserved flags reflect any changes that arrived during the serialize.
+ *   Omit it for a full save to reset the tracker entirely (previous behavior).
  */
-export function clearTrackedChanges(state: EditorState): Transaction {
+export function clearTrackedChanges(state: EditorState, servedParaIds?: Set<string>): Transaction {
+  if (servedParaIds) {
+    return state.tr.setMeta(paragraphChangeTrackerKey, { clearServed: [...servedParaIds] });
+  }
   return state.tr.setMeta(paragraphChangeTrackerKey, 'clear');
 }
 

@@ -410,4 +410,61 @@ describe('ParagraphChangeTrackerExtension', () => {
       expect(changed.has('P2')).toBe(false);
     });
   });
+
+  describe('selective clear (edits during async serialize are preserved)', () => {
+    // Locate a paragraph's content-start position by paraId.
+    function paraContentStart(state: EditorState, paraId: string): number {
+      let pos = 0;
+      state.doc.descendants((node, p) => {
+        if (node.type.name === 'paragraph' && node.attrs.paraId === paraId) pos = p + 1;
+      });
+      return pos;
+    }
+
+    test('clears only the served paraIds; edits to other paragraphs are kept', () => {
+      let state = createState([
+        { text: 'Hello', paraId: 'P1' },
+        { text: 'World', paraId: 'P2' },
+      ]);
+
+      // t0: edit P1 — this is what the (selective) save serializes.
+      state = typeText(state, 'X', paraContentStart(state, 'P1'));
+      const served = new Set(getChangedParagraphIds(state)); // snapshot {P1}
+      expect(served.has('P1')).toBe(true);
+
+      // During the async serialize, an edit lands on P2.
+      state = typeText(state, 'Y', paraContentStart(state, 'P2'));
+      expect(getChangedParagraphIds(state).has('P2')).toBe(true);
+
+      // Selective clear removes only the served set.
+      state = state.apply(clearTrackedChanges(state, served));
+
+      const changed = getChangedParagraphIds(state);
+      expect(changed.has('P1')).toBe(false); // saved → cleared
+      expect(changed.has('P2')).toBe(true); // during-serialize edit → preserved (the fix)
+    });
+
+    test('a full (no-arg) clear still wipes everything (unchanged behavior)', () => {
+      let state = createState([
+        { text: 'Hello', paraId: 'P1' },
+        { text: 'World', paraId: 'P2' },
+      ]);
+      state = typeText(state, 'X', paraContentStart(state, 'P1'));
+      state = typeText(state, 'Y', paraContentStart(state, 'P2'));
+
+      state = state.apply(clearTrackedChanges(state)); // no served set → full clear
+      expect(getChangedParagraphIds(state).size).toBe(0);
+    });
+
+    test('clearing a served set that is already gone is a no-op on other entries', () => {
+      let state = createState([
+        { text: 'A', paraId: 'P1' },
+        { text: 'B', paraId: 'P2' },
+      ]);
+      state = typeText(state, 'Z', paraContentStart(state, 'P2'));
+      // Serve a paraId that was never changed — P2 must survive.
+      state = state.apply(clearTrackedChanges(state, new Set(['P1'])));
+      expect(getChangedParagraphIds(state).has('P2')).toBe(true);
+    });
+  });
 });
