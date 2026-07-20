@@ -7695,11 +7695,25 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
           };
         }
 
+        // A selective save serialized ONLY these paragraph ids (captured at t0,
+        // before the async serialize below). We clear exactly them afterwards so
+        // that edits — local keystrokes OR remote collab transactions — that land
+        // on other paragraphs DURING the serialize keep their tracker entries and
+        // get re-serialized next save. A blanket clear dropped them permanently
+        // (not in the saved bytes, yet no longer tracked). Only safe when the save
+        // took the selective path: a full repack forces the plain 'clear' so its
+        // structural/untracked flags reset as before.
+        const selective = selectiveOptions?.selective;
+        const servedParaIds =
+          selective && !selective.structuralChange && !selective.hasUntrackedChanges
+            ? selective.changedParaIds
+            : undefined;
+
         const buffer = await agentRef.current.toBuffer(selectiveOptions);
 
         // Clear change tracker after successful save
         if (view) {
-          view.dispatch(clearTrackedChanges(view.state));
+          view.dispatch(clearTrackedChanges(view.state, servedParaIds));
         }
 
         onSave?.(buffer);
