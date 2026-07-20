@@ -205,8 +205,19 @@ export function parseHyperlink(
         break;
       }
 
-      // Note: hyperlinks can technically contain other elements like
-      // fldSimple, but these are rare. Add support as needed.
+      case 'fldSimple': {
+        // A hyperlink can wrap a simple field whose result is the link text —
+        // e.g. a PAGEREF/REF used as a cross-reference or TOC entry.
+        // `hyperlink.children` doesn't model fields, so flatten to the field's
+        // display runs; without this the link rendered empty and the text was
+        // lost on round-trip.
+        for (const gc of getChildElements(child)) {
+          if (getLocalName(gc.name) === 'r') {
+            hyperlink.children.push(parseRun(gc, styles, theme, rels, media));
+          }
+        }
+        break;
+      }
     }
   }
 
