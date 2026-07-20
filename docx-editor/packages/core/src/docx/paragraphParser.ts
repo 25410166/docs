@@ -1406,6 +1406,27 @@ function parseParagraphContents(
     }
   }
 
+  // The paragraph ended with a complex field still open — its `end` fldChar
+  // lands in a LATER paragraph (a TOC / INCLUDETEXT / index field spans
+  // paragraph boundaries). Without this, every run gathered after the `begin`
+  // (the instruction and the visible result in this paragraph) was silently
+  // dropped and the field structure destroyed. Close the field at the paragraph
+  // boundary so its instruction and result are preserved. This flattens a
+  // cross-paragraph field to its begin-paragraph — full multi-paragraph field
+  // reconstruction (persisting state across the paragraph loop) is a follow-up.
+  if (inComplexField) {
+    const complexField: ComplexField = {
+      type: 'complexField',
+      instruction: complexFieldInstr.trim(),
+      fieldType: parseFieldType(complexFieldInstr),
+      fieldCode: complexFieldCodeRuns,
+      fieldResult: complexFieldResultRuns,
+    };
+    if (complexFieldLock) complexField.fldLock = true;
+    if (complexFieldDirty) complexField.dirty = true;
+    contents.push(complexField);
+  }
+
   return contents;
 }
 
