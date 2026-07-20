@@ -144,3 +144,90 @@ test.describe('Paged Editor - Touch drag-select', () => {
     expect(body).toContain('DDDD');
   });
 });
+
+/**
+ * Touch selection handles (Slice 2) — the draggable start/end pills. After a
+ * range is selected the handles appear; dragging the end handle extends the
+ * selection. Driven through CDP touch events.
+ */
+test.describe('Paged Editor - Selection handles', () => {
+  let editor: EditorPage;
+
+  test.beforeEach(async ({ page }) => {
+    editor = new EditorPage(page);
+    await editor.goto();
+    await editor.waitForReady();
+    await editor.newDocument();
+    await editor.focus();
+    await editor.typeText('AAAA BBBB CCCC DDDD');
+    await page.waitForTimeout(200);
+  });
+
+  async function longPressSelect(
+    page: import('@playwright/test').Page,
+    fromX: number,
+    toX: number,
+    y: number
+  ): Promise<void> {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: fromX, y }],
+    });
+    await page.waitForTimeout(600); // arm long-press
+    for (let i = 1; i <= 5; i++) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: fromX + ((toX - fromX) * i) / 5, y }],
+      });
+      await page.waitForTimeout(15);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(150);
+  }
+
+  test('handles appear on a range and dragging the end handle extends it', async ({ page }) => {
+    const span = page.locator('.layout-page-content span', { hasText: 'AAAA' }).first();
+    const box = await span.boundingBox();
+    if (!box) throw new Error('no span box');
+    const y = box.y + box.height / 2;
+
+    // Select just "AAAA" (the first ~20% of the line) via long-press drag.
+    await longPressSelect(page, box.x + box.width * 0.02, box.x + box.width * 0.2, y);
+
+    // Both handles should now be visible.
+    const endHandle = page.locator('[data-testid="selection-handle-end"]');
+    await expect(page.locator('[data-testid="selection-handle-start"]')).toBeVisible();
+    await expect(endHandle).toBeVisible();
+
+    // Drag the end handle rightward to mid-"CCCC", extending the selection.
+    const hb = await endHandle.boundingBox();
+    if (!hb) throw new Error('no end-handle box');
+    const targetX = box.x + box.width * 0.62;
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: hb.x + hb.width / 2, y: hb.y + hb.height / 2 }],
+    });
+    const startX = hb.x + hb.width / 2;
+    for (let i = 1; i <= 6; i++) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: startX + ((targetX - startX) * i) / 6, y }],
+      });
+      await page.waitForTimeout(20);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(150);
+
+    // Typing replaces the extended selection (AAAA → mid-CCCC). If the handle
+    // had NOT extended it, only AAAA would be replaced and BBBB would survive.
+    await page.keyboard.type('X');
+    await page.waitForTimeout(150);
+    const body = (await page.locator('.paged-editor__pages').innerText()).trim();
+    expect(body.startsWith('X')).toBe(true);
+    expect(body).not.toContain('AAAA');
+    expect(body).not.toContain('BBBB');
+    expect(body).toContain('DDDD');
+  });
+});
