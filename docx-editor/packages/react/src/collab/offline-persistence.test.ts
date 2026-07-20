@@ -14,33 +14,26 @@
  * is the browser-verification gate on the wiring PR.
  */
 
-import 'fake-indexeddb/auto';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 
-// Unique room per test so the shared fake IndexedDB doesn't cross-contaminate.
-let counter = 0;
-const rooms: string[] = [];
-function freshRoom(): string {
-  const r = `offline-test-${counter++}`;
-  rooms.push(r);
-  return r;
-}
-
-afterEach(async () => {
-  // Best-effort clear of the rooms this test file created.
-  for (const r of rooms.splice(0)) {
-    const doc = new Y.Doc();
-    const p = new IndexeddbPersistence(r, doc);
-    await p.whenSynced;
-    await p.clearData();
-  }
+// A fresh fake IndexedDB per test, set explicitly (not via the import-time
+// `fake-indexeddb/auto` global) so it survives other suites in the same `bun
+// test` process clobbering globals (e.g. happy-dom's register/unregister).
+beforeEach(() => {
+  (globalThis as unknown as { indexedDB: IDBFactory }).indexedDB = new IDBFactory();
+  (globalThis as unknown as { IDBKeyRange: typeof IDBKeyRange }).IDBKeyRange = IDBKeyRange;
+});
+afterEach(() => {
+  // Drop the fake DB so nothing leaks into the next test / suite.
+  (globalThis as unknown as { indexedDB?: IDBFactory }).indexedDB = new IDBFactory();
 });
 
 describe('offline persistence (y-indexeddb round-trip)', () => {
   test('a fragment edit survives a simulated reload in a new Y.Doc', async () => {
-    const room = freshRoom();
+    const room = 'offline-room';
 
     // Session 1: edit, then let it flush to IndexedDB.
     const doc1 = new Y.Doc();
@@ -63,20 +56,16 @@ describe('offline persistence (y-indexeddb round-trip)', () => {
   });
 
   test('an empty room restores to an empty fragment (no phantom content)', async () => {
-    const room = freshRoom();
     const doc = new Y.Doc();
-    const p = new IndexeddbPersistence(room, doc);
+    const p = new IndexeddbPersistence('empty-room', doc);
     await p.whenSynced;
     expect(doc.getXmlFragment('prosemirror').length).toBe(0);
     await p.destroy();
   });
 
   test('two separate rooms do not share persisted content', async () => {
-    const roomA = freshRoom();
-    const roomB = freshRoom();
-
     const docA = new Y.Doc();
-    const pA = new IndexeddbPersistence(roomA, docA);
+    const pA = new IndexeddbPersistence('room-a', docA);
     await pA.whenSynced;
     const el = new Y.XmlElement('paragraph');
     el.insert(0, [new Y.XmlText('only in A')]);
@@ -85,7 +74,7 @@ describe('offline persistence (y-indexeddb round-trip)', () => {
     await pA.destroy();
 
     const docB = new Y.Doc();
-    const pB = new IndexeddbPersistence(roomB, docB);
+    const pB = new IndexeddbPersistence('room-b', docB);
     await pB.whenSynced;
     expect(docB.getXmlFragment('prosemirror').toString()).not.toContain('only in A');
     await pB.destroy();
