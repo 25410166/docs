@@ -10,8 +10,9 @@
  *
  * NOTE: this covers the y-indexeddb round-trip only. The full editor behaviour
  * (IndexedDB hydration → y-prosemirror → painted pages on a real page reload,
- * and no blank-doc overwrite when the WS reconnects) needs a real browser and
- * is the browser-verification gate on the wiring PR.
+ * including a reload with the WS server DOWN so the content can only come from
+ * IndexedDB) is verified in a real browser by
+ * `e2e/tests/offline-persistence-browser.spec.ts`.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
