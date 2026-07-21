@@ -50,6 +50,30 @@ draggable **selection handles** (#361), all CDP-touch e2e'd with the desktop pat
 Plus a contained fidelity fix — hyperlink text from a wrapped `fldSimple` (#360). Dimension
 rises: mobile 3→4, and gate 7 (last durability gate) closed — readiness **81 → 84**.
 
+**Then (2026-07-22):** a 3-agent correctness hunt (undo×collab, IME/composition,
+comments+track-changes serialization) + two hands-on bug reports. Shipped, each with a
+regression test: **undo/redo was entirely dead in collab** — history disabled there and
+y-undo was never bound to a keymap; now Ctrl+Z/Y drive y-prosemirror's local UndoManager,
+verified with a real-browser collab e2e (#364). **Comment anchors around hyperlinks** lost on
+save/load — index desync vs coalesced hyperlinks + missing `applyCommentMarks` (#363).
+In-editor **File→Open of .md/.txt/.rtf/.eml** converted to DOCX instead of routing to the
+markdown viewer — new `onOpenSourceFile` host hook (#365). **Header text boxes off-canvas** —
+anchor offsets used raw EMUs as px; now `emuToPixels` (#366). **Selective-save re-edit window**
+— a paragraph re-edited mid-serialize had its tracker entry cleared, silently dropping the edit;
+now retained via `paraIdsSafeToClear` (#367). Dimension: collaboration 4→5 (undo), correctness
+held at 5 — readiness **84 → 86**.
+
+**Correctness-hunt findings still open** (assessed, need dedicated design — not quick fixes):
+- **Full-repack save re-edit window** (sibling of #367): the non-selective `'clear'` also resets
+  the structural/untracked/blockType flags, so protecting re-edited paras via `clearServed` would
+  strand `structuralChange=true` (permanent full-repack) or risk dropping an untracked/structural
+  window edit. Needs the tracker to model t0-state vs window-delta. MED confidence.
+- **Non-collab duplicate document-model Ctrl+Z** (`useHistory`): fires alongside prosemirror-history
+  and can desync the save-base; the collab case is fixed (#364) but non-collab remains. Entangled
+  with undo of out-of-PM edits (headers/section props). MED.
+- **Remote edit mid-IME-composition** can drop in-flight characters (no `view.composing` guard on
+  the y-sync apply). MED — needs a real device to verify safely.
+
 **Remaining work** is infra-gated or large & delicate: screenshot suite (Linux runner),
 server-enforced share tokens (separate collab repo), 100-page performance (O(doc-size)/keystroke
 layout), the off-screen `role=textbox` magnifier a11y fix, soft-keyboard viewport handling, and
