@@ -205,9 +205,47 @@ function insertCommentRanges(content: ParagraphContent[], paragraph: PMNode): Pa
   // and wrap with commentRangeStart/End
   const result: ParagraphContent[] = [];
   const openedComments = new Set<number>();
-  let nodeIndex = 0;
+  // `content` is the COALESCED item array from extractParagraphContent, which
+  // folds consecutive same-href hyperlink nodes into ONE item, so it is shorter
+  // than paragraph.childCount. Walking PM children 1:1 into content[nodeIndex]
+  // therefore desynced after a multi-node hyperlink and dropped comment anchors
+  // (empty range, commented text left outside it). We instead advance
+  // `contentIndex` only when a PM node starts a NEW content item — mirroring the
+  // builder's grouping: only non-empty hrefs coalesce; anchor-only links and
+  // tracked-change (ins/del) runs stay 1:1.
+  let contentIndex = -1;
+  // Mirror extractParagraphContent's hyperlink grouping so we know when a PM
+  // node folds into the SAME coalesced item as the previous one. The builder
+  // keys a group by the first node's `href` (else `#anchor`) and continues it
+  // while a subsequent link node's `href` equals that key — so external
+  // (rId-based, empty-href) links coalesce via ''==='' while anchor-only links
+  // do not. A non-link or tracked-change (ins/del) node ends the group.
+  let inHyperlink = false;
+  let groupKey = '';
 
   paragraph.forEach((node) => {
+    const isTracked = node.marks.some(
+      (m) => m.type.name === 'insertion' || m.type.name === 'deletion'
+    );
+    const linkMark = isTracked ? undefined : node.marks.find((m) => m.type.name === 'hyperlink');
+
+    let continuesHyperlink = false;
+    if (linkMark) {
+      const nodeHref = (linkMark.attrs.href as string) || '';
+      if (inHyperlink && groupKey === nodeHref) {
+        continuesHyperlink = true;
+      } else {
+        const anchor = linkMark.attrs.anchor as string | undefined;
+        groupKey = nodeHref || (anchor ? `#${anchor}` : '');
+        inHyperlink = true;
+      }
+    } else {
+      inHyperlink = false;
+      groupKey = '';
+    }
+
+    if (!continuesHyperlink) contentIndex++;
+
     const nodeCommentIds = new Set<number>();
     for (const mark of node.marks) {
       if (mark.type.name === 'comment') {
@@ -232,12 +270,10 @@ function insertCommentRanges(content: ParagraphContent[], paragraph: PMNode): Pa
       }
     }
 
-    // Push the actual content item
-    if (nodeIndex < content.length) {
-      result.push(content[nodeIndex]);
+    // Push the actual content item — once, on the first PM node that forms it.
+    if (!continuesHyperlink && contentIndex < content.length) {
+      result.push(content[contentIndex]);
     }
-
-    nodeIndex++;
   });
 
   // Close any remaining open comments

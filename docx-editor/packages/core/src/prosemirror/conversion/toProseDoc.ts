@@ -187,7 +187,13 @@ function convertParagraph(
       }
       inlineNodes.push(...runNodes);
     } else if (content.type === 'hyperlink') {
-      const linkNodes = convertHyperlink(content, mergedStyleRunFormatting, styleResolver);
+      let linkNodes = convertHyperlink(content, mergedStyleRunFormatting, styleResolver);
+      // A comment range can cover a hyperlink; without this its display text
+      // carried no comment mark, so the anchor was dropped on load (and again
+      // on save). Mirrors the run/insertion/deletion branches.
+      if (commentIds.size > 0) {
+        linkNodes = applyCommentMarks(linkNodes, commentIds);
+      }
       inlineNodes.push(...linkNodes);
     } else if (content.type === 'simpleField' || content.type === 'complexField') {
       const fieldNode = convertField(content, mergedStyleRunFormatting);
