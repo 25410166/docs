@@ -1139,8 +1139,12 @@ function renderHeaderFooterContent(
       let tbLeft = 0;
       let tbTop = cursorY;
       if (anchored) {
-        const offH = a!.offsetH ?? 0;
-        const offV = a!.offsetV ?? 0;
+        // offsetH/offsetV are in EMUs (like every other anchor offset); the
+        // margin/flow values below are already pixels, so convert first. Prior
+        // to this the raw EMU (e.g. 457200 for 0.5") was used as pixels, hurling
+        // the text box (and its text/tags) ~9525× too far, right off the page.
+        const offH = emuToPixels(a!.offsetH ?? 0);
+        const offV = emuToPixels(a!.offsetV ?? 0);
         tbLeft = a!.relFromH === 'page' ? offH - layout.margins.left : offH;
         if (a!.relFromV === 'page') tbTop = offV - layout.flowTop;
         else if (a!.relFromV === 'margin') tbTop = layout.margins.top + offV - layout.flowTop;
