@@ -31,6 +31,7 @@ import {
   hasUntrackedChanges,
   hasNonParagraphBlockChanges,
   clearTrackedChanges,
+  paraIdsSafeToClear,
 } from '@eigenpal/docx-core/prosemirror/extensions';
 import type { DocumentAgent } from '@eigenpal/docx-core/agent';
 import type { Comment, BlockContent, ParagraphContent } from '@eigenpal/docx-core/types/content';
@@ -315,11 +316,21 @@ export function useDocumentSave(opts: UseDocumentSaveOptions): UseDocumentSaveRe
             ? selective.changedParaIds
             : undefined;
 
+        // Snapshot the doc we're about to serialize. If an edit lands during the
+        // async serialize below, `view.state.doc` will differ afterwards.
+        const servedDoc = view?.state.doc;
         const buffer = await agentRef.current.toBuffer(selectiveOptions);
 
-        // Clear change tracker after successful save
+        // Clear change tracker after successful save. If a served paragraph was
+        // re-edited during the serialize window, don't clear it — that edit
+        // isn't in the saved bytes, and a selective save only re-serializes
+        // still-tracked paragraphs, so clearing would drop it silently.
         if (view) {
-          view.dispatch(clearTrackedChanges(view.state, servedParaIds));
+          const clearIds =
+            servedParaIds && servedDoc && view.state.doc !== servedDoc
+              ? paraIdsSafeToClear(servedDoc, view.state.doc, servedParaIds)
+              : servedParaIds;
+          view.dispatch(clearTrackedChanges(view.state, clearIds));
         }
 
         onSave?.(buffer);

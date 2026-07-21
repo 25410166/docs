@@ -17,6 +17,7 @@ import {
   RemoveMarkStep,
   RemoveNodeMarkStep,
 } from 'prosemirror-transform';
+import type { Node as PMNode } from 'prosemirror-model';
 import { createExtension } from '../create';
 import type { ExtensionRuntime } from '../types';
 
@@ -446,6 +447,53 @@ export function clearTrackedChanges(state: EditorState, servedParaIds?: Set<stri
     return state.tr.setMeta(paragraphChangeTrackerKey, { clearServed: [...servedParaIds] });
   }
   return state.tr.setMeta(paragraphChangeTrackerKey, 'clear');
+}
+
+/**
+ * Of `servedParaIds` — the paragraphs a selective save serialized from a t0
+ * document snapshot — return the subset SAFE to clear from the change tracker:
+ * those whose paragraph is structurally unchanged between the snapshot
+ * (`servedDoc`) and the current doc (`currentDoc`).
+ *
+ * A paragraph re-edited during the async serialize window has different content
+ * in `currentDoc`; clearing it would silently drop that re-edit — it wasn't in
+ * the saved bytes, and a selective save only re-serializes still-tracked
+ * paragraphs. Such paragraphs are RETAINED so the next save picks them up. A
+ * paragraph that vanished (deleted/merged) is safe to clear (its tracked change
+ * is moot). When nothing changed during the window (`servedDoc === currentDoc`)
+ * the whole set is returned unchanged.
+ */
+export function paraIdsSafeToClear(
+  servedDoc: PMNode,
+  currentDoc: PMNode,
+  servedParaIds: Set<string>
+): Set<string> {
+  if (servedDoc === currentDoc) return servedParaIds;
+
+  const findPara = (doc: PMNode, id: string): PMNode | null => {
+    let found: PMNode | null = null;
+    doc.descendants((node) => {
+      if (found) return false;
+      if (node.isTextblock && node.attrs?.paraId === id) {
+        found = node;
+        return false;
+      }
+      return true;
+    });
+    return found;
+  };
+
+  const safe = new Set<string>();
+  for (const id of servedParaIds) {
+    const before = findPara(servedDoc, id);
+    const after = findPara(currentDoc, id);
+    // Gone now (deleted/merged) → safe. Present and deep-equal → safe.
+    // Present but re-edited mid-serialize → retain so it re-serializes next save.
+    if (!after || (before !== null && before.eq(after))) {
+      safe.add(id);
+    }
+  }
+  return safe;
 }
 
 export const ParagraphChangeTrackerExtension = createExtension({
