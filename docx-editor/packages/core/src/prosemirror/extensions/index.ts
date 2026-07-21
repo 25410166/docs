@@ -72,6 +72,7 @@ export {
   getChangedBlockTypes,
   hasNonParagraphBlockChanges,
   clearTrackedChanges,
+  paraIdsSafeToClear,
 } from './features/ParagraphChangeTrackerExtension';
 export {
   TableNodeExtension,
