@@ -1590,6 +1590,13 @@ export function App() {
           // in-window, so a later Save can't overwrite the previous file.
           onFileOpened={isDesktop ? onFileOpenedDesktop : undefined}
           onRequestOpen={isDesktop ? onRequestOpenDesktop : undefined}
+          // Route .md/.txt/.rtf/.eml picked from the in-editor File → Open to
+          // the same source/markdown viewer the Home open path uses, instead of
+          // converting them to DOCX and showing them here.
+          onOpenSourceFile={async (file) => {
+            await handleOpenFromHome(file);
+            return true;
+          }}
           // Dismiss the boot splash after DocxEditor has parsed the DOCX and
           // created its PM view, avoiding the blank-editor flash that occurred
           // when dismissBoot fired immediately after setDocumentBuffer.
