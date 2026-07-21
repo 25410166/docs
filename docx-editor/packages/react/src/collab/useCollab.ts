@@ -28,7 +28,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { IndexeddbPersistence } from 'y-indexeddb';
-import { ySyncPlugin, yCursorPlugin, yUndoPlugin, ySyncPluginKey } from 'y-prosemirror';
+import {
+  ySyncPlugin,
+  yCursorPlugin,
+  yUndoPlugin,
+  ySyncPluginKey,
+  undoCommand as yUndoCommand,
+  redoCommand as yRedoCommand,
+} from 'y-prosemirror';
+import { keymap } from 'prosemirror-keymap';
 import type { Plugin } from 'prosemirror-state';
 import { createStrictCoEditingPlugin } from './strictCoEditing';
 import { peerLocksFromAwareness, subscribeAwareness } from './peerLocks';
@@ -233,6 +241,16 @@ export function useCollab({ room, backend, user, token }: UseCollabOptions): Col
           ]
         : []),
       yUndoPlugin(),
+      // Bind Ctrl/Cmd+Z / +Y / +Shift+Z to y-prosemirror's undo/redo. The
+      // native prosemirror-history plugin (and its keymap) is disabled under
+      // collab to avoid reverting other users' edits, and yUndoPlugin itself
+      // binds NO keymap — so without this, undo/redo was completely dead in a
+      // collab session. These commands drive the local-scoped UndoManager.
+      keymap({
+        'Mod-z': yUndoCommand,
+        'Mod-y': yRedoCommand,
+        'Mod-Shift-z': yRedoCommand,
+      }),
     ];
     const metaMap = ydoc.getMap('meta');
     // Footnote text edits don't live in the ProseMirror document (footnotes are
