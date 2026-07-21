@@ -92,6 +92,7 @@ import { NodeSelection, Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import type { Mark as PMMark } from 'prosemirror-model';
 import { undo as pmUndo, redo as pmRedo } from 'prosemirror-history';
+import { undoCommand as yUndoCommand, redoCommand as yRedoCommand } from 'y-prosemirror';
 import type { ReactSidebarItem } from '../plugin-api/types';
 import type { HeadingInfo } from '@eigenpal/docx-core/utils';
 import { checkAccessibility, type AccessibilityIssue } from '@eigenpal/docx-core/utils';
@@ -2313,7 +2314,11 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const history = useDocumentHistory<Document | null>(initialDocument || null, {
     maxEntries: 100,
     groupingInterval: 500,
-    enableKeyboardShortcuts: true,
+    // Under collab, y-prosemirror's UndoManager owns Ctrl+Z/Y (wired as a
+    // keymap in useCollab). This document-model history still tracks the
+    // save-base, but its keyboard handler must NOT also fire — it would revert
+    // the save-base out of band from the PM view (and can drop peers' content).
+    enableKeyboardShortcuts: !externalContent,
   });
 
   // Extract comments from document model on initial load
@@ -2863,33 +2868,47 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     }
   }, [hfEditPosition]);
 
-  // Helper to undo in the active editor
+  // Helper to undo in the active editor. Under collab, undo is owned by
+  // y-prosemirror's UndoManager (native history is disabled) — drive it on the
+  // active view so the toolbar/ref match the Ctrl+Z keymap wired in useCollab.
   const undoActiveEditor = useCallback(() => {
     if (hfEditPosition && hfEditorRef.current) {
       hfEditorRef.current.undo();
-    } else {
-      pagedEditorRef.current?.undo();
+      return;
     }
-  }, [hfEditPosition]);
+    if (externalContent) {
+      const view = getActiveEditorView();
+      if (view) yUndoCommand(view.state, view.dispatch);
+      return;
+    }
+    pagedEditorRef.current?.undo();
+  }, [hfEditPosition, externalContent, getActiveEditorView]);
 
   // Helper to redo in the active editor
   const redoActiveEditor = useCallback(() => {
     if (hfEditPosition && hfEditorRef.current) {
       hfEditorRef.current.redo();
-    } else {
-      pagedEditorRef.current?.redo();
+      return;
     }
-  }, [hfEditPosition]);
+    if (externalContent) {
+      const view = getActiveEditorView();
+      if (view) yRedoCommand(view.state, view.dispatch);
+      return;
+    }
+    pagedEditorRef.current?.redo();
+  }, [hfEditPosition, externalContent, getActiveEditorView]);
 
   const canUndoActiveEditor = useMemo(() => {
     const view = getActiveEditorView();
-    return view ? pmUndo(view.state) : false;
-  }, [getActiveEditorView, state.selectionFormatting, hfEditPosition]);
+    if (!view) return false;
+    return externalContent ? !!yUndoCommand(view.state) : pmUndo(view.state);
+  }, [getActiveEditorView, state.selectionFormatting, hfEditPosition, externalContent]);
 
   const canRedoActiveEditor = useMemo(() => {
     const view = getActiveEditorView();
-    return view ? pmRedo(view.state) : false;
-  }, [getActiveEditorView, state.selectionFormatting, hfEditPosition]);
+    if (!view) return false;
+    return externalContent ? !!yRedoCommand(view.state) : pmRedo(view.state);
+  }, [getActiveEditorView, state.selectionFormatting, hfEditPosition, externalContent]);
 
   // Find/Replace hook
   const findReplace = useFindReplace();
@@ -8649,8 +8668,20 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       getSelection: () => api.getSelectionInfo(),
       import: loadBuffer,
       export: handleSave,
-      undo: () => pagedEditorRef.current?.undo() ?? false,
-      redo: () => pagedEditorRef.current?.redo() ?? false,
+      undo: () => {
+        if (externalContent) {
+          const view = getActiveEditorView();
+          return view ? (yUndoCommand(view.state, view.dispatch) ?? false) : false;
+        }
+        return pagedEditorRef.current?.undo() ?? false;
+      },
+      redo: () => {
+        if (externalContent) {
+          const view = getActiveEditorView();
+          return view ? (yRedoCommand(view.state, view.dispatch) ?? false) : false;
+        }
+        return pagedEditorRef.current?.redo() ?? false;
+      },
       executeCommand: async (id, params) => {
         // A disabled feature vetoes its command, not just its button (docs#289).
         // Accepts either the feature id (`bold`) or the command name
