@@ -540,6 +540,13 @@ export interface DocxEditorProps {
    *  back into the editor. Falls back to the in-window browser picker when
    *  absent (web). */
   onRequestOpen?: () => void;
+  /** Called when File → Open picks a plain-source file (.md / .txt / .rtf /
+   *  .eml) — formats a host may prefer to open in a dedicated markdown/source
+   *  viewer rather than convert to DOCX. Return `true` (or a Promise of it) if
+   *  the host handled it; the editor then skips its own convert-and-load.
+   *  Return falsy / omit the prop to keep the default behaviour (convert to
+   *  DOCX and load in-window). `.docx`/`.odt` never route here. */
+  onOpenSourceFile?: (file: File) => boolean | Promise<boolean>;
   /** Author name used for comments and track changes */
   author?: string;
   /** People the host (e.g. Drive) knows about, surfaced in the comment
@@ -1739,6 +1746,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     onNew,
     onFileOpened,
     onRequestOpen,
+    onOpenSourceFile,
     onExportPdf,
     author = 'User',
     mentionableUsers,
@@ -7683,11 +7691,21 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         if (!proceed) return;
       }
       try {
+        const { formatFromFilename, toDocxBytes } = await import('../lib/format-converter');
+        // Plain-source files (.md / .txt / .rtf / .eml) can be handled by the
+        // host in a dedicated markdown/source viewer instead of being converted
+        // to DOCX and shown here. Give it first refusal; if it takes the file
+        // (returns true) we stop. .docx/.odt never route here — they load in
+        // this editor as before.
+        const fmt = formatFromFilename(file.name);
+        if (onOpenSourceFile && (fmt === 'md' || fmt === 'txt' || fmt === 'rtf' || fmt === 'eml')) {
+          const handled = await onOpenSourceFile(file);
+          if (handled) return;
+        }
         const buffer = await file.arrayBuffer();
         // .odt / .md / .txt → DOCX via the WASM worker, then feed the existing
         // parser (PDF is intentionally not handled). Shared with the
         // FileSource/home open path so both convert identically.
-        const { toDocxBytes } = await import('../lib/format-converter');
         const docxBuffer = await toDocxBytes(buffer, file.name);
         await loadBuffer(docxBuffer);
         const cleanName = file.name.replace(/\.(docx|odt|md|markdown|txt)$/i, '');
@@ -7716,7 +7734,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         emitError(error instanceof Error ? error : new Error('Failed to open document'));
       }
     },
-    [loadBuffer, onDocumentNameChange, emitError, onFileOpened, t]
+    [loadBuffer, onDocumentNameChange, emitError, onFileOpened, onOpenSourceFile, t]
   );
 
   // ============================================================================
