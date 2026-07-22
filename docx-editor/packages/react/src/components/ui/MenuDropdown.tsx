@@ -107,6 +107,16 @@ const shortcutStyle: CSSProperties = {
   color: 'var(--doc-text-muted, #9ca3af)',
 };
 
+// Fixed-width leading slot so labels align on a common left edge even when
+// only some rows in a menu carry an icon. Without it a missing icon collapses
+// the flex gap and that row's label jumps left, giving a ragged edge.
+const iconSlotStyle: CSSProperties = {
+  width: 18,
+  flexShrink: 0,
+  display: 'inline-flex',
+  justifyContent: 'center',
+};
+
 const submenuPanelStyle: CSSProperties = {
   position: 'absolute',
   left: '100%',
@@ -164,6 +174,9 @@ export function MenuDropdown({ label, items, disabled, id }: MenuDropdownProps) 
   // boolean and the component keeps its old isolated behavior.
   const bar = useMenuBar();
   const menuId = id ?? label;
+  // Reserve the icon gutter for every row only when this menu actually has
+  // at least one icon — fully-textual menus (e.g. Format) stay tight.
+  const hasAnyIcon = items.some((entry) => !isSeparator(entry) && !!entry.icon);
   const [localOpen, setLocalOpen] = useState(false);
   const isOpen = bar ? bar.openId === menuId : localOpen;
   const setIsOpen = useCallback(
@@ -442,7 +455,11 @@ export function MenuDropdown({ label, items, disabled, id }: MenuDropdownProps) 
                     }}
                     disabled={item.disabled}
                   >
-                    {item.icon && <MaterialSymbol name={item.icon} size={18} />}
+                    {hasAnyIcon && (
+                      <span style={iconSlotStyle}>
+                        {item.icon ? <MaterialSymbol name={item.icon} size={18} /> : null}
+                      </span>
+                    )}
                     <span>{item.label}</span>
                     {item.shortcut && (
                       <span style={shortcutStyle}>{formatShortcut(item.shortcut)}</span>
