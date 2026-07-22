@@ -12,9 +12,9 @@
  * - TitleBarRight: right-aligned actions slot
  */
 
-import React, { useCallback, useState, Children, isValidElement } from 'react';
+import React, { useCallback, useEffect, useState, Children, isValidElement } from 'react';
 import type { ReactNode } from 'react';
-import { MenuDropdown, SubMenuItem } from './ui/MenuDropdown';
+import { MenuDropdown, MenuEntries, SubMenuItem } from './ui/MenuDropdown';
 import type { MenuEntry } from './ui/MenuDropdown';
 import { MenuBarProvider } from './ui/MenuBarContext';
 import { MaterialSymbol } from './ui/Icons';
@@ -245,6 +245,28 @@ function ThemeToggleButton() {
 // MenuBar
 // ============================================================================
 
+/**
+ * True on phone-width viewports (<=720px), where the seven inline menus don't
+ * fit and get collapsed behind a single hamburger overflow menu. SSR-safe:
+ * defaults to false when `window` is unavailable, then syncs on mount. Same
+ * breakpoint as MobileFormatBar's `useIsTouchPhone`.
+ */
+function useIsNarrow(): boolean {
+  const [match, setMatch] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 720px)').matches;
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(max-width: 720px)');
+    const handler = (e: MediaQueryListEvent) => setMatch(e.matches);
+    setMatch(mql.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+  return match;
+}
+
 export function MenuBar() {
   const { t } = useTranslation();
   const ctx = useEditorToolbar();
@@ -364,6 +386,759 @@ export function MenuBar() {
     onFileProperties ||
     hasExport;
 
+  // Collapse the seven inline menus behind a single hamburger on phone widths,
+  // where they otherwise truncate ("Fo…") and hide Insert/Tools/Help.
+  const isNarrow = useIsNarrow();
+
+  const fileItems: MenuEntry[] = [
+    ...(onNew
+      ? [
+          {
+            icon: 'note_add',
+            label: 'New',
+            shortcut: 'Ctrl+N',
+            onClick: onNew,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpen
+      ? [
+          {
+            icon: 'file_upload',
+            label: t('toolbar.open'),
+            shortcut: t('toolbar.openShortcut'),
+            onClick: onOpen,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onSave
+      ? [
+          {
+            icon: 'file_download',
+            label: t('toolbar.save'),
+            shortcut: t('toolbar.saveShortcut'),
+            onClick: onSave,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onMakeCopy
+      ? [
+          {
+            icon: 'content_copy',
+            label: t('toolbar.makeCopy'),
+            onClick: onMakeCopy,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onEmailAsAttachment
+      ? [
+          {
+            label: t('toolbar.emailAsAttachment'),
+            onClick: onEmailAsAttachment,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenVersionHistory
+      ? [
+          {
+            icon: 'history',
+            label: t('toolbar.versionHistory'),
+            onClick: onOpenVersionHistory,
+          } as MenuEntry,
+        ]
+      : []),
+    ...((onOpen || onSave || onMakeCopy || onEmailAsAttachment || onOpenVersionHistory) &&
+    (hasPrintOrPageSetup || onFileProperties || hasExport)
+      ? [{ type: 'separator' as const } as MenuEntry]
+      : []),
+    ...(showPrintButton && onPrint
+      ? [
+          {
+            icon: 'print',
+            label: t('toolbar.print'),
+            shortcut: t('toolbar.printShortcut'),
+            onClick: onPrint,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onExportPdf
+      ? [
+          {
+            icon: 'file_download',
+            label: 'Export as PDF',
+            onClick: onExportPdf,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onExportOdt
+      ? [
+          {
+            icon: 'file_download',
+            label: 'Export as ODT',
+            onClick: onExportOdt,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onExportMd
+      ? [
+          {
+            icon: 'file_download',
+            label: 'Export as Markdown',
+            onClick: onExportMd,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onExportTxt
+      ? [
+          {
+            icon: 'file_download',
+            label: 'Export as Plain Text',
+            onClick: onExportTxt,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onPageSetup
+      ? [
+          {
+            icon: 'settings',
+            label: t('toolbar.pageSetup'),
+            onClick: onPageSetup,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onFileProperties
+      ? [
+          {
+            icon: 'tune',
+            label: 'Properties',
+            onClick: onFileProperties,
+          } as MenuEntry,
+        ]
+      : []),
+  ];
+
+  const editItems: MenuEntry[] = [
+    {
+      icon: 'undo',
+      label: 'Undo',
+      shortcut: 'Ctrl+Z',
+      onClick: onUndo ?? (() => {}),
+      disabled: !canUndo,
+    } as MenuEntry,
+    {
+      icon: 'redo',
+      label: 'Redo',
+      shortcut: 'Ctrl+Y',
+      onClick: onRedo ?? (() => {}),
+      disabled: !canRedo,
+    } as MenuEntry,
+    { type: 'separator' as const } as MenuEntry,
+    // Clipboard ops — execCommand only works while the editor has focus,
+    // so refocus first. Modern browsers block JS-initiated paste; the
+    // shortcut label educates users to fall back to ⌘V.
+    {
+      icon: 'content_cut',
+      label: 'Cut',
+      shortcut: 'Ctrl+X',
+      onClick: () => {
+        onRefocusEditor?.();
+        document.execCommand('cut');
+      },
+    } as MenuEntry,
+    {
+      icon: 'content_copy',
+      label: 'Copy',
+      shortcut: 'Ctrl+C',
+      onClick: () => {
+        onRefocusEditor?.();
+        document.execCommand('copy');
+      },
+    } as MenuEntry,
+    {
+      icon: 'content_paste',
+      label: 'Paste',
+      shortcut: 'Ctrl+V',
+      onClick: () => {
+        onRefocusEditor?.();
+        document.execCommand('paste');
+      },
+    } as MenuEntry,
+    {
+      icon: 'content_paste_go',
+      label: 'Paste without formatting',
+      shortcut: 'Ctrl+Shift+V',
+      onClick: async () => {
+        onRefocusEditor?.();
+        try {
+          const text = await navigator.clipboard.readText();
+          if (text) document.execCommand('insertText', false, text);
+        } catch {
+          // Browser blocked the read; user can fall back to ⌘⇧V.
+        }
+      },
+    } as MenuEntry,
+    { type: 'separator' as const } as MenuEntry,
+    ...(onOpenFind
+      ? [
+          {
+            icon: 'search',
+            label: 'Find…',
+            shortcut: 'Ctrl+F',
+            onClick: onOpenFind,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenFindReplace
+      ? [
+          {
+            icon: 'find_replace',
+            label: 'Find and replace…',
+            shortcut: 'Ctrl+H',
+            onClick: onOpenFindReplace,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenFind || onOpenFindReplace ? [{ type: 'separator' as const } as MenuEntry] : []),
+    {
+      icon: 'select_all',
+      label: 'Select all',
+      shortcut: 'Ctrl+A',
+      onClick: () => handleFormat('selectAll'),
+    } as MenuEntry,
+    // Word count lives in Tools → Word count (Google Docs
+    // convention). Removed from Edit on the Phase-4 menu pass
+    // — duplication confused users about which entry the
+    // Ctrl+Shift+C shortcut targeted.
+    ...(onToggleVoiceTyping
+      ? [
+          {
+            icon: 'mic',
+            label: voiceTypingActive ? '✓ Voice typing' : 'Voice typing',
+            onClick: onToggleVoiceTyping,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onToggleSpellCheck
+      ? [
+          { type: 'separator' as const } as MenuEntry,
+          {
+            icon: 'spellcheck',
+            label: spellCheckEnabled ? '✓ Spelling' : 'Spelling',
+            onClick: onToggleSpellCheck,
+          } as MenuEntry,
+        ]
+      : []),
+  ];
+
+  const formatItems: MenuEntry[] = [
+    {
+      label: `${currentFormatting?.bold ? '✓ ' : ''}Bold`,
+      shortcut: 'Ctrl+B',
+      onClick: () => handleFormat('bold'),
+    } as MenuEntry,
+    {
+      label: `${currentFormatting?.italic ? '✓ ' : ''}Italic`,
+      shortcut: 'Ctrl+I',
+      onClick: () => handleFormat('italic'),
+    } as MenuEntry,
+    {
+      label: `${currentFormatting?.underline ? '✓ ' : ''}Underline`,
+      shortcut: 'Ctrl+U',
+      onClick: () => handleFormat('underline'),
+    } as MenuEntry,
+    {
+      label: `${currentFormatting?.strike ? '✓ ' : ''}Strikethrough`,
+      onClick: () => handleFormat('strikethrough'),
+    } as MenuEntry,
+    { type: 'separator' as const } as MenuEntry,
+    {
+      label: `${currentFormatting?.smallCaps ? '✓ ' : ''}Small Caps`,
+      onClick: () => handleFormat('toggleSmallCaps'),
+    } as MenuEntry,
+    {
+      label: `${currentFormatting?.allCaps ? '✓ ' : ''}All Caps`,
+      onClick: () => handleFormat('toggleAllCaps'),
+    } as MenuEntry,
+    { type: 'separator' as const } as MenuEntry,
+    {
+      icon: 'format_line_spacing',
+      label: t('toolbar.customSpacing'),
+      onClick: onOpenParagraphDialog,
+      disabled: !onOpenParagraphDialog,
+    } as MenuEntry,
+    {
+      icon: 'border_outer',
+      label: t('toolbar.bordersAndShading'),
+      onClick: onOpenBordersShading,
+      disabled: !onOpenBordersShading,
+    } as MenuEntry,
+    { type: 'separator' as const } as MenuEntry,
+    {
+      icon: 'format_clear',
+      label: 'Clear formatting',
+      shortcut: 'Ctrl+\\',
+      onClick: () => handleFormat('clearFormatting'),
+    } as MenuEntry,
+    { type: 'separator' as const } as MenuEntry,
+    {
+      icon: 'format_textdirection_l_to_r',
+      label: t('toolbar.leftToRight'),
+      onClick: () => handleFormat('setLtr'),
+    } as MenuEntry,
+    {
+      icon: 'format_textdirection_r_to_l',
+      label: t('toolbar.rightToLeft'),
+      onClick: () => handleFormat('setRtl'),
+    } as MenuEntry,
+  ];
+
+  const viewItems: MenuEntry[] = [
+    ...(onZoomChange
+      ? [
+          {
+            icon: 'add',
+            label: 'Zoom in',
+            shortcut: 'Ctrl+=',
+            onClick: () => onZoomChange(Math.min((zoom ?? 1) * 1.1, 4)),
+          } as MenuEntry,
+          {
+            icon: 'remove',
+            label: 'Zoom out',
+            shortcut: 'Ctrl+-',
+            onClick: () => onZoomChange(Math.max((zoom ?? 1) / 1.1, 0.25)),
+          } as MenuEntry,
+          {
+            icon: 'restart_alt',
+            label: 'Reset zoom (100%)',
+            shortcut: 'Ctrl+0',
+            onClick: () => onZoomChange(1),
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onZoomChange && onToggleShowRuler ? [{ type: 'separator' as const } as MenuEntry] : []),
+    ...(onToggleShowRuler
+      ? [
+          {
+            icon: 'straighten',
+            label: `${rulerVisible ? '✓ ' : ''}Show ruler`,
+            onClick: onToggleShowRuler,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onToggleShowFormattingMarks
+      ? [
+          {
+            label: `${showFormattingMarks ? '✓ ' : ''}${t('toolbar.showFormattingMarks')}`,
+            onClick: onToggleShowFormattingMarks,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onToggleOutline
+      ? [
+          {
+            label: `${outlineVisible ? '✓ ' : ''}${t('toolbar.showOutline')}`,
+            shortcut: 'Ctrl+Shift+H',
+            onClick: onToggleOutline,
+          } as MenuEntry,
+        ]
+      : []),
+    ...((onZoomChange || onToggleShowRuler) && onSetColorTheme
+      ? [{ type: 'separator' as const } as MenuEntry]
+      : []),
+    ...(onSetColorTheme
+      ? [
+          {
+            icon: 'contrast',
+            label: `${colorTheme === 'auto' || !colorTheme ? '✓ ' : ''}Theme: match system`,
+            onClick: () => onSetColorTheme('auto'),
+          } as MenuEntry,
+          {
+            icon: 'light_mode',
+            label: `${colorTheme === 'light' ? '✓ ' : ''}Theme: light`,
+            onClick: () => onSetColorTheme('light'),
+          } as MenuEntry,
+          {
+            icon: 'dark_mode',
+            label: `${colorTheme === 'dark' ? '✓ ' : ''}Theme: dark`,
+            onClick: () => onSetColorTheme('dark'),
+          } as MenuEntry,
+        ]
+      : []),
+  ];
+
+  const insertItems: MenuEntry[] = [
+    ...(onInsertImage
+      ? [{ icon: 'image', label: t('toolbar.image'), onClick: onInsertImage } as MenuEntry]
+      : []),
+    ...(showTableInsert && onInsertTable
+      ? [
+          {
+            icon: 'grid_on',
+            label: t('toolbar.table'),
+            submenuContent: (closeMenu: () => void) => (
+              <TableGridInline
+                onInsert={(rows: number, cols: number) => {
+                  handleTableInsert(rows, cols);
+                  closeMenu();
+                }}
+              />
+            ),
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onInsertImage || (showTableInsert && onInsertTable)
+      ? [{ type: 'separator' as const } as MenuEntry]
+      : []),
+    {
+      icon: 'page_break',
+      label: t('toolbar.pageBreak'),
+      shortcut: 'Ctrl+Enter',
+      onClick: onInsertPageBreak,
+      disabled: !onInsertPageBreak,
+    },
+    {
+      icon: 'horizontal_rule',
+      label: t('toolbar.horizontalLine'),
+      onClick: onInsertHorizontalRule,
+      disabled: !onInsertHorizontalRule,
+    },
+    {
+      icon: 'horizontal_rule',
+      label: t('toolbar.sectionBreak'),
+      disabled: !onInsertSectionBreak,
+      submenuContent: (closeMenu: () => void) => (
+        <>
+          {(
+            [
+              { label: t('toolbar.sectionBreakNextPage'), type: 'nextPage' },
+              { label: t('toolbar.sectionBreakContinuous'), type: 'continuous' },
+              { label: t('toolbar.sectionBreakEvenPage'), type: 'evenPage' },
+              { label: t('toolbar.sectionBreakOddPage'), type: 'oddPage' },
+            ] as const
+          ).map((item) => (
+            <SubMenuItem
+              key={item.type}
+              label={item.label}
+              onClick={() => onInsertSectionBreak?.(item.type)}
+              closeMenu={closeMenu}
+            />
+          ))}
+        </>
+      ),
+    },
+    ...(onInsertShape
+      ? [
+          {
+            icon: 'shapes',
+            label: t('toolbar.shape'),
+            submenuContent: (closeMenu: () => void) => (
+              <>
+                {(
+                  [
+                    { label: t('toolbar.shapeRectangle'), type: 'rectangle' },
+                    { label: t('toolbar.shapeEllipse'), type: 'ellipse' },
+                    { label: t('toolbar.shapeLine'), type: 'line' },
+                    { label: t('toolbar.shapeArrow'), type: 'arrow' },
+                  ] as const
+                ).map((item) => (
+                  <SubMenuItem
+                    key={item.type}
+                    label={item.label}
+                    onClick={() => onInsertShape(item.type)}
+                    closeMenu={closeMenu}
+                  />
+                ))}
+              </>
+            ),
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onInsertTextBox
+      ? [
+          {
+            icon: 'edit_note',
+            label: 'Text box',
+            onClick: () => onInsertTextBox('plain'),
+          } as MenuEntry,
+          {
+            icon: 'chat_bubble_outline',
+            label: 'Callout',
+            onClick: () => onInsertTextBox('callout'),
+          } as MenuEntry,
+        ]
+      : []),
+    {
+      icon: 'tag',
+      label: t('toolbar.insertField'),
+      disabled: !onInsertField,
+      submenuContent: (closeMenu: () => void) => (
+        <>
+          {(
+            [
+              { label: t('toolbar.fieldPage'), type: 'PAGE' },
+              { label: t('toolbar.fieldNumPages'), type: 'NUMPAGES' },
+              { label: t('toolbar.fieldDate'), type: 'DATE' },
+              { label: t('toolbar.fieldTime'), type: 'TIME' },
+              { label: t('toolbar.fieldCreateDate'), type: 'CREATEDATE' },
+              { label: t('toolbar.fieldSaveDate'), type: 'SAVEDATE' },
+              { label: t('toolbar.fieldAuthor'), type: 'AUTHOR' },
+              { label: t('toolbar.fieldFileName'), type: 'FILENAME' },
+            ] as const
+          ).map((item) => (
+            <SubMenuItem
+              key={item.type}
+              label={item.label}
+              onClick={() => onInsertField?.(item.type)}
+              closeMenu={closeMenu}
+            />
+          ))}
+        </>
+      ),
+    },
+    {
+      icon: 'format_list_numbered',
+      label: t('toolbar.tableOfContents'),
+      onClick: onInsertTOC,
+      disabled: !onInsertTOC,
+    },
+    {
+      icon: 'bookmark',
+      label: t('toolbar.bookmarks'),
+      onClick: onOpenBookmarks,
+      disabled: !onOpenBookmarks,
+    },
+    {
+      icon: 'note_add',
+      label: t('toolbar.footnote'),
+      onClick: onInsertFootnote,
+      disabled: !onInsertFootnote,
+    },
+    { type: 'separator' as const } as MenuEntry,
+    {
+      icon: 'emoji_symbols',
+      label: t('toolbar.specialCharacters'),
+      onClick: onOpenInsertSymbol,
+      disabled: !onOpenInsertSymbol,
+    },
+    ...(onOpenBuildingBlocks
+      ? [
+          {
+            label: t('toolbar.buildingBlocks'),
+            onClick: onOpenBuildingBlocks,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onConvertSelectionToTable
+      ? [
+          {
+            label: t('toolbar.convertToTable'),
+            onClick: onConvertSelectionToTable,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onConvertTableToText
+      ? [
+          {
+            label: t('toolbar.convertToText'),
+            onClick: onConvertTableToText,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenWatermark
+      ? [
+          { type: 'separator' as const } as MenuEntry,
+          {
+            label: t('toolbar.watermark'),
+            onClick: onOpenWatermark,
+          } as MenuEntry,
+        ]
+      : []),
+  ];
+
+  const toolsItems: MenuEntry[] = [
+    // Word count first — matches Google Docs' Tools → Word count
+    // placement. (Edit menu still has it too for users who learned
+    // the older location.)
+    ...(onOpenWordCount
+      ? [
+          {
+            icon: 'format_list_numbered',
+            label: t('toolbar.wordCount'),
+            shortcut: 'Ctrl+Shift+C',
+            onClick: onOpenWordCount,
+          } as MenuEntry,
+          { type: 'separator' as const } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenDictionary
+      ? [
+          {
+            label: t('toolbar.dictionary'),
+            shortcut: 'Ctrl+Shift+Y',
+            onClick: onOpenDictionary,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenTranslate
+      ? [
+          {
+            icon: 'translate',
+            label: t('toolbar.translate'),
+            onClick: onOpenTranslate,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onTranslateDocument
+      ? [
+          {
+            icon: 'description',
+            label: 'Translate document…',
+            onClick: onTranslateDocument,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onToggleSpellcheck
+      ? [
+          {
+            icon: 'spellcheck',
+            label: spellcheckEnabled ? '✓ Spell check' : 'Spell check',
+            onClick: onToggleSpellcheck,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onToggleGrammar
+      ? [
+          {
+            icon: 'edit_note',
+            label: grammarEnabled ? '✓ Grammar check' : 'Grammar check',
+            onClick: onToggleGrammar,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenWritingAssistant
+      ? [
+          {
+            icon: 'auto_awesome',
+            label: 'Writing assistant…',
+            onClick: onOpenWritingAssistant,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenExplore
+      ? [
+          {
+            icon: 'explore',
+            label: t('toolbar.explore'),
+            onClick: onOpenExplore,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenCitations
+      ? [
+          {
+            icon: 'format_quote',
+            label: t('toolbar.citations'),
+            onClick: onOpenCitations,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenPreferences
+      ? [
+          {
+            icon: 'tune',
+            label: t('toolbar.preferences'),
+            onClick: onOpenPreferences,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenAccessibility
+      ? [
+          {
+            icon: 'accessibility',
+            label: t('toolbar.accessibility'),
+            onClick: onOpenAccessibility,
+          } as MenuEntry,
+        ]
+      : []),
+  ];
+
+  const helpItems: MenuEntry[] = [
+    ...(onOpenCommandPalette
+      ? [
+          {
+            label: t('toolbar.searchMenus'),
+            onClick: onOpenCommandPalette,
+          } as MenuEntry,
+          { type: 'separator' as const } as MenuEntry,
+        ]
+      : []),
+    {
+      icon: 'bug_report',
+      label: t('toolbar.reportIssue'),
+      onClick: () => (onReportBug ? onReportBug() : openReportIssue()),
+    } as MenuEntry,
+    ...(onShowAbout
+      ? [
+          { type: 'separator' as const } as MenuEntry,
+          {
+            icon: 'info',
+            label: 'About Casual Editor',
+            onClick: onShowAbout,
+          } as MenuEntry,
+        ]
+      : []),
+    ...(onOpenKeyboardShortcuts
+      ? [
+          { type: 'separator' as const } as MenuEntry,
+          {
+            label: t('toolbar.keyboardShortcuts'),
+            onClick: onOpenKeyboardShortcuts,
+          } as MenuEntry,
+        ]
+      : []),
+  ];
+
+  // View and Tools keep their original multi-condition visibility guards;
+  // File keeps hasFileMenu. Edit/Format/Insert/Help are always shown. Order
+  // matches the previous inline order so desktop rendering is unchanged.
+  const menus = [
+    { id: 'file', label: t('toolbar.file'), items: fileItems, show: hasFileMenu },
+    { id: 'edit', label: 'Edit', items: editItems, show: true },
+    { id: 'format', label: t('toolbar.format'), items: formatItems, show: true },
+    {
+      id: 'view',
+      label: 'View',
+      items: viewItems,
+      show:
+        onZoomChange ||
+        onSetColorTheme ||
+        onToggleShowRuler ||
+        onToggleShowFormattingMarks ||
+        onToggleOutline,
+    },
+    { id: 'insert', label: t('toolbar.insert'), items: insertItems, show: true },
+    {
+      id: 'tools',
+      label: t('toolbar.tools'),
+      items: toolsItems,
+      show:
+        onOpenPreferences ||
+        onOpenAccessibility ||
+        onOpenWordCount ||
+        onOpenDictionary ||
+        onOpenTranslate ||
+        onTranslateDocument ||
+        onToggleSpellcheck ||
+        onToggleGrammar ||
+        onOpenWritingAssistant ||
+        onOpenExplore ||
+        onOpenCitations,
+    },
+    { id: 'help', label: t('toolbar.help'), items: helpItems, show: true },
+  ];
+
+  const visibleMenus = menus.filter((m) => m.show);
+
   return (
     <MenuBarProvider onOpenChange={onMenuOpenChange}>
       <div
@@ -377,772 +1152,41 @@ export function MenuBar() {
         role="toolbar"
         aria-label={t('titleBar.menuBarAriaLabel')}
       >
-        {/* File Menu */}
-        {hasFileMenu && (
+        {isNarrow ? (
+          // Phone widths: collapse all seven menus behind one hamburger, each
+          // menu re-exposed as a hover-opened submenu of the overflow panel.
           <MenuDropdown
-            label={t('toolbar.file')}
+            id="menu-overflow"
+            ariaLabel="Menus"
             disabled={disabled}
-            items={[
-              ...(onNew
-                ? [
-                    {
-                      icon: 'note_add',
-                      label: 'New',
-                      shortcut: 'Ctrl+N',
-                      onClick: onNew,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onOpen
-                ? [
-                    {
-                      icon: 'file_upload',
-                      label: t('toolbar.open'),
-                      shortcut: t('toolbar.openShortcut'),
-                      onClick: onOpen,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onSave
-                ? [
-                    {
-                      icon: 'file_download',
-                      label: t('toolbar.save'),
-                      shortcut: t('toolbar.saveShortcut'),
-                      onClick: onSave,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onMakeCopy
-                ? [
-                    {
-                      icon: 'content_copy',
-                      label: t('toolbar.makeCopy'),
-                      onClick: onMakeCopy,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onEmailAsAttachment
-                ? [
-                    {
-                      label: t('toolbar.emailAsAttachment'),
-                      onClick: onEmailAsAttachment,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onOpenVersionHistory
-                ? [
-                    {
-                      icon: 'history',
-                      label: t('toolbar.versionHistory'),
-                      onClick: onOpenVersionHistory,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...((onOpen || onSave || onMakeCopy || onEmailAsAttachment || onOpenVersionHistory) &&
-              (hasPrintOrPageSetup || onFileProperties || hasExport)
-                ? [{ type: 'separator' as const } as MenuEntry]
-                : []),
-              ...(showPrintButton && onPrint
-                ? [
-                    {
-                      icon: 'print',
-                      label: t('toolbar.print'),
-                      shortcut: t('toolbar.printShortcut'),
-                      onClick: onPrint,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onExportPdf
-                ? [
-                    {
-                      icon: 'file_download',
-                      label: 'Export as PDF',
-                      onClick: onExportPdf,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onExportOdt
-                ? [
-                    {
-                      icon: 'file_download',
-                      label: 'Export as ODT',
-                      onClick: onExportOdt,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onExportMd
-                ? [
-                    {
-                      icon: 'file_download',
-                      label: 'Export as Markdown',
-                      onClick: onExportMd,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onExportTxt
-                ? [
-                    {
-                      icon: 'file_download',
-                      label: 'Export as Plain Text',
-                      onClick: onExportTxt,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onPageSetup
-                ? [
-                    {
-                      icon: 'settings',
-                      label: t('toolbar.pageSetup'),
-                      onClick: onPageSetup,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onFileProperties
-                ? [
-                    {
-                      icon: 'tune',
-                      label: 'Properties',
-                      onClick: onFileProperties,
-                    } as MenuEntry,
-                  ]
-                : []),
-            ]}
-          />
-        )}
-
-        {/* Edit Menu */}
-        <MenuDropdown
-          label="Edit"
-          disabled={disabled}
-          items={[
-            {
-              icon: 'undo',
-              label: 'Undo',
-              shortcut: 'Ctrl+Z',
-              onClick: onUndo ?? (() => {}),
-              disabled: !canUndo,
-            } as MenuEntry,
-            {
-              icon: 'redo',
-              label: 'Redo',
-              shortcut: 'Ctrl+Y',
-              onClick: onRedo ?? (() => {}),
-              disabled: !canRedo,
-            } as MenuEntry,
-            { type: 'separator' as const } as MenuEntry,
-            // Clipboard ops — execCommand only works while the editor has focus,
-            // so refocus first. Modern browsers block JS-initiated paste; the
-            // shortcut label educates users to fall back to ⌘V.
-            {
-              icon: 'content_cut',
-              label: 'Cut',
-              shortcut: 'Ctrl+X',
-              onClick: () => {
-                onRefocusEditor?.();
-                document.execCommand('cut');
-              },
-            } as MenuEntry,
-            {
-              icon: 'content_copy',
-              label: 'Copy',
-              shortcut: 'Ctrl+C',
-              onClick: () => {
-                onRefocusEditor?.();
-                document.execCommand('copy');
-              },
-            } as MenuEntry,
-            {
-              icon: 'content_paste',
-              label: 'Paste',
-              shortcut: 'Ctrl+V',
-              onClick: () => {
-                onRefocusEditor?.();
-                document.execCommand('paste');
-              },
-            } as MenuEntry,
-            {
-              icon: 'content_paste_go',
-              label: 'Paste without formatting',
-              shortcut: 'Ctrl+Shift+V',
-              onClick: async () => {
-                onRefocusEditor?.();
-                try {
-                  const text = await navigator.clipboard.readText();
-                  if (text) document.execCommand('insertText', false, text);
-                } catch {
-                  // Browser blocked the read; user can fall back to ⌘⇧V.
-                }
-              },
-            } as MenuEntry,
-            { type: 'separator' as const } as MenuEntry,
-            ...(onOpenFind
-              ? [
-                  {
-                    icon: 'search',
-                    label: 'Find…',
-                    shortcut: 'Ctrl+F',
-                    onClick: onOpenFind,
-                  } as MenuEntry,
-                ]
-              : []),
-            ...(onOpenFindReplace
-              ? [
-                  {
-                    icon: 'find_replace',
-                    label: 'Find and replace…',
-                    shortcut: 'Ctrl+H',
-                    onClick: onOpenFindReplace,
-                  } as MenuEntry,
-                ]
-              : []),
-            ...(onOpenFind || onOpenFindReplace
-              ? [{ type: 'separator' as const } as MenuEntry]
-              : []),
-            {
-              icon: 'select_all',
-              label: 'Select all',
-              shortcut: 'Ctrl+A',
-              onClick: () => handleFormat('selectAll'),
-            } as MenuEntry,
-            // Word count lives in Tools → Word count (Google Docs
-            // convention). Removed from Edit on the Phase-4 menu pass
-            // — duplication confused users about which entry the
-            // Ctrl+Shift+C shortcut targeted.
-            ...(onToggleVoiceTyping
-              ? [
-                  {
-                    icon: 'mic',
-                    label: voiceTypingActive ? '✓ Voice typing' : 'Voice typing',
-                    onClick: onToggleVoiceTyping,
-                  } as MenuEntry,
-                ]
-              : []),
-            ...(onToggleSpellCheck
-              ? [
-                  { type: 'separator' as const } as MenuEntry,
-                  {
-                    icon: 'spellcheck',
-                    label: spellCheckEnabled ? '✓ Spelling' : 'Spelling',
-                    onClick: onToggleSpellCheck,
-                  } as MenuEntry,
-                ]
-              : []),
-          ]}
-        />
-
-        {/* Format Menu */}
-        <MenuDropdown
-          label={t('toolbar.format')}
-          disabled={disabled}
-          items={[
-            {
-              label: `${currentFormatting?.bold ? '✓ ' : ''}Bold`,
-              shortcut: 'Ctrl+B',
-              onClick: () => handleFormat('bold'),
-            } as MenuEntry,
-            {
-              label: `${currentFormatting?.italic ? '✓ ' : ''}Italic`,
-              shortcut: 'Ctrl+I',
-              onClick: () => handleFormat('italic'),
-            } as MenuEntry,
-            {
-              label: `${currentFormatting?.underline ? '✓ ' : ''}Underline`,
-              shortcut: 'Ctrl+U',
-              onClick: () => handleFormat('underline'),
-            } as MenuEntry,
-            {
-              label: `${currentFormatting?.strike ? '✓ ' : ''}Strikethrough`,
-              onClick: () => handleFormat('strikethrough'),
-            } as MenuEntry,
-            { type: 'separator' as const } as MenuEntry,
-            {
-              label: `${currentFormatting?.smallCaps ? '✓ ' : ''}Small Caps`,
-              onClick: () => handleFormat('toggleSmallCaps'),
-            } as MenuEntry,
-            {
-              label: `${currentFormatting?.allCaps ? '✓ ' : ''}All Caps`,
-              onClick: () => handleFormat('toggleAllCaps'),
-            } as MenuEntry,
-            { type: 'separator' as const } as MenuEntry,
-            {
-              icon: 'format_line_spacing',
-              label: t('toolbar.customSpacing'),
-              onClick: onOpenParagraphDialog,
-              disabled: !onOpenParagraphDialog,
-            } as MenuEntry,
-            {
-              icon: 'border_outer',
-              label: t('toolbar.bordersAndShading'),
-              onClick: onOpenBordersShading,
-              disabled: !onOpenBordersShading,
-            } as MenuEntry,
-            { type: 'separator' as const } as MenuEntry,
-            {
-              icon: 'format_clear',
-              label: 'Clear formatting',
-              shortcut: 'Ctrl+\\',
-              onClick: () => handleFormat('clearFormatting'),
-            } as MenuEntry,
-            { type: 'separator' as const } as MenuEntry,
-            {
-              icon: 'format_textdirection_l_to_r',
-              label: t('toolbar.leftToRight'),
-              onClick: () => handleFormat('setLtr'),
-            } as MenuEntry,
-            {
-              icon: 'format_textdirection_r_to_l',
-              label: t('toolbar.rightToLeft'),
-              onClick: () => handleFormat('setRtl'),
-            } as MenuEntry,
-          ]}
-        />
-
-        {/* View Menu — zoom + ruler + theme. Shown if any is wired. */}
-        {(onZoomChange ||
-          onSetColorTheme ||
-          onToggleShowRuler ||
-          onToggleShowFormattingMarks ||
-          onToggleOutline) && (
-          <MenuDropdown
-            label="View"
-            disabled={disabled}
-            items={[
-              ...(onZoomChange
-                ? [
-                    {
-                      icon: 'add',
-                      label: 'Zoom in',
-                      shortcut: 'Ctrl+=',
-                      onClick: () => onZoomChange(Math.min((zoom ?? 1) * 1.1, 4)),
-                    } as MenuEntry,
-                    {
-                      icon: 'remove',
-                      label: 'Zoom out',
-                      shortcut: 'Ctrl+-',
-                      onClick: () => onZoomChange(Math.max((zoom ?? 1) / 1.1, 0.25)),
-                    } as MenuEntry,
-                    {
-                      icon: 'restart_alt',
-                      label: 'Reset zoom (100%)',
-                      shortcut: 'Ctrl+0',
-                      onClick: () => onZoomChange(1),
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onZoomChange && onToggleShowRuler
-                ? [{ type: 'separator' as const } as MenuEntry]
-                : []),
-              ...(onToggleShowRuler
-                ? [
-                    {
-                      icon: 'straighten',
-                      label: `${rulerVisible ? '✓ ' : ''}Show ruler`,
-                      onClick: onToggleShowRuler,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onToggleShowFormattingMarks
-                ? [
-                    {
-                      label: `${showFormattingMarks ? '✓ ' : ''}${t('toolbar.showFormattingMarks')}`,
-                      onClick: onToggleShowFormattingMarks,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onToggleOutline
-                ? [
-                    {
-                      label: `${outlineVisible ? '✓ ' : ''}${t('toolbar.showOutline')}`,
-                      shortcut: 'Ctrl+Shift+H',
-                      onClick: onToggleOutline,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...((onZoomChange || onToggleShowRuler) && onSetColorTheme
-                ? [{ type: 'separator' as const } as MenuEntry]
-                : []),
-              ...(onSetColorTheme
-                ? [
-                    {
-                      icon: 'contrast',
-                      label: `${colorTheme === 'auto' || !colorTheme ? '✓ ' : ''}Theme: match system`,
-                      onClick: () => onSetColorTheme('auto'),
-                    } as MenuEntry,
-                    {
-                      icon: 'light_mode',
-                      label: `${colorTheme === 'light' ? '✓ ' : ''}Theme: light`,
-                      onClick: () => onSetColorTheme('light'),
-                    } as MenuEntry,
-                    {
-                      icon: 'dark_mode',
-                      label: `${colorTheme === 'dark' ? '✓ ' : ''}Theme: dark`,
-                      onClick: () => onSetColorTheme('dark'),
-                    } as MenuEntry,
-                  ]
-                : []),
-            ]}
-          />
-        )}
-
-        {/* Insert Menu */}
-        <MenuDropdown
-          label={t('toolbar.insert')}
-          disabled={disabled}
-          items={[
-            ...(onInsertImage
-              ? [{ icon: 'image', label: t('toolbar.image'), onClick: onInsertImage } as MenuEntry]
-              : []),
-            ...(showTableInsert && onInsertTable
-              ? [
-                  {
-                    icon: 'grid_on',
-                    label: t('toolbar.table'),
-                    submenuContent: (closeMenu: () => void) => (
-                      <TableGridInline
-                        onInsert={(rows: number, cols: number) => {
-                          handleTableInsert(rows, cols);
-                          closeMenu();
-                        }}
-                      />
-                    ),
-                  } as MenuEntry,
-                ]
-              : []),
-            ...(onInsertImage || (showTableInsert && onInsertTable)
-              ? [{ type: 'separator' as const } as MenuEntry]
-              : []),
-            {
-              icon: 'page_break',
-              label: t('toolbar.pageBreak'),
-              shortcut: 'Ctrl+Enter',
-              onClick: onInsertPageBreak,
-              disabled: !onInsertPageBreak,
-            },
-            {
-              icon: 'horizontal_rule',
-              label: t('toolbar.horizontalLine'),
-              onClick: onInsertHorizontalRule,
-              disabled: !onInsertHorizontalRule,
-            },
-            {
-              icon: 'horizontal_rule',
-              label: t('toolbar.sectionBreak'),
-              disabled: !onInsertSectionBreak,
-              submenuContent: (closeMenu: () => void) => (
-                <>
-                  {(
-                    [
-                      { label: t('toolbar.sectionBreakNextPage'), type: 'nextPage' },
-                      { label: t('toolbar.sectionBreakContinuous'), type: 'continuous' },
-                      { label: t('toolbar.sectionBreakEvenPage'), type: 'evenPage' },
-                      { label: t('toolbar.sectionBreakOddPage'), type: 'oddPage' },
-                    ] as const
-                  ).map((item) => (
-                    <SubMenuItem
-                      key={item.type}
-                      label={item.label}
-                      onClick={() => onInsertSectionBreak?.(item.type)}
-                      closeMenu={closeMenu}
-                    />
-                  ))}
-                </>
+            label={
+              <span
+                data-testid="menu-overflow"
+                aria-hidden="true"
+                style={{ fontSize: 18, lineHeight: 1, display: 'inline-flex' }}
+              >
+                ☰
+              </span>
+            }
+            items={visibleMenus.map((m) => ({
+              label: m.label,
+              submenuContent: (close: () => void) => (
+                <MenuEntries items={m.items} onClose={close} />
               ),
-            },
-            ...(onInsertShape
-              ? [
-                  {
-                    icon: 'shapes',
-                    label: t('toolbar.shape'),
-                    submenuContent: (closeMenu: () => void) => (
-                      <>
-                        {(
-                          [
-                            { label: t('toolbar.shapeRectangle'), type: 'rectangle' },
-                            { label: t('toolbar.shapeEllipse'), type: 'ellipse' },
-                            { label: t('toolbar.shapeLine'), type: 'line' },
-                            { label: t('toolbar.shapeArrow'), type: 'arrow' },
-                          ] as const
-                        ).map((item) => (
-                          <SubMenuItem
-                            key={item.type}
-                            label={item.label}
-                            onClick={() => onInsertShape(item.type)}
-                            closeMenu={closeMenu}
-                          />
-                        ))}
-                      </>
-                    ),
-                  } as MenuEntry,
-                ]
-              : []),
-            ...(onInsertTextBox
-              ? [
-                  {
-                    icon: 'edit_note',
-                    label: 'Text box',
-                    onClick: () => onInsertTextBox('plain'),
-                  } as MenuEntry,
-                  {
-                    icon: 'chat_bubble_outline',
-                    label: 'Callout',
-                    onClick: () => onInsertTextBox('callout'),
-                  } as MenuEntry,
-                ]
-              : []),
-            {
-              icon: 'tag',
-              label: t('toolbar.insertField'),
-              disabled: !onInsertField,
-              submenuContent: (closeMenu: () => void) => (
-                <>
-                  {(
-                    [
-                      { label: t('toolbar.fieldPage'), type: 'PAGE' },
-                      { label: t('toolbar.fieldNumPages'), type: 'NUMPAGES' },
-                      { label: t('toolbar.fieldDate'), type: 'DATE' },
-                      { label: t('toolbar.fieldTime'), type: 'TIME' },
-                      { label: t('toolbar.fieldCreateDate'), type: 'CREATEDATE' },
-                      { label: t('toolbar.fieldSaveDate'), type: 'SAVEDATE' },
-                      { label: t('toolbar.fieldAuthor'), type: 'AUTHOR' },
-                      { label: t('toolbar.fieldFileName'), type: 'FILENAME' },
-                    ] as const
-                  ).map((item) => (
-                    <SubMenuItem
-                      key={item.type}
-                      label={item.label}
-                      onClick={() => onInsertField?.(item.type)}
-                      closeMenu={closeMenu}
-                    />
-                  ))}
-                </>
-              ),
-            },
-            {
-              icon: 'format_list_numbered',
-              label: t('toolbar.tableOfContents'),
-              onClick: onInsertTOC,
-              disabled: !onInsertTOC,
-            },
-            {
-              icon: 'bookmark',
-              label: t('toolbar.bookmarks'),
-              onClick: onOpenBookmarks,
-              disabled: !onOpenBookmarks,
-            },
-            {
-              icon: 'note_add',
-              label: t('toolbar.footnote'),
-              onClick: onInsertFootnote,
-              disabled: !onInsertFootnote,
-            },
-            { type: 'separator' as const } as MenuEntry,
-            {
-              icon: 'emoji_symbols',
-              label: t('toolbar.specialCharacters'),
-              onClick: onOpenInsertSymbol,
-              disabled: !onOpenInsertSymbol,
-            },
-            ...(onOpenBuildingBlocks
-              ? [
-                  {
-                    label: t('toolbar.buildingBlocks'),
-                    onClick: onOpenBuildingBlocks,
-                  } as MenuEntry,
-                ]
-              : []),
-            ...(onConvertSelectionToTable
-              ? [
-                  {
-                    label: t('toolbar.convertToTable'),
-                    onClick: onConvertSelectionToTable,
-                  } as MenuEntry,
-                ]
-              : []),
-            ...(onConvertTableToText
-              ? [
-                  {
-                    label: t('toolbar.convertToText'),
-                    onClick: onConvertTableToText,
-                  } as MenuEntry,
-                ]
-              : []),
-            ...(onOpenWatermark
-              ? [
-                  { type: 'separator' as const } as MenuEntry,
-                  {
-                    label: t('toolbar.watermark'),
-                    onClick: onOpenWatermark,
-                  } as MenuEntry,
-                ]
-              : []),
-          ]}
-        />
-
-        {/* Tools Menu — gated on having at least one Tools item. */}
-        {(onOpenPreferences ||
-          onOpenAccessibility ||
-          onOpenWordCount ||
-          onOpenDictionary ||
-          onOpenTranslate ||
-          onTranslateDocument ||
-          onToggleSpellcheck ||
-          onToggleGrammar ||
-          onOpenWritingAssistant ||
-          onOpenExplore ||
-          onOpenCitations) && (
-          <MenuDropdown
-            label={t('toolbar.tools')}
-            disabled={disabled}
-            items={[
-              // Word count first — matches Google Docs' Tools → Word count
-              // placement. (Edit menu still has it too for users who learned
-              // the older location.)
-              ...(onOpenWordCount
-                ? [
-                    {
-                      icon: 'format_list_numbered',
-                      label: t('toolbar.wordCount'),
-                      shortcut: 'Ctrl+Shift+C',
-                      onClick: onOpenWordCount,
-                    } as MenuEntry,
-                    { type: 'separator' as const } as MenuEntry,
-                  ]
-                : []),
-              ...(onOpenDictionary
-                ? [
-                    {
-                      label: t('toolbar.dictionary'),
-                      shortcut: 'Ctrl+Shift+Y',
-                      onClick: onOpenDictionary,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onOpenTranslate
-                ? [
-                    {
-                      icon: 'translate',
-                      label: t('toolbar.translate'),
-                      onClick: onOpenTranslate,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onTranslateDocument
-                ? [
-                    {
-                      icon: 'description',
-                      label: 'Translate document…',
-                      onClick: onTranslateDocument,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onToggleSpellcheck
-                ? [
-                    {
-                      icon: 'spellcheck',
-                      label: spellcheckEnabled ? '✓ Spell check' : 'Spell check',
-                      onClick: onToggleSpellcheck,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onToggleGrammar
-                ? [
-                    {
-                      icon: 'edit_note',
-                      label: grammarEnabled ? '✓ Grammar check' : 'Grammar check',
-                      onClick: onToggleGrammar,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onOpenWritingAssistant
-                ? [
-                    {
-                      icon: 'auto_awesome',
-                      label: 'Writing assistant…',
-                      onClick: onOpenWritingAssistant,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onOpenExplore
-                ? [
-                    {
-                      icon: 'explore',
-                      label: t('toolbar.explore'),
-                      onClick: onOpenExplore,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onOpenCitations
-                ? [
-                    {
-                      icon: 'format_quote',
-                      label: t('toolbar.citations'),
-                      onClick: onOpenCitations,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onOpenPreferences
-                ? [
-                    {
-                      icon: 'tune',
-                      label: t('toolbar.preferences'),
-                      onClick: onOpenPreferences,
-                    } as MenuEntry,
-                  ]
-                : []),
-              ...(onOpenAccessibility
-                ? [
-                    {
-                      icon: 'accessibility',
-                      label: t('toolbar.accessibility'),
-                      onClick: onOpenAccessibility,
-                    } as MenuEntry,
-                  ]
-                : []),
-            ]}
+            }))}
           />
+        ) : (
+          // Desktop: the seven menus render inline exactly as before.
+          visibleMenus.map((m) => (
+            <MenuDropdown
+              key={m.id}
+              id={m.id}
+              label={m.label}
+              disabled={disabled}
+              items={m.items}
+            />
+          ))
         )}
-
-        {/* Help Menu */}
-        <MenuDropdown
-          label={t('toolbar.help')}
-          disabled={disabled}
-          items={[
-            ...(onOpenCommandPalette
-              ? [
-                  {
-                    label: t('toolbar.searchMenus'),
-                    onClick: onOpenCommandPalette,
-                  } as MenuEntry,
-                  { type: 'separator' as const } as MenuEntry,
-                ]
-              : []),
-            {
-              icon: 'bug_report',
-              label: t('toolbar.reportIssue'),
-              onClick: () => (onReportBug ? onReportBug() : openReportIssue()),
-            } as MenuEntry,
-            ...(onShowAbout
-              ? [
-                  { type: 'separator' as const } as MenuEntry,
-                  {
-                    icon: 'info',
-                    label: 'About Casual Editor',
-                    onClick: onShowAbout,
-                  } as MenuEntry,
-                ]
-              : []),
-            ...(onOpenKeyboardShortcuts
-              ? [
-                  { type: 'separator' as const } as MenuEntry,
-                  {
-                    label: t('toolbar.keyboardShortcuts'),
-                    onClick: onOpenKeyboardShortcuts,
-                  } as MenuEntry,
-                ]
-              : []),
-          ]}
-        />
       </div>
     </MenuBarProvider>
   );
