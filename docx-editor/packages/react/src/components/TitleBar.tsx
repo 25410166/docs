@@ -307,6 +307,7 @@ export function MenuBar() {
     onToggleOutline,
     outlineVisible,
     onRefocusEditor,
+    onMenuOpenChange,
   } = ctx;
 
   // Dialog-open handlers now arrive via DialogActionsContext instead of ~16
@@ -364,7 +365,7 @@ export function MenuBar() {
     hasExport;
 
   return (
-    <MenuBarProvider>
+    <MenuBarProvider onOpenChange={onMenuOpenChange}>
       <div
         className="flex items-center overflow-x-auto whitespace-nowrap min-w-0"
         style={{ scrollbarWidth: 'none' }}
