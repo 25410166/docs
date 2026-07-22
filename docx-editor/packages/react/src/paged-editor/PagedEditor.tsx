@@ -261,6 +261,9 @@ export interface PagedEditorProps {
   firstPageFooterContent?: HeaderFooter | null;
   /** Whether the editor is read-only. */
   readOnly?: boolean;
+  /** Hide the floating selection format bar while another floating UI (e.g. an
+   *  open menu-bar dropdown) is showing, so the two don't overlap. */
+  suppressSelectionBar?: boolean;
   /** Gap between pages in pixels. */
   pageGap?: number;
   /** Zoom level (1 = 100%). */
@@ -1571,6 +1574,7 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
       firstPageHeaderContent,
       firstPageFooterContent,
       readOnly = false,
+      suppressSelectionBar = false,
       pageGap = DEFAULT_PAGE_GAP,
       zoom = 1,
       wordCompat = false,
@@ -5183,7 +5187,7 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
                 rects={selectionRects}
                 formatting={selectionFormatting}
                 onFormat={onFormat}
-                visible={isFocused && selectionRects.length > 0}
+                visible={isFocused && selectionRects.length > 0 && !suppressSelectionBar}
                 zoom={zoom}
                 variant="mobile"
               />
@@ -5191,7 +5195,7 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
                 rects={selectionRects}
                 formatting={selectionFormatting}
                 onFormat={onFormat}
-                visible={isFocused && selectionRects.length > 0}
+                visible={isFocused && selectionRects.length > 0 && !suppressSelectionBar}
                 zoom={zoom}
                 variant="desktop"
               />

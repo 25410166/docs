@@ -17,7 +17,15 @@
  * its existing isolated behavior.
  */
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ReactNode } from 'react';
 
 export interface MenuBarContextValue {
@@ -45,11 +53,19 @@ export function useMenuBar(): MenuBarContextValue | null {
 
 export interface MenuBarProviderProps {
   children: ReactNode;
+  /** Notified when any menu in the bar opens (true) or all close (false). */
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function MenuBarProvider({ children }: MenuBarProviderProps) {
+export function MenuBarProvider({ children, onOpenChange }: MenuBarProviderProps) {
   const [openId, setOpenIdState] = useState<string | null>(null);
   const triggersRef = useRef(new Map<string, HTMLElement>());
+
+  // Report open/closed transitions. Covers every path that mutates openId
+  // (click, hover-switch, arrow-key move), not just setOpenId.
+  useEffect(() => {
+    onOpenChange?.(openId !== null);
+  }, [openId, onOpenChange]);
 
   const setOpenId = useCallback((id: string | null) => {
     setOpenIdState(id);

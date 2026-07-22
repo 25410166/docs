@@ -333,6 +333,10 @@ export interface ToolbarProps {
   onExportTxt?: () => void;
   /** Help → Report a bug — opens the GitHub issue template prefilled with env info. */
   onReportBug?: () => void;
+  /** Fired when a menu bar dropdown opens (true) or all close (false). Lets the
+   *  editor suppress other floating UI (e.g. the selection format bar) while a
+   *  menu is open, so the two don't overlap. */
+  onMenuOpenChange?: (open: boolean) => void;
   /** Help → About — opens the About dialog. */
   onShowAbout?: () => void;
   /** Help → Search the menus — opens the command palette. */

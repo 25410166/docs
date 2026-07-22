@@ -1940,6 +1940,9 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // (and any other chrome) without TDZ errors. The keydown handler +
   // chrome conditionals further below consume the same state.
   const [focusMode, setFocusMode] = useState(false);
+  // True while a menu-bar dropdown is open — used to suppress the floating
+  // selection format bar so the two don't overlap.
+  const [menuOpen, setMenuOpen] = useState(false);
   const showRulerEffective =
     (showRulerLocal ?? showRuler) && !focusMode && isFeatureEnabled(features, 'ruler', true);
 
@@ -9532,6 +9535,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
                           }}
                           currentFormatting={state.selectionFormatting}
                           onFormat={handleFormat}
+                          onMenuOpenChange={setMenuOpen}
                           onUndo={undoActiveEditor}
                           onRedo={redoActiveEditor}
                           canUndo={canUndoActiveEditor}
@@ -9969,6 +9973,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
                               wordCompat={wordCompat}
                               showFormattingMarks={showFormattingMarks}
                               readOnly={readOnly}
+                              suppressSelectionBar={menuOpen}
                               extensionManager={extensionManager}
                               contentLabel={t('editor.contentLabel')}
                               selectionFormatting={state.selectionFormatting}
