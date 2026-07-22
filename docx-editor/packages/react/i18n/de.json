@@ -743,7 +743,9 @@
     "expand": null
   },
   "sidebar": {
-    "ariaLabel": "Anmerkungsleiste"
+    "ariaLabel": "Anmerkungsleiste",
+    "commentsEmptyHint": null,
+    "commentsEmptyTitle": null
   },
   "titleBar": {
     "untitled": "Unbenannt",

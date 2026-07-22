@@ -756,7 +756,9 @@
     "collapse": "Collapse section"
   },
   "sidebar": {
-    "ariaLabel": "Annotations sidebar"
+    "ariaLabel": "Annotations sidebar",
+    "commentsEmptyTitle": "No comments yet",
+    "commentsEmptyHint": "Select text and add a comment to start a discussion."
   },
   "viewer": {
     "pageIndicator": "{current} of {total}"

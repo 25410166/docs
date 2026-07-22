@@ -743,7 +743,9 @@
     "expand": null
   },
   "sidebar": {
-    "ariaLabel": "סרגל הערות"
+    "ariaLabel": "סרגל הערות",
+    "commentsEmptyHint": null,
+    "commentsEmptyTitle": null
   },
   "titleBar": {
     "untitled": "ללא שם",

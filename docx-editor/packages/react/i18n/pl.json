@@ -743,7 +743,9 @@
     "expand": null
   },
   "sidebar": {
-    "ariaLabel": "Panel adnotacji"
+    "ariaLabel": "Panel adnotacji",
+    "commentsEmptyHint": null,
+    "commentsEmptyTitle": null
   },
   "titleBar": {
     "untitled": "Bez tytułu",

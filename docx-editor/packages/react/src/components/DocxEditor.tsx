@@ -10098,9 +10098,10 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
                                       </Tooltip>
                                     </div>
                                   )}
-                                  {allSidebarItems.length > 0 && (
+                                  {(allSidebarItems.length > 0 || showCommentsSidebar) && (
                                     <UnifiedSidebar
                                       items={allSidebarItems}
+                                      open={showCommentsSidebar}
                                       anchorPositions={anchorPositions}
                                       renderedDomContext={pluginRenderedDomContext ?? null}
                                       pageWidth={pageWidthPx}

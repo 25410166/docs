@@ -743,7 +743,9 @@
     "expand": null
   },
   "sidebar": {
-    "ariaLabel": "Açıklama kenar çubuğu"
+    "ariaLabel": "Açıklama kenar çubuğu",
+    "commentsEmptyHint": null,
+    "commentsEmptyTitle": null
   },
   "viewer": {
     "pageIndicator": "{total} sayfadan {current}."

@@ -743,7 +743,9 @@
     "expand": null
   },
   "sidebar": {
-    "ariaLabel": "批注侧边栏"
+    "ariaLabel": "批注侧边栏",
+    "commentsEmptyHint": null,
+    "commentsEmptyTitle": null
   },
   "titleBar": {
     "untitled": "未命名",
