@@ -377,18 +377,9 @@ export function FindReplaceDialog({
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
       }, 100);
-
-      if (initialSearchText) {
-        const searchResult = onFind(initialSearchText, {
-          matchCase,
-          matchWholeWord,
-          useRegex,
-        });
-        setResult(searchResult);
-        if (searchResult?.matches && onHighlightMatches) {
-          onHighlightMatches(searchResult.matches);
-        }
-      }
+      // The search itself (including the initial prefilled query) runs through
+      // the debounced find-as-you-type effect below, so results stay in sync
+      // with what's in the box.
     } else {
       if (onClearHighlights) {
         onClearHighlights();
@@ -423,14 +414,30 @@ export function FindReplaceDialog({
     onClearHighlights,
   ]);
 
+  // Find-as-you-type: search on every query/option change (debounced), so the
+  // result — and the "No results" state — always reflect what's in the box.
+  // Previously typing didn't search until Enter, so the status line could show
+  // a stale "No results" for text that actually matches. Enter still forces an
+  // immediate search (see handleSearchKeyDown).
+  //
+  // `performSearch` (which already clears the result for an empty query) is held
+  // in a ref so this effect depends only on the actual query/options — not on
+  // callback identities that may change every render, which would reset the
+  // debounce timer and stop it ever firing.
+  const performSearchRef = useRef(performSearch);
+  performSearchRef.current = performSearch;
   useEffect(() => {
-    if (isOpen && searchText.trim()) {
-      performSearch();
-    }
-  }, [matchCase, matchWholeWord, useRegex]);
+    if (!isOpen) return;
+    const id = setTimeout(() => performSearchRef.current(), 180);
+    return () => clearTimeout(id);
+  }, [isOpen, searchText, matchCase, matchWholeWord, useRegex]);
 
   const handleSearchChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     setSearchText(e.target.value);
+    // Invalidate the previous result so the "No results" status and the
+    // Enter/next handlers (which gate on `!result`) can't act on a stale query
+    // in the brief window before the debounced re-search lands.
+    setResult(null);
   }, []);
 
   const handleSearchKeyDown = useCallback(
