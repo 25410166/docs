@@ -1,0 +1,118 @@
+/*
+ * Casual Editor design tokens — self-contained, in-repo source of truth.
+ *
+ * Replaces the former vendored @schnsrw/design-system stub (an empty
+ * placeholder that left every color, shadow and motion primitive undefined,
+ * so the chrome rendered from hundreds of inline var() fallbacks scattered
+ * across three grey palettes and several blues). The editor now owns its
+ * own token spine.
+ *
+ * These are the PRIMITIVE tokens the semantic --doc-* / --ce-* layer in
+ * editor.css maps onto. Values here were chosen as the dominant value each
+ * primitive already rendered as, so the visual result stays close to the
+ * prior look while collapsing the palette to one coherent system. This is
+ * "phase 0": establish the spine. A deliberate premium re-tint is a small,
+ * separate change on top of these variables.
+ */
+
+:root {
+  /* ---- Neutrals / surfaces (light) ---- */
+  --color-surface: #ffffff; /* panels, dialogs, dropdowns */
+  --color-surface-raised: #ffffff; /* card elevated on a surface */
+  --color-surface-alt: #f8f9fa; /* inputs, sunken / muted panes */
+  --color-surface-strip: #eef1f5; /* app chrome / toolbar strip */
+  --color-hover: #f1f3f4; /* hover wash */
+
+  /* ---- Text (light) ---- */
+  --color-text: #1f2937; /* primary */
+  --color-text-secondary: #5f6368; /* secondary */
+  --color-text-muted: #6b7280; /* tertiary */
+  --color-text-disabled: #8a8886; /* disabled / placeholder */
+
+  /* ---- Borders (light) ---- */
+  --color-border-strong: #d1d5db; /* standard / input / table borders */
+  --color-divider: #e0e0e0; /* soft separators */
+
+  /* ---- Accent (light) ---- */
+  --color-accent: #1a73e8; /* primary brand blue */
+  --color-accent-hover: #1765cc; /* hovered accent */
+  --color-accent-soft: #e8f0fe; /* selected / active tint */
+
+  /* ---- Status (light) ---- */
+  --color-danger: #d93025;
+  --color-danger-soft: #fce8e6;
+  --color-success: #1e8e3e;
+  --color-success-soft: #e6f4ea;
+  --color-warning: #92400e; /* also used as readable text on warning-soft */
+  --color-warning-soft: #fffbeb;
+  --color-info: #1a73e8; /* info / link accent */
+  --color-info-soft: #e8f0fe;
+
+  /* ---- Elevation ---- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-2: 0 2px 10px rgba(0, 0, 0, 0.15); /* dropdowns / dialogs / panels */
+  --shadow-3: 0 8px 28px -6px rgba(0, 0, 0, 0.22);
+
+  /* ---- Motion ---- */
+  --motion-fast: 90ms;
+  --motion-base: 160ms;
+  --motion-slow: 240ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1); /* decelerating */
+
+  /* ---- Type ---- */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* ---- Spacing (2px grid) ---- */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+
+  /* ---- Radius ---- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+}
+
+/*
+ * Dark theme primitives. Matches editor.css's dark selector so the --doc-*
+ * layer (evaluated on .ep-root and descendants) picks these up. editor.css
+ * additionally patches --color-text-muted / -disabled / -border-strong for
+ * WCAG AA in its own dark block; those are mirrored here for a single source.
+ */
+.ep-root[data-theme='dark'],
+[data-theme='dark'] .ep-root,
+[data-theme='dark'] {
+  --color-surface: #2b2d30;
+  --color-surface-raised: #303234;
+  --color-surface-alt: #303234;
+  --color-surface-strip: #202224;
+  --color-hover: rgba(255, 255, 255, 0.06);
+
+  --color-text: #e8eaed;
+  --color-text-secondary: #9aa0a6;
+  --color-text-muted: #969aa3; /* AA — also set in editor.css */
+  --color-text-disabled: #8b8e96; /* AA — also set in editor.css */
+
+  --color-border-strong: #646a76; /* AA — also set in editor.css */
+  --color-divider: #35373a;
+
+  --color-accent: #669df6;
+  --color-accent-hover: #7baef7;
+  --color-accent-soft: #1f3350;
+
+  --color-danger: #f28b82;
+  --color-danger-soft: #3a2422;
+  --color-success: #81c995;
+  --color-success-soft: #24352a;
+  --color-warning: #fdd663;
+  --color-warning-soft: #332b16;
+  --color-info: #669df6;
+  --color-info-soft: #1f3350;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 2px 12px rgba(0, 0, 0, 0.5);
+  --shadow-3: 0 8px 30px -6px rgba(0, 0, 0, 0.7);
+}

@@ -26,15 +26,14 @@
  * other rules per the CSS @import ordering requirement. */
 @import './fonts.css';
 
-/* Casual design system tokens (@schnsrw/design-system), vendored as a git
- * submodule at docx-editor/vendor/design-system. The committed dist/ is the
- * source of truth — no build step. This barrel pulls in colors, typography,
- * spacing/radius/shadow, motion, the docs accent override ([data-app='docs'])
- * and the Inter + Material Symbols webfonts. Imported here so the Tailwind CLI
- * inlines the tokens straight into the published dist/styles.css (the package
- * isn't on npm, so consumers must not need it at runtime). The doc editor maps
- * its own --doc-* vars onto these DS tokens below. */
-@import '../../../../vendor/design-system/dist/tokens.css';
+/* Design tokens — self-contained in this repo (./tokens.css). Defines the
+ * color, shadow, motion, font, space and radius primitives that the --doc-
+ * and --ce- semantic layer below maps onto, for both light and dark. These
+ * formerly came from the vendored @schnsrw/design-system stub, which was
+ * empty on purpose — so the chrome rendered from scattered inline var()
+ * fallbacks. The editor now owns its own spine. Imported before @tailwind
+ * so the CLI inlines it into the published dist/styles.css. */
+@import './tokens.css';
 
 @tailwind utilities;
 
