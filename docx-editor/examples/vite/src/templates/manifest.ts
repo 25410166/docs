@@ -63,7 +63,10 @@ export const TEMPLATES: TemplateEntry[] = [
     name: 'Blank Markdown',
     description: 'A .md file with live preview and notebook mode.',
     category: 'Personal',
-    icon: 'article',
+    // Must be a glyph present in the self-hosted Material Symbols subset
+    // (examples/vite/public/fonts) — 'article'/'subject' aren't, so they
+    // rendered as raw ligature text.
+    icon: 'description',
     thumbnail: '/templates/thumbs/blank.svg',
     source: { kind: 'text', textKind: 'markdown' },
     defaultFileName: 'Untitled.md',
@@ -74,7 +77,8 @@ export const TEMPLATES: TemplateEntry[] = [
     name: 'Blank Text',
     description: 'A plain .txt file — source editor, no formatting.',
     category: 'Personal',
-    icon: 'subject',
+    // In-subset glyph (see note on blank-markdown above); 'subject' is absent.
+    icon: 'format_align_left',
     thumbnail: '/templates/thumbs/blank.svg',
     source: { kind: 'text', textKind: 'text' },
     defaultFileName: 'Untitled.txt',

@@ -269,6 +269,28 @@ const styles: Record<string, CSSProperties> = {
   cardThumbHover: {
     transform: 'scale(1.025)',
   },
+  // Blank templates have no photographic render — a landscape SVG cover-cropped
+  // into the portrait frame just showed flat grey and read as a broken image.
+  // Render a real empty-state instead: the entry's own glyph in a dashed tile.
+  cardThumbEmpty: {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: `linear-gradient(180deg, ${COLORS.surface} 0%, ${COLORS.surface2} 100%)`,
+  },
+  cardThumbEmptyIcon: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 60,
+    height: 60,
+    borderRadius: 16,
+    background: COLORS.paper,
+    border: `1px dashed ${COLORS.borderHover}`,
+    color: COLORS.inkMuted,
+  },
   cardIconBadge: {
     position: 'absolute',
     top: '8px',
@@ -374,6 +396,9 @@ function TemplateCard({
   isMobile: boolean;
 }): React.JSX.Element {
   const [hovered, setHovered] = useState(false);
+  // Blank entries ship an SVG placeholder rather than a PNG render; give them
+  // a clean empty-state instead of an image that crops to grey.
+  const isBlank = entry.thumbnail.endsWith('.svg');
   return (
     <button
       type="button"
@@ -387,22 +412,37 @@ function TemplateCard({
       aria-label={`${entry.name} — ${entry.category}`}
     >
       <div style={{ ...styles.cardThumbWrap, ...(isMobile && mobile.cardThumbWrap) }}>
-        <img
-          src={entry.thumbnail}
-          alt=""
-          aria-hidden="true"
-          draggable={false}
-          loading="lazy"
-          style={{ ...styles.cardThumb, ...(hovered ? styles.cardThumbHover : null) }}
-        />
-        <span
-          style={{ ...styles.cardIconBadge, ...(isMobile && mobile.cardIconBadge) }}
-          aria-hidden="true"
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: isMobile ? 14 : 16 }}>
-            {entry.icon}
-          </span>
-        </span>
+        {isBlank ? (
+          <div style={styles.cardThumbEmpty}>
+            <span style={styles.cardThumbEmptyIcon} aria-hidden="true">
+              <span
+                className="material-symbols-outlined"
+                style={{ fontSize: isMobile ? 28 : 34 }}
+              >
+                {entry.icon}
+              </span>
+            </span>
+          </div>
+        ) : (
+          <>
+            <img
+              src={entry.thumbnail}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              loading="lazy"
+              style={{ ...styles.cardThumb, ...(hovered ? styles.cardThumbHover : null) }}
+            />
+            <span
+              style={{ ...styles.cardIconBadge, ...(isMobile && mobile.cardIconBadge) }}
+              aria-hidden="true"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: isMobile ? 14 : 16 }}>
+                {entry.icon}
+              </span>
+            </span>
+          </>
+        )}
       </div>
       <div style={{ ...styles.cardBody, ...(isMobile && mobile.cardBody) }}>
         <div style={{ ...styles.cardTitle, ...(isMobile && mobile.cardTitle) }}>{entry.name}</div>

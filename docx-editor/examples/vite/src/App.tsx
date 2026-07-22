@@ -678,6 +678,17 @@ export function App() {
 
   const { zoom: autoZoom, isMobile } = useResponsiveLayout();
 
+  // `initialZoom` only seeds the editor's zoom on first mount — a later
+  // recompute (viewport resize/rotation, or opening a different document)
+  // never reached the live zoom, so on mobile the page could overflow the
+  // viewport and clip off the right edge. Re-apply the fit-to-width zoom
+  // imperatively whenever it changes or a new document loads (via either the
+  // buffer path or the template `currentDocument` path). First paint is still
+  // covered by `initialZoom={autoZoom}` below, so there's no flash.
+  useEffect(() => {
+    editorRef.current?.setZoom(autoZoom);
+  }, [autoZoom, documentBuffer, currentDocument]);
+
   // Auto-seed a blank doc only when we land straight in the editor
   // (e.g. ?e2e=1 / ?skipHome=1). Home view lets the user pick a
   // template instead — no need for a placeholder doc.
