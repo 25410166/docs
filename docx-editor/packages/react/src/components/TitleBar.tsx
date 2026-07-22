@@ -324,6 +324,8 @@ export function MenuBar() {
     onInsertFootnote,
     onToggleShowRuler,
     rulerVisible,
+    onToggleShowVerticalRuler,
+    verticalRulerVisible,
     onToggleShowFormattingMarks,
     showFormattingMarks,
     onToggleOutline,
@@ -722,6 +724,17 @@ export function MenuBar() {
             icon: 'straighten',
             label: `${rulerVisible ? '✓ ' : ''}Show ruler`,
             onClick: onToggleShowRuler,
+          } as MenuEntry,
+        ]
+      : []),
+    // Vertical ruler is a separate opt-in; only meaningful while the ruler
+    // is shown, so gate the entry on rulerVisible.
+    ...(onToggleShowVerticalRuler && rulerVisible
+      ? [
+          {
+            icon: 'straighten',
+            label: `${verticalRulerVisible ? '✓ ' : ''}Vertical ruler`,
+            onClick: onToggleShowVerticalRuler,
           } as MenuEntry,
         ]
       : []),

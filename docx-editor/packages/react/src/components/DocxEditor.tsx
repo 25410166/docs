@@ -710,6 +710,12 @@ export interface DocxEditorProps {
    * @deprecated Use `features={{ ruler: false }}`. `features` wins.
    */
   showRuler?: boolean;
+  /**
+   * Show the vertical (left-margin) ruler when the ruler is visible. Off by
+   * default — Google Docs shows only the horizontal ruler; the numbered
+   * vertical gutter reads as clutter. Users can enable it via View menu.
+   */
+  showVerticalRuler?: boolean;
   /** Unit for ruler display (default: 'inch') */
   rulerUnit?: 'inch' | 'cm';
   /** Initial zoom level (default: 1.0) */
@@ -1770,6 +1776,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     showMarginGuides: _showMarginGuides = false,
     marginGuideColor: _marginGuideColor,
     showRuler = false,
+    showVerticalRuler = false,
     rulerUnit = 'inch',
     initialZoom = 1.0,
     readOnly: readOnlyProp = false,
@@ -1936,6 +1943,8 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // Ruler visibility override — once the user toggles it, this takes
   // precedence over the showRuler prop. Initialised from the prop.
   const [showRulerLocal, setShowRulerLocal] = useState<boolean | null>(null);
+  // Vertical ruler is a separate opt-in (default off) — see showVerticalRuler.
+  const [showVerticalRulerLocal, setShowVerticalRulerLocal] = useState<boolean | null>(null);
   // Focus mode (Phase 5) — declared early so it can gate the ruler
   // (and any other chrome) without TDZ errors. The keydown handler +
   // chrome conditionals further below consume the same state.
@@ -1945,6 +1954,9 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const [menuOpen, setMenuOpen] = useState(false);
   const showRulerEffective =
     (showRulerLocal ?? showRuler) && !focusMode && isFeatureEnabled(features, 'ruler', true);
+  // Vertical ruler shows only when the ruler is on AND it's explicitly enabled.
+  const showVerticalRulerEffective =
+    showRulerEffective && (showVerticalRulerLocal ?? showVerticalRuler);
 
   // Feature-flag map (docs#272). `features[id]` wins over the deprecated `show*`
   // shortcut for the same region; omitted keys fall back to the `show*` prop
@@ -4558,6 +4570,10 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const handleToggleShowRuler = useCallback(() => {
     setShowRulerLocal((prev) => !(prev ?? showRuler));
   }, [showRuler]);
+
+  const handleToggleShowVerticalRuler = useCallback(() => {
+    setShowVerticalRulerLocal((prev) => !(prev ?? showVerticalRuler));
+  }, [showVerticalRuler]);
 
   // F6 — View → Show non-printing characters. Persist across sessions so
   // the preference survives a reload, matching how Google Docs / Word
@@ -9582,6 +9598,8 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
                           onInsertFootnote={handleInsertFootnote}
                           onToggleShowRuler={handleToggleShowRuler}
                           rulerVisible={showRulerEffective}
+                          onToggleShowVerticalRuler={handleToggleShowVerticalRuler}
+                          verticalRulerVisible={showVerticalRulerEffective}
                           onToggleShowFormattingMarks={handleToggleShowFormattingMarks}
                           showFormattingMarks={showFormattingMarks}
                           onToggleOutline={handleToggleOutline}
@@ -9811,7 +9829,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
                           bias) so a page-width spacer lands exactly under the
                           page, and the ruler is pinned to that spacer's left
                           edge. */}
-                            {showRulerEffective && !readOnlyProp && (
+                            {showVerticalRulerEffective && !readOnlyProp && (
                               <div
                                 style={{
                                   position: 'absolute',

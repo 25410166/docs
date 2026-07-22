@@ -299,6 +299,10 @@ export interface ToolbarProps {
   onInsertFootnote?: () => void;
   /** Toggle the document ruler visibility (Docs: View > Show ruler). */
   onToggleShowRuler?: () => void;
+  /** Toggle the vertical (left-margin) ruler (View > Vertical ruler). */
+  onToggleShowVerticalRuler?: () => void;
+  /** Whether the vertical ruler is currently visible. */
+  verticalRulerVisible?: boolean;
   /** Whether the ruler is currently visible (checkmark in View menu). */
   rulerVisible?: boolean;
   /** Open the Paste Special dialog (Docs: Edit > Paste special). */
