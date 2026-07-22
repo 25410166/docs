@@ -39,15 +39,26 @@ function isSeparator(entry: MenuEntry): entry is MenuSeparator {
 }
 
 interface MenuDropdownProps {
-  label: string;
+  /**
+   * Trigger content. Usually a string (e.g. "Edit"), but may be arbitrary
+   * ReactNode so the collapsed overflow menu can use a hamburger glyph. When
+   * it's not a string, pass `ariaLabel` + `id` so the trigger stays named and
+   * addressable.
+   */
+  label: ReactNode;
   items: MenuEntry[];
   disabled?: boolean;
   /**
    * Stable id for this menu within a MenuBarProvider. When omitted, the
-   * label is used. Needed so adjacent menus can hover-to-switch and so
-   * ArrowLeft/Right keyboard nav can move between them.
+   * label is used (requires a string label). Needed so adjacent menus can
+   * hover-to-switch and so ArrowLeft/Right keyboard nav can move between them.
    */
   id?: string;
+  /**
+   * Accessible name for the trigger and panel. Falls back to `label` when it
+   * is a string. Required when `label` is non-textual (e.g. a hamburger icon).
+   */
+  ariaLabel?: string;
 }
 
 const triggerStyle: CSSProperties = {
@@ -167,16 +178,113 @@ export function SubMenuItem({
   );
 }
 
-export function MenuDropdown({ label, items, disabled, id }: MenuDropdownProps) {
+/**
+ * MenuEntries — renders a MenuEntry[] as the body rows of a menu panel.
+ *
+ * Extracted from MenuDropdown so it can be reused standalone (e.g. as the
+ * content of a submenu inside a collapsed "hamburger" overflow menu on
+ * narrow viewports). Owns the reserved-icon-gutter logic and the
+ * hover-opened submenu state locally, computed from the `items` passed in.
+ * Clicking a leaf item runs its `onClick` then calls `onClose`.
+ */
+export function MenuEntries({ items, onClose }: { items: MenuEntry[]; onClose: () => void }) {
+  // Reserve the icon gutter for every row only when this menu actually has
+  // at least one icon — fully-textual menus (e.g. Format) stay tight.
+  const hasAnyIcon = items.some((entry) => !isSeparator(entry) && !!entry.icon);
+  const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
+
+  const handleItemClick = (item: MenuItem) => {
+    if (item.disabled || item.submenuContent) return;
+    if (!item.onClick) return;
+    item.onClick();
+    onClose();
+  };
+
+  return (
+    <>
+      {items.map((entry, i) => {
+        if (isSeparator(entry)) {
+          return <div key={`sep-${i}`} role="separator" style={separatorStyle} />;
+        }
+        const item = entry;
+        if (item.customContent) {
+          return (
+            <div key={item.label} onMouseDown={(e) => e.preventDefault()}>
+              {item.customContent}
+            </div>
+          );
+        }
+
+        const hasSubmenu = !!item.submenuContent;
+        const isSubmenuOpen = hoveredSubmenu === item.label;
+
+        return (
+          <div
+            key={item.label}
+            style={{ position: 'relative' }}
+            onMouseEnter={() => hasSubmenu && setHoveredSubmenu(item.label)}
+            onMouseLeave={() => hasSubmenu && setHoveredSubmenu(null)}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              aria-haspopup={hasSubmenu ? 'menu' : undefined}
+              aria-expanded={hasSubmenu ? isSubmenuOpen : undefined}
+              aria-disabled={item.disabled || undefined}
+              style={item.disabled ? menuItemDisabledStyle : menuItemStyle}
+              onClick={() => handleItemClick(item)}
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseOver={(e) => {
+                if (!item.disabled) {
+                  (e.currentTarget as HTMLButtonElement).style.backgroundColor =
+                    'var(--doc-hover, #f3f4f6)';
+                }
+              }}
+              onMouseOut={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
+              }}
+              disabled={item.disabled}
+            >
+              {hasAnyIcon && (
+                <span style={iconSlotStyle}>
+                  {item.icon ? <MaterialSymbol name={item.icon} size={18} /> : null}
+                </span>
+              )}
+              <span>{item.label}</span>
+              {item.shortcut && <span style={shortcutStyle}>{formatShortcut(item.shortcut)}</span>}
+              {hasSubmenu && (
+                <span style={{ marginLeft: 'auto' }}>
+                  <MaterialSymbol name="keyboard_arrow_right" size={16} />
+                </span>
+              )}
+            </button>
+            {hasSubmenu && isSubmenuOpen && (
+              <div
+                role="menu"
+                aria-label={item.label}
+                style={submenuPanelStyle}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                {item.submenuContent!(onClose)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+export function MenuDropdown({ label, items, disabled, id, ariaLabel }: MenuDropdownProps) {
   // When inside a <MenuBarProvider>, isOpen is driven by the shared
   // openId so adjacent menus can hover-to-switch and one click swaps
   // between them. Outside a provider, this falls back to a local
   // boolean and the component keeps its old isolated behavior.
   const bar = useMenuBar();
-  const menuId = id ?? label;
-  // Reserve the icon gutter for every row only when this menu actually has
-  // at least one icon — fully-textual menus (e.g. Format) stay tight.
-  const hasAnyIcon = items.some((entry) => !isSeparator(entry) && !!entry.icon);
+  // Accessible name for the trigger/panel: explicit ariaLabel wins, else the
+  // string label. Non-string labels (e.g. a hamburger glyph) must pass ariaLabel.
+  const accessibleName = ariaLabel ?? (typeof label === 'string' ? label : undefined);
+  const menuId = id ?? (typeof label === 'string' ? label : (accessibleName ?? ''));
   const [localOpen, setLocalOpen] = useState(false);
   const isOpen = bar ? bar.openId === menuId : localOpen;
   const setIsOpen = useCallback(
@@ -187,7 +295,6 @@ export function MenuDropdown({ label, items, disabled, id }: MenuDropdownProps) 
     [bar, menuId]
   );
 
-  const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number }>({
@@ -205,7 +312,6 @@ export function MenuDropdown({ label, items, disabled, id }: MenuDropdownProps) 
 
   const closeMenu = useCallback(() => {
     setIsOpen(false);
-    setHoveredSubmenu(null);
   }, [setIsOpen]);
 
   // Calculate position when opening. useLayoutEffect (not useEffect) so the
@@ -285,13 +391,6 @@ export function MenuDropdown({ label, items, disabled, id }: MenuDropdownProps) 
     };
   }, [isOpen, closeMenu]);
 
-  const handleItemClick = (item: MenuItem) => {
-    if (item.disabled || item.submenuContent) return;
-    if (!item.onClick) return;
-    item.onClick();
-    closeMenu();
-  };
-
   return (
     // The wrapper needs position:relative so the submenu panel can
     // position itself with `left: 100%`. We DO NOT set zIndex on the
@@ -312,6 +411,7 @@ export function MenuDropdown({ label, items, disabled, id }: MenuDropdownProps) 
         // type; aria-expanded tracks open state for screen readers.
         aria-haspopup="menu"
         aria-expanded={isOpen}
+        aria-label={ariaLabel}
         onClick={() => !disabled && setIsOpen(!isOpen)}
         onMouseEnter={() => {
           if (disabled || !bar) return;
@@ -396,7 +496,7 @@ export function MenuDropdown({ label, items, disabled, id }: MenuDropdownProps) 
             // "menu," aria-label gives it a name screen readers can
             // announce when focus enters.
             role="menu"
-            aria-label={label}
+            aria-label={accessibleName}
             style={{
               position: 'fixed',
               top: dropdownPos.top,
@@ -412,77 +512,7 @@ export function MenuDropdown({ label, items, disabled, id }: MenuDropdownProps) 
             }}
             onMouseDown={(e) => e.preventDefault()}
           >
-            {items.map((entry, i) => {
-              if (isSeparator(entry)) {
-                return <div key={`sep-${i}`} role="separator" style={separatorStyle} />;
-              }
-              const item = entry;
-              if (item.customContent) {
-                return (
-                  <div key={item.label} onMouseDown={(e) => e.preventDefault()}>
-                    {item.customContent}
-                  </div>
-                );
-              }
-
-              const hasSubmenu = !!item.submenuContent;
-              const isSubmenuOpen = hoveredSubmenu === item.label;
-
-              return (
-                <div
-                  key={item.label}
-                  style={{ position: 'relative' }}
-                  onMouseEnter={() => hasSubmenu && setHoveredSubmenu(item.label)}
-                  onMouseLeave={() => hasSubmenu && setHoveredSubmenu(null)}
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    aria-haspopup={hasSubmenu ? 'menu' : undefined}
-                    aria-expanded={hasSubmenu ? isSubmenuOpen : undefined}
-                    aria-disabled={item.disabled || undefined}
-                    style={item.disabled ? menuItemDisabledStyle : menuItemStyle}
-                    onClick={() => handleItemClick(item)}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onMouseOver={(e) => {
-                      if (!item.disabled) {
-                        (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-                          'var(--doc-hover, #f3f4f6)';
-                      }
-                    }}
-                    onMouseOut={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
-                    }}
-                    disabled={item.disabled}
-                  >
-                    {hasAnyIcon && (
-                      <span style={iconSlotStyle}>
-                        {item.icon ? <MaterialSymbol name={item.icon} size={18} /> : null}
-                      </span>
-                    )}
-                    <span>{item.label}</span>
-                    {item.shortcut && (
-                      <span style={shortcutStyle}>{formatShortcut(item.shortcut)}</span>
-                    )}
-                    {hasSubmenu && (
-                      <span style={{ marginLeft: 'auto' }}>
-                        <MaterialSymbol name="keyboard_arrow_right" size={16} />
-                      </span>
-                    )}
-                  </button>
-                  {hasSubmenu && isSubmenuOpen && (
-                    <div
-                      role="menu"
-                      aria-label={item.label}
-                      style={submenuPanelStyle}
-                      onMouseDown={(e) => e.preventDefault()}
-                    >
-                      {item.submenuContent!(closeMenu)}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            <MenuEntries items={items} onClose={closeMenu} />
           </div>
         </>
       )}
