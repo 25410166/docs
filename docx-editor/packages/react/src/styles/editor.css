@@ -49,7 +49,7 @@
   --card-foreground: 222.2 84% 4.9%;
   --popover: 0 0% 100%;
   --popover-foreground: 222.2 84% 4.9%;
-  --primary: 221.2 83.2% 53.3%;
+  --primary: 230 100% 59%; /* azure #2f56ff */
   --primary-foreground: 210 40% 98%;
   --secondary: 210 40% 96.1%;
   --secondary-foreground: 222.2 47.4% 11.2%;
@@ -61,7 +61,7 @@
   --destructive-foreground: 210 40% 98%;
   --border: 214.3 31.8% 91.4%;
   --input: 214.3 31.8% 91.4%;
-  --ring: 221.2 83.2% 53.3%;
+  --ring: 230 100% 59%; /* azure #2f56ff */
   --radius: 0.5rem;
 
   /* ========================================
@@ -239,9 +239,9 @@
        --color-border-strong 1.94 → 3.33:1 (input outlines + table borders;
                                             1.4.11 UI-component 3:1 floor)
      Everything else in the DS dark ramp already clears AA. */
-  --color-text-muted: #969aa3;
-  --color-text-disabled: #8b8e96;
-  --color-border-strong: #646a76;
+  --color-text-muted: #8b93a3;
+  --color-text-disabled: #7c8497;
+  --color-border-strong: #3a4150;
   /* Dim the white page to a soft off-white and deepen the desk to near-black
      so the page reads as a calm card instead of a glaring panel. Paper stays
      light (text unchanged); display-only, export keeps the real colors. */
@@ -255,7 +255,7 @@
   --card-foreground: 220 14% 91%;
   --popover: 220 6% 19%;
   --popover-foreground: 220 14% 91%;
-  --primary: 217 89% 61%; /* keep accent blue close-ish for contrast */
+  --primary: 226 100% 72%; /* azure #6e8bff (dark) */
   --primary-foreground: 220 14% 91%;
   --secondary: 220 5% 25%;
   --secondary-foreground: 220 14% 91%;
@@ -267,7 +267,7 @@
   --destructive-foreground: 220 14% 91%;
   --border: 220 5% 25%;
   --input: 220 5% 25%;
-  --ring: 217 89% 61%;
+  --ring: 226 100% 72%; /* azure #6e8bff (dark) */
 }
 
 /* ============================================================================

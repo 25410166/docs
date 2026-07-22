@@ -35,25 +35,25 @@ interface HomeProps {
 type CategoryFilter = 'All' | TemplateCategory;
 
 const COLORS = {
-  ink: '#0f172a',
-  inkMuted: '#475569',
-  inkSubtle: '#94a3b8',
+  ink: '#0b0e15',
+  inkMuted: '#3b4354',
+  inkSubtle: '#8b93a3',
   paper: '#ffffff',
-  surface: '#f8fafc',
-  surface2: '#f1f5f9',
-  border: '#e2e8f0',
-  borderHover: '#94a3b8',
-  brand: '#2563eb',
-  brandHover: '#1d4ed8',
-  brandSoft: '#eff6ff',
+  surface: '#f6f8fc',
+  surface2: '#eef2f8',
+  border: '#e3e8f1',
+  borderHover: '#9aa1b0',
+  brand: '#2f56ff',
+  brandHover: '#2647d6',
+  brandSoft: '#e9edff',
 };
 
 const styles: Record<string, CSSProperties> = {
   page: {
     minHeight: '100vh',
     background:
-      'radial-gradient(1100px 700px at 8% -10%, #dbeafe 0%, transparent 55%),' +
-      'radial-gradient(900px 500px at 100% 0%, #f3e8ff 0%, transparent 50%),' +
+      'radial-gradient(1100px 700px at 8% -10%, #dde4ff 0%, transparent 55%),' +
+      'radial-gradient(900px 500px at 100% 0%, #ece6ff 0%, transparent 50%),' +
       `linear-gradient(180deg, ${COLORS.surface} 0%, ${COLORS.surface2} 100%)`,
     boxSizing: 'border-box',
     fontFamily:
