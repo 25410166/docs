@@ -212,7 +212,9 @@ export function PanelRail({
         <RailButton
           testId="rail-writer"
           label={writerVisible ? 'Hide Writing Assistant' : 'Writing Assistant'}
-          icon="auto_awesome"
+          // Distinct from DocOps (auto_awesome) — the writing assistant reads as
+          // an editing/writing aide, not the same sparkle as document ops.
+          icon="edit_note"
           active={!!writerVisible}
           onClick={onToggleWriter}
         />

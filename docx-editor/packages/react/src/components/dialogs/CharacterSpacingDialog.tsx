@@ -13,7 +13,7 @@
  */
 import React, { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from '../../i18n';
-import { FocusTrap } from '../ui/FocusTrap';
+import { Dialog } from '../ui/Dialog';
 
 export interface CharacterSpacingValue {
   /** Horizontal text scale, percent (w:w). null = default 100%. */
@@ -38,37 +38,7 @@ type PositionMode = 'normal' | 'raised' | 'lowered';
 
 const SCALE_OPTIONS = [200, 150, 100, 90, 80, 66, 50, 33];
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const dialogStyle: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: 8,
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  minWidth: 'min(440px, calc(100vw - 32px))',
-  maxWidth: 520,
-  width: '100%',
-  margin: 'clamp(8px, 2.5vw, 20px)',
-  display: 'flex',
-  flexDirection: 'column',
-};
-
-const headerStyle: CSSProperties = {
-  padding: '16px 20px 12px',
-  borderBottom: '1px solid var(--doc-border)',
-  fontSize: 16,
-  fontWeight: 600,
-};
-
 const bodyStyle: CSSProperties = {
-  padding: '14px 20px',
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
@@ -95,14 +65,6 @@ const inputStyle: CSSProperties = {
   color: 'var(--doc-text-on-surface)',
   boxSizing: 'border-box',
   width: '100%',
-};
-
-const footerStyle: CSSProperties = {
-  padding: '12px 20px',
-  borderTop: '1px solid var(--doc-border)',
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: 8,
 };
 
 const btnStyle: CSSProperties = {
@@ -219,161 +181,152 @@ export function CharacterSpacingDialog({
     return s;
   }, [scale, spacingMode, spacingByPt]);
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      style={overlayStyle}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-        else if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'BUTTON') submit();
-      }}
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t('dialogs.characterSpacing.title')}
+      width={520}
+      testId="character-spacing-dialog"
+      footer={
+        <>
+          <button type="button" style={btnStyle} onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            style={primaryBtnStyle}
+            onClick={submit}
+            data-testid="character-spacing-ok"
+          >
+            {t('common.ok')}
+          </button>
+        </>
+      }
     >
-      <FocusTrap>
-        <div
-          style={dialogStyle}
-          role="dialog"
-          aria-modal="true"
-          aria-label={t('dialogs.characterSpacing.title')}
-          data-testid="character-spacing-dialog"
-        >
-          <div style={headerStyle}>{t('dialogs.characterSpacing.title')}</div>
-          <div style={bodyStyle}>
-            <div style={rowStyle}>
-              <label style={labelStyle} htmlFor="cs-scale">
-                {t('dialogs.characterSpacing.scale')}
-              </label>
-              <select
-                id="cs-scale"
-                value={scale}
-                onChange={(e) => setScale(Number(e.target.value))}
-                style={inputStyle}
-                data-testid="character-spacing-scale"
-              >
-                {SCALE_OPTIONS.map((v) => (
-                  <option key={v} value={v}>
-                    {v}%
-                  </option>
-                ))}
-              </select>
-              <span />
-            </div>
-
-            <div style={rowStyle}>
-              <label style={labelStyle} htmlFor="cs-spacing">
-                {t('dialogs.characterSpacing.spacing')}
-              </label>
-              <select
-                id="cs-spacing"
-                value={spacingMode}
-                onChange={(e) => setSpacingMode(e.target.value as SpacingMode)}
-                style={inputStyle}
-                data-testid="character-spacing-spacing"
-              >
-                <option value="normal">{t('dialogs.characterSpacing.normal')}</option>
-                <option value="expanded">{t('dialogs.characterSpacing.expanded')}</option>
-                <option value="condensed">{t('dialogs.characterSpacing.condensed')}</option>
-              </select>
-              <input
-                type="number"
-                min={0}
-                step={0.1}
-                value={spacingByPt}
-                disabled={spacingMode === 'normal'}
-                onChange={(e) => setSpacingByPt(Number(e.target.value))}
-                style={inputStyle}
-                aria-label={t('dialogs.characterSpacing.spacingBy')}
-                data-testid="character-spacing-spacing-by"
-              />
-            </div>
-
-            <div style={rowStyle}>
-              <label style={labelStyle} htmlFor="cs-position">
-                {t('dialogs.characterSpacing.position')}
-              </label>
-              <select
-                id="cs-position"
-                value={positionMode}
-                onChange={(e) => setPositionMode(e.target.value as PositionMode)}
-                style={inputStyle}
-                data-testid="character-spacing-position"
-              >
-                <option value="normal">{t('dialogs.characterSpacing.normal')}</option>
-                <option value="raised">{t('dialogs.characterSpacing.raised')}</option>
-                <option value="lowered">{t('dialogs.characterSpacing.lowered')}</option>
-              </select>
-              <input
-                type="number"
-                min={0}
-                step={0.5}
-                value={positionByPt}
-                disabled={positionMode === 'normal'}
-                onChange={(e) => setPositionByPt(Number(e.target.value))}
-                style={inputStyle}
-                aria-label={t('dialogs.characterSpacing.positionBy')}
-                data-testid="character-spacing-position-by"
-              />
-            </div>
-
-            <div style={rowStyle}>
-              <label style={labelStyle}>
-                <input
-                  type="checkbox"
-                  checked={kerningEnabled}
-                  onChange={(e) => setKerningEnabled(e.target.checked)}
-                  style={{ marginRight: 6, verticalAlign: 'middle' }}
-                  data-testid="character-spacing-kerning"
-                />
-                {t('dialogs.characterSpacing.kerning')}
-              </label>
-              <span style={{ fontSize: 12, color: 'var(--doc-text-muted)' }}>
-                {t('dialogs.characterSpacing.kerningHint')}
-              </span>
-              <input
-                type="number"
-                min={1}
-                step={0.5}
-                value={kerningPt}
-                disabled={!kerningEnabled}
-                onChange={(e) => setKerningPt(Number(e.target.value))}
-                style={inputStyle}
-                aria-label={t('dialogs.characterSpacing.kerningThreshold')}
-                data-testid="character-spacing-kerning-pt"
-              />
-            </div>
-
-            <div style={{ marginTop: 4 }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: 'var(--doc-text-muted)',
-                  marginBottom: 4,
-                }}
-              >
-                {t('dialogs.characterSpacing.preview')}
-              </div>
-              <div style={previewStyle}>{t('dialogs.characterSpacing.previewSample')}</div>
-            </div>
-          </div>
-          <div style={footerStyle}>
-            <button type="button" style={btnStyle} onClick={onClose}>
-              {t('common.cancel')}
-            </button>
-            <button
-              type="button"
-              style={primaryBtnStyle}
-              onClick={submit}
-              data-testid="character-spacing-ok"
-            >
-              {t('common.ok')}
-            </button>
-          </div>
+      <div
+        style={bodyStyle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'BUTTON') submit();
+        }}
+      >
+        <div style={rowStyle}>
+          <label style={labelStyle} htmlFor="cs-scale">
+            {t('dialogs.characterSpacing.scale')}
+          </label>
+          <select
+            id="cs-scale"
+            value={scale}
+            onChange={(e) => setScale(Number(e.target.value))}
+            style={inputStyle}
+            data-testid="character-spacing-scale"
+          >
+            {SCALE_OPTIONS.map((v) => (
+              <option key={v} value={v}>
+                {v}%
+              </option>
+            ))}
+          </select>
+          <span />
         </div>
-      </FocusTrap>
-    </div>
+
+        <div style={rowStyle}>
+          <label style={labelStyle} htmlFor="cs-spacing">
+            {t('dialogs.characterSpacing.spacing')}
+          </label>
+          <select
+            id="cs-spacing"
+            value={spacingMode}
+            onChange={(e) => setSpacingMode(e.target.value as SpacingMode)}
+            style={inputStyle}
+            data-testid="character-spacing-spacing"
+          >
+            <option value="normal">{t('dialogs.characterSpacing.normal')}</option>
+            <option value="expanded">{t('dialogs.characterSpacing.expanded')}</option>
+            <option value="condensed">{t('dialogs.characterSpacing.condensed')}</option>
+          </select>
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            value={spacingByPt}
+            disabled={spacingMode === 'normal'}
+            onChange={(e) => setSpacingByPt(Number(e.target.value))}
+            style={inputStyle}
+            aria-label={t('dialogs.characterSpacing.spacingBy')}
+            data-testid="character-spacing-spacing-by"
+          />
+        </div>
+
+        <div style={rowStyle}>
+          <label style={labelStyle} htmlFor="cs-position">
+            {t('dialogs.characterSpacing.position')}
+          </label>
+          <select
+            id="cs-position"
+            value={positionMode}
+            onChange={(e) => setPositionMode(e.target.value as PositionMode)}
+            style={inputStyle}
+            data-testid="character-spacing-position"
+          >
+            <option value="normal">{t('dialogs.characterSpacing.normal')}</option>
+            <option value="raised">{t('dialogs.characterSpacing.raised')}</option>
+            <option value="lowered">{t('dialogs.characterSpacing.lowered')}</option>
+          </select>
+          <input
+            type="number"
+            min={0}
+            step={0.5}
+            value={positionByPt}
+            disabled={positionMode === 'normal'}
+            onChange={(e) => setPositionByPt(Number(e.target.value))}
+            style={inputStyle}
+            aria-label={t('dialogs.characterSpacing.positionBy')}
+            data-testid="character-spacing-position-by"
+          />
+        </div>
+
+        <div style={rowStyle}>
+          <label style={labelStyle}>
+            <input
+              type="checkbox"
+              checked={kerningEnabled}
+              onChange={(e) => setKerningEnabled(e.target.checked)}
+              style={{ marginRight: 6, verticalAlign: 'middle' }}
+              data-testid="character-spacing-kerning"
+            />
+            {t('dialogs.characterSpacing.kerning')}
+          </label>
+          <span style={{ fontSize: 12, color: 'var(--doc-text-muted)' }}>
+            {t('dialogs.characterSpacing.kerningHint')}
+          </span>
+          <input
+            type="number"
+            min={1}
+            step={0.5}
+            value={kerningPt}
+            disabled={!kerningEnabled}
+            onChange={(e) => setKerningPt(Number(e.target.value))}
+            style={inputStyle}
+            aria-label={t('dialogs.characterSpacing.kerningThreshold')}
+            data-testid="character-spacing-kerning-pt"
+          />
+        </div>
+
+        <div style={{ marginTop: 4 }}>
+          <div
+            style={{
+              fontSize: 12,
+              color: 'var(--doc-text-muted)',
+              marginBottom: 4,
+            }}
+          >
+            {t('dialogs.characterSpacing.preview')}
+          </div>
+          <div style={previewStyle}>{t('dialogs.characterSpacing.previewSample')}</div>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

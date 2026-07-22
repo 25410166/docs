@@ -221,7 +221,10 @@ const styles: Record<string, CSSProperties> = {
 
   featuredRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    // Fixed 4-up on desktop (mobile override drops to 2) so the capped-at-4
+    // Featured set always fills one clean row — an auto-fit track count would
+    // strand a lone card at intermediate widths.
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
     gap: '18px',
   },
   grid: {
@@ -386,6 +389,13 @@ const mobile: Record<string, CSSProperties> = {
   },
 };
 
+/** Blank templates ship an SVG placeholder rather than a photographic PNG
+ *  render. They paint as a dashed empty-state card, so we keep them out of
+ *  the Featured strip and sort them after the rich previews in each category. */
+function isBlankEntry(entry: TemplateEntry): boolean {
+  return entry.thumbnail.endsWith('.svg');
+}
+
 function TemplateCard({
   entry,
   onSelect,
@@ -398,7 +408,7 @@ function TemplateCard({
   const [hovered, setHovered] = useState(false);
   // Blank entries ship an SVG placeholder rather than a PNG render; give them
   // a clean empty-state instead of an image that crops to grey.
-  const isBlank = entry.thumbnail.endsWith('.svg');
+  const isBlank = isBlankEntry(entry);
   return (
     <button
       type="button"
@@ -780,12 +790,23 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
     });
   }, [query, category]);
 
-  const featured = useMemo(() => TEMPLATES.filter((t) => t.featured), []);
+  // Featured showcases the rich photographic templates only — blank cards paint
+  // as sparse dashed tiles and would strand next to the real previews. Cap at 4
+  // so the auto-fit grid fills one clean row instead of a lopsided 4 + 1.
+  const featured = useMemo(
+    () => TEMPLATES.filter((t) => t.featured && !isBlankEntry(t)).slice(0, 4),
+    []
+  );
 
   const byCategory = useMemo(() => {
     const m = new Map<TemplateCategory, TemplateEntry[]>();
     for (const c of CATEGORIES) m.set(c, []);
     for (const t of TEMPLATES) m.get(t.category)?.push(t);
+    // Sort the blank cards to the end of each category so the rich previews
+    // lead and the sparse tiles group together instead of holing the grid.
+    for (const list of m.values()) {
+      list.sort((a, b) => Number(isBlankEntry(a)) - Number(isBlankEntry(b)));
+    }
     return m;
   }, []);
 
@@ -796,7 +817,9 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
       <header style={{ ...styles.topBar, ...(isMobile && mobile.topBar) }}>
         <div style={styles.brandRow}>
           <img src="/logo.svg" alt="" style={styles.brandLogo} aria-hidden="true" />
-          <div style={styles.brandName}>Casual Editor</div>
+          <div style={styles.brandName}>
+            Casual <span style={{ color: COLORS.brand }}>Editor</span>
+          </div>
         </div>
         <div style={styles.topRight}>
           <a
@@ -836,72 +859,6 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
           A real-time collaborative <code>.docx</code> editor that runs in the browser. Pick a
           template designed for the way you actually work — or open a file from your computer.
         </p>
-      </section>
-
-      <section
-        style={{
-          maxWidth: '1180px',
-          margin: '0 auto',
-          padding: isMobile ? '0 16px 4px' : '0 40px 4px',
-        }}
-        aria-label="AI features pre-release"
-      >
-        <div
-          style={{
-            background: COLORS.brandSoft,
-            border: `1px solid #bfdbfe`,
-            borderRadius: '12px',
-            padding: isMobile ? '14px 16px' : '16px 24px',
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: isMobile ? '10px' : '0',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <span
-              style={{
-                display: 'inline-block',
-                fontSize: '11px',
-                fontWeight: 700,
-                color: COLORS.brand,
-                background: '#dbeafe',
-                border: `1px solid #93c5fd`,
-                padding: '3px 9px',
-                borderRadius: '999px',
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                flexShrink: 0,
-              }}
-            >
-              Pre-release
-            </span>
-            <span style={{ fontSize: '14px', color: COLORS.inkMuted, lineHeight: 1.45 }}>
-              <strong style={{ color: COLORS.ink }}>AI features are on the way</strong> — inline
-              ask ({'⌘'}J / Ctrl+J), rewrite panel, and a DocOps chat panel for
-              document-level operations. Runs fully on-device in the desktop app or against the
-              Anthropic API on the web.
-            </span>
-          </div>
-          <a
-            href="https://github.com/CasualOffice/docs#ai-features-pre-release"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              fontSize: '13px',
-              fontWeight: 600,
-              color: COLORS.brand,
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
-          >
-            Learn more
-          </a>
-        </div>
       </section>
 
       <section style={{ ...styles.controls, ...(isMobile && mobile.controls) }}>
@@ -1078,6 +1035,69 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
         onChange={handleFileChange}
         data-testid="home-file-input"
       />
+
+      <section
+        style={{
+          maxWidth: '1180px',
+          margin: '24px auto 0',
+          padding: isMobile ? '0 16px' : '0 40px',
+        }}
+        aria-label="AI features pre-release"
+      >
+        <div
+          style={{
+            background: COLORS.brandSoft,
+            border: `1px solid #bfdbfe`,
+            borderRadius: '10px',
+            padding: isMobile ? '10px 14px' : '10px 16px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '8px 12px',
+            alignItems: 'center',
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-block',
+              fontSize: '10.5px',
+              fontWeight: 700,
+              color: COLORS.brand,
+              background: '#dbeafe',
+              border: `1px solid #93c5fd`,
+              padding: '2px 8px',
+              borderRadius: '999px',
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              flexShrink: 0,
+            }}
+          >
+            Pre-release
+          </span>
+          <span style={{ fontSize: '13px', color: COLORS.inkMuted, lineHeight: 1.4 }}>
+            <strong style={{ color: COLORS.ink }}>AI features are on the way</strong> — inline ask,
+            rewrite panel, and a DocOps chat panel. On-device in the desktop app, or the Anthropic
+            API on the web.
+          </span>
+          <a
+            href="https://github.com/CasualOffice/docs#ai-features-pre-release"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              marginLeft: 'auto',
+              fontSize: '13px',
+              fontWeight: 600,
+              color: COLORS.brand,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+          >
+            Learn more
+          </a>
+        </div>
+      </section>
 
       <footer style={{ ...styles.footer, ...(isMobile && mobile.footer) }}>
         <span>MIT fork of eigenpal/docx-editor · Node collab server (Hocuspocus + Yjs)</span>

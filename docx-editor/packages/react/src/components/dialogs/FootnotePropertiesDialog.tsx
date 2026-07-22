@@ -6,6 +6,11 @@
  * Footnote & Endnote Properties Dialog
  *
  * Edits position, numbering format, start number, and restart rules.
+ *
+ * Migrated onto the shared <Dialog> shell — the shell owns the
+ * backdrop / blur / scale-in motion / header + close-X / focus trap /
+ * Esc + backdrop dismissal. This file only describes the two property
+ * sections (footnote + endnote) and the footer action row.
  */
 
 import React, { useState, useCallback } from 'react';
@@ -20,6 +25,7 @@ import type {
 } from '@eigenpal/docx-core/types/document';
 import { useTranslation } from '../../i18n';
 import type { TranslationKey } from '../../i18n';
+import { Dialog } from '../ui/Dialog';
 
 // ============================================================================
 // TYPES
@@ -34,30 +40,8 @@ export interface FootnotePropertiesDialogProps {
 }
 
 // ============================================================================
-// STYLES
+// STYLES — body / form only. Shell chrome lives in <Dialog>.
 // ============================================================================
-
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const dialogStyle: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: 8,
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  padding: 24,
-  minWidth: 'min(400px, calc(100vw - 32px))',
-  maxWidth: 500,
-};
 
 const sectionStyle: CSSProperties = {
   marginBottom: 16,
@@ -95,13 +79,6 @@ const inputStyle: CSSProperties = {
   marginBottom: 8,
 };
 
-const buttonRowStyle: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: 8,
-  marginTop: 16,
-};
-
 const buttonStyle: CSSProperties = {
   padding: '6px 16px',
   border: '1px solid var(--doc-border, #ccc)',
@@ -113,9 +90,9 @@ const buttonStyle: CSSProperties = {
 
 const primaryButtonStyle: CSSProperties = {
   ...buttonStyle,
-  backgroundColor: '#2563eb',
+  backgroundColor: 'var(--doc-primary)',
   color: 'white',
-  border: '1px solid #2563eb',
+  border: '1px solid var(--doc-primary)',
 };
 
 // ============================================================================
@@ -141,7 +118,7 @@ export function FootnotePropertiesDialog({
   onApply,
   footnotePr,
   endnotePr,
-}: FootnotePropertiesDialogProps): React.ReactElement | null {
+}: FootnotePropertiesDialogProps): React.ReactElement {
   const { t } = useTranslation();
   const [fnPosition, setFnPosition] = useState<FootnotePosition>(
     footnotePr?.position ?? 'pageBottom'
@@ -178,151 +155,150 @@ export function FootnotePropertiesDialog({
     onClose,
   ]);
 
-  if (!isOpen) return null;
-
   return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div style={dialogStyle} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ margin: '0 0 16px', fontSize: 16 }}>
-          {t('dialogs.footnoteProperties.title')}
-        </h3>
-
-        {/* Footnote section */}
-        <div style={sectionStyle}>
-          <h4 style={{ margin: '0 0 8px', fontSize: 14 }}>
-            {t('dialogs.footnoteProperties.footnotes')}
-          </h4>
-
-          <label style={labelStyle}>{t('dialogs.footnoteProperties.position')}</label>
-          <select
-            style={selectStyle}
-            value={fnPosition}
-            onChange={(e) => setFnPosition(e.target.value as FootnotePosition)}
-          >
-            <option value="pageBottom">
-              {t('dialogs.footnoteProperties.footnotePositions.bottomOfPage')}
-            </option>
-            <option value="beneathText">
-              {t('dialogs.footnoteProperties.footnotePositions.belowText')}
-            </option>
-          </select>
-
-          <label style={labelStyle}>{t('dialogs.footnoteProperties.numberFormat')}</label>
-          <select
-            style={selectStyle}
-            value={fnNumFmt}
-            onChange={(e) => setFnNumFmt(e.target.value as NumberFormat)}
-          >
-            {numberFormatOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {t(o.labelKey)}
-              </option>
-            ))}
-          </select>
-
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div>
-              <label style={labelStyle}>{t('dialogs.footnoteProperties.startAt')}</label>
-              <input
-                type="number"
-                min={1}
-                style={inputStyle}
-                value={fnNumStart}
-                onChange={(e) => setFnNumStart(parseInt(e.target.value, 10) || 1)}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>{t('dialogs.footnoteProperties.numbering')}</label>
-              <select
-                style={selectStyle}
-                value={fnRestart}
-                onChange={(e) => setFnRestart(e.target.value as NoteNumberRestart)}
-              >
-                <option value="continuous">
-                  {t('dialogs.footnoteProperties.numberingOptions.continuous')}
-                </option>
-                <option value="eachSect">
-                  {t('dialogs.footnoteProperties.numberingOptions.restartSection')}
-                </option>
-                <option value="eachPage">
-                  {t('dialogs.footnoteProperties.numberingOptions.restartPage')}
-                </option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Endnote section */}
-        <div style={sectionStyle}>
-          <h4 style={{ margin: '0 0 8px', fontSize: 14 }}>
-            {t('dialogs.footnoteProperties.endnotes')}
-          </h4>
-
-          <label style={labelStyle}>{t('dialogs.footnoteProperties.position')}</label>
-          <select
-            style={selectStyle}
-            value={enPosition}
-            onChange={(e) => setEnPosition(e.target.value as EndnotePosition)}
-          >
-            <option value="docEnd">
-              {t('dialogs.footnoteProperties.endnotePositions.endOfDocument')}
-            </option>
-            <option value="sectEnd">
-              {t('dialogs.footnoteProperties.endnotePositions.endOfSection')}
-            </option>
-          </select>
-
-          <label style={labelStyle}>{t('dialogs.footnoteProperties.numberFormat')}</label>
-          <select
-            style={selectStyle}
-            value={enNumFmt}
-            onChange={(e) => setEnNumFmt(e.target.value as NumberFormat)}
-          >
-            {numberFormatOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {t(o.labelKey)}
-              </option>
-            ))}
-          </select>
-
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div>
-              <label style={labelStyle}>{t('dialogs.footnoteProperties.startAt')}</label>
-              <input
-                type="number"
-                min={1}
-                style={inputStyle}
-                value={enNumStart}
-                onChange={(e) => setEnNumStart(parseInt(e.target.value, 10) || 1)}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>{t('dialogs.footnoteProperties.numbering')}</label>
-              <select
-                style={selectStyle}
-                value={enRestart}
-                onChange={(e) => setEnRestart(e.target.value as NoteNumberRestart)}
-              >
-                <option value="continuous">
-                  {t('dialogs.footnoteProperties.numberingOptions.continuous')}
-                </option>
-                <option value="eachSect">
-                  {t('dialogs.footnoteProperties.numberingOptions.restartSection')}
-                </option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div style={buttonRowStyle}>
-          <button style={buttonStyle} onClick={onClose}>
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t('dialogs.footnoteProperties.title')}
+      width={500}
+      testId="footnote-properties-dialog"
+      footer={
+        <>
+          <button type="button" style={buttonStyle} onClick={onClose}>
             {t('common.cancel')}
           </button>
-          <button style={primaryButtonStyle} onClick={handleApply}>
+          <button type="button" style={primaryButtonStyle} onClick={handleApply}>
             {t('common.apply')}
           </button>
+        </>
+      }
+    >
+      {/* Footnote section */}
+      <div style={sectionStyle}>
+        <h4 style={{ margin: '0 0 8px', fontSize: 14 }}>
+          {t('dialogs.footnoteProperties.footnotes')}
+        </h4>
+
+        <label style={labelStyle}>{t('dialogs.footnoteProperties.position')}</label>
+        <select
+          style={selectStyle}
+          value={fnPosition}
+          onChange={(e) => setFnPosition(e.target.value as FootnotePosition)}
+        >
+          <option value="pageBottom">
+            {t('dialogs.footnoteProperties.footnotePositions.bottomOfPage')}
+          </option>
+          <option value="beneathText">
+            {t('dialogs.footnoteProperties.footnotePositions.belowText')}
+          </option>
+        </select>
+
+        <label style={labelStyle}>{t('dialogs.footnoteProperties.numberFormat')}</label>
+        <select
+          style={selectStyle}
+          value={fnNumFmt}
+          onChange={(e) => setFnNumFmt(e.target.value as NumberFormat)}
+        >
+          {numberFormatOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {t(o.labelKey)}
+            </option>
+          ))}
+        </select>
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div>
+            <label style={labelStyle}>{t('dialogs.footnoteProperties.startAt')}</label>
+            <input
+              type="number"
+              min={1}
+              style={inputStyle}
+              value={fnNumStart}
+              onChange={(e) => setFnNumStart(parseInt(e.target.value, 10) || 1)}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>{t('dialogs.footnoteProperties.numbering')}</label>
+            <select
+              style={selectStyle}
+              value={fnRestart}
+              onChange={(e) => setFnRestart(e.target.value as NoteNumberRestart)}
+            >
+              <option value="continuous">
+                {t('dialogs.footnoteProperties.numberingOptions.continuous')}
+              </option>
+              <option value="eachSect">
+                {t('dialogs.footnoteProperties.numberingOptions.restartSection')}
+              </option>
+              <option value="eachPage">
+                {t('dialogs.footnoteProperties.numberingOptions.restartPage')}
+              </option>
+            </select>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Endnote section */}
+      <div style={sectionStyle}>
+        <h4 style={{ margin: '0 0 8px', fontSize: 14 }}>
+          {t('dialogs.footnoteProperties.endnotes')}
+        </h4>
+
+        <label style={labelStyle}>{t('dialogs.footnoteProperties.position')}</label>
+        <select
+          style={selectStyle}
+          value={enPosition}
+          onChange={(e) => setEnPosition(e.target.value as EndnotePosition)}
+        >
+          <option value="docEnd">
+            {t('dialogs.footnoteProperties.endnotePositions.endOfDocument')}
+          </option>
+          <option value="sectEnd">
+            {t('dialogs.footnoteProperties.endnotePositions.endOfSection')}
+          </option>
+        </select>
+
+        <label style={labelStyle}>{t('dialogs.footnoteProperties.numberFormat')}</label>
+        <select
+          style={selectStyle}
+          value={enNumFmt}
+          onChange={(e) => setEnNumFmt(e.target.value as NumberFormat)}
+        >
+          {numberFormatOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {t(o.labelKey)}
+            </option>
+          ))}
+        </select>
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div>
+            <label style={labelStyle}>{t('dialogs.footnoteProperties.startAt')}</label>
+            <input
+              type="number"
+              min={1}
+              style={inputStyle}
+              value={enNumStart}
+              onChange={(e) => setEnNumStart(parseInt(e.target.value, 10) || 1)}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>{t('dialogs.footnoteProperties.numbering')}</label>
+            <select
+              style={selectStyle}
+              value={enRestart}
+              onChange={(e) => setEnRestart(e.target.value as NoteNumberRestart)}
+            >
+              <option value="continuous">
+                {t('dialogs.footnoteProperties.numberingOptions.continuous')}
+              </option>
+              <option value="eachSect">
+                {t('dialogs.footnoteProperties.numberingOptions.restartSection')}
+              </option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </Dialog>
   );
 }

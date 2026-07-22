@@ -56,7 +56,6 @@ export const TEMPLATES: TemplateEntry[] = [
     thumbnail: '/templates/thumbs/blank.svg',
     source: { kind: 'synthesized' },
     defaultFileName: 'Untitled.docx',
-    featured: true,
   },
   {
     id: 'blank-markdown',
@@ -70,7 +69,6 @@ export const TEMPLATES: TemplateEntry[] = [
     thumbnail: '/templates/thumbs/blank.svg',
     source: { kind: 'text', textKind: 'markdown' },
     defaultFileName: 'Untitled.md',
-    featured: true,
   },
   {
     id: 'blank-text',
@@ -175,6 +173,7 @@ export const TEMPLATES: TemplateEntry[] = [
     thumbnail: '/templates/thumbs/travel-itinerary.png',
     source: { kind: 'docx', path: '/templates/travel-itinerary.docx' },
     defaultFileName: 'Travel itinerary.docx',
+    featured: true,
   },
   {
     id: 'recipe',
