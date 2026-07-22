@@ -21,6 +21,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import type { BuildingBlock } from '../../utils/buildingBlocks';
+import { Dialog } from '../ui/Dialog';
 
 export interface BuildingBlocksDialogProps {
   isOpen: boolean;
@@ -37,41 +38,10 @@ export interface BuildingBlocksDialogProps {
   onDelete: (id: string) => void;
 }
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const dialogStyle: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: 8,
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  minWidth: 460,
-  maxWidth: 560,
-  width: '100%',
-  margin: 20,
-};
-
-const headerStyle: CSSProperties = {
-  padding: '16px 20px 12px',
-  borderBottom: '1px solid var(--doc-border, #ddd)',
-  fontSize: 16,
-  fontWeight: 600,
-  color: 'var(--doc-text-on-surface, #1f2937)',
-};
-
 const bodyStyle: CSSProperties = {
-  padding: '16px 20px',
   display: 'flex',
   flexDirection: 'column',
   gap: 16,
-  maxHeight: '60vh',
-  overflowY: 'auto',
 };
 
 const sectionLabelStyle: CSSProperties = {
@@ -147,14 +117,6 @@ const rowActionsStyle: CSSProperties = {
   flexShrink: 0,
 };
 
-const footerStyle: CSSProperties = {
-  padding: '12px 20px 16px',
-  borderTop: '1px solid var(--doc-border, #ddd)',
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: 8,
-};
-
 const btnBase: CSSProperties = {
   padding: '6px 16px',
   fontSize: 13,
@@ -215,17 +177,6 @@ export function BuildingBlocksDialog({
     if (isOpen) setName('');
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   const trimmedName = name.trim();
   const canSave = pendingPreview !== null && trimmedName.length > 0;
 
@@ -236,115 +187,105 @@ export function BuildingBlocksDialog({
   };
 
   return (
-    <div
-      className="ep-dialog-overlay"
-      style={overlayStyle}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Building blocks"
+      width={560}
+      testId="building-blocks-dialog"
+      footer={
+        <button type="button" style={secondaryBtnStyle} onClick={onClose}>
+          Close
+        </button>
+      }
     >
-      <div
-        className="ep-dialog-shell"
-        style={dialogStyle}
-        role="dialog"
-        aria-label="Building blocks"
-        data-testid="building-blocks-dialog"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div style={headerStyle}>Building blocks</div>
-        <div style={bodyStyle}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={sectionLabelStyle}>Save current selection</div>
-            {pendingPreview === null ? (
-              <div style={noSelectionHintStyle} data-testid="bb-no-selection">
-                Select text or content in the document, then reopen this dialog to save it as a
-                reusable block.
+      <div style={bodyStyle}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={sectionLabelStyle}>Save current selection</div>
+          {pendingPreview === null ? (
+            <div style={noSelectionHintStyle} data-testid="bb-no-selection">
+              Select text or content in the document, then reopen this dialog to save it as a
+              reusable block.
+            </div>
+          ) : (
+            <>
+              <div style={saveRowStyle}>
+                <input
+                  type="text"
+                  placeholder="Block name (e.g. Signature)"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitSave();
+                  }}
+                  data-testid="bb-name-input"
+                  style={inputStyle}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  style={primaryBtnStyle}
+                  data-testid="bb-save"
+                  disabled={!canSave}
+                  onClick={submitSave}
+                >
+                  Save
+                </button>
               </div>
-            ) : (
-              <>
-                <div style={saveRowStyle}>
-                  <input
-                    type="text"
-                    placeholder="Block name (e.g. Signature)"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') submitSave();
+              <div style={previewHintStyle}>“{pendingPreview}”</div>
+            </>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={sectionLabelStyle}>
+            Saved blocks{blocks.length > 0 ? ` (${blocks.length})` : ''}
+          </div>
+          {blocks.length === 0 ? (
+            <div style={emptyStateStyle} data-testid="bb-empty">
+              No building blocks saved yet.
+            </div>
+          ) : (
+            blocks.map((block) => (
+              <div key={block.id} style={blockRowStyle} data-testid={`bb-row-${block.id}`}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={blockNameStyle}>{block.name}</div>
+                  <div
+                    style={{
+                      ...blockPreviewStyle,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
                     }}
-                    data-testid="bb-name-input"
-                    style={inputStyle}
-                    autoFocus
-                  />
+                  >
+                    {block.preview}
+                  </div>
+                </div>
+                <div style={rowActionsStyle}>
                   <button
                     type="button"
-                    style={primaryBtnStyle}
-                    data-testid="bb-save"
-                    disabled={!canSave}
-                    onClick={submitSave}
+                    style={insertBtnStyle}
+                    data-testid={`bb-insert-${block.id}`}
+                    onClick={() => onInsert(block.id)}
                   >
-                    Save
+                    Insert
+                  </button>
+                  <button
+                    type="button"
+                    style={deleteBtnStyle}
+                    data-testid={`bb-delete-${block.id}`}
+                    onClick={() => onDelete(block.id)}
+                    aria-label={`Delete ${block.name}`}
+                  >
+                    Delete
                   </button>
                 </div>
-                <div style={previewHintStyle}>“{pendingPreview}”</div>
-              </>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={sectionLabelStyle}>
-              Saved blocks{blocks.length > 0 ? ` (${blocks.length})` : ''}
-            </div>
-            {blocks.length === 0 ? (
-              <div style={emptyStateStyle} data-testid="bb-empty">
-                No building blocks saved yet.
               </div>
-            ) : (
-              blocks.map((block) => (
-                <div key={block.id} style={blockRowStyle} data-testid={`bb-row-${block.id}`}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={blockNameStyle}>{block.name}</div>
-                    <div
-                      style={{
-                        ...blockPreviewStyle,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {block.preview}
-                    </div>
-                  </div>
-                  <div style={rowActionsStyle}>
-                    <button
-                      type="button"
-                      style={insertBtnStyle}
-                      data-testid={`bb-insert-${block.id}`}
-                      onClick={() => onInsert(block.id)}
-                    >
-                      Insert
-                    </button>
-                    <button
-                      type="button"
-                      style={deleteBtnStyle}
-                      data-testid={`bb-delete-${block.id}`}
-                      onClick={() => onDelete(block.id)}
-                      aria-label={`Delete ${block.name}`}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-        <div style={footerStyle}>
-          <button type="button" style={secondaryBtnStyle} onClick={onClose}>
-            Close
-          </button>
+            ))
+          )}
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 

@@ -18,6 +18,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { PanelState } from '../ui/PanelState';
 import { translateText, TRANSLATE_LANGUAGES as LANGUAGES } from '../../lib/translate';
+import { Dialog } from '../ui/Dialog';
 
 export interface TranslateDialogProps {
   isOpen: boolean;
@@ -33,41 +34,10 @@ export interface TranslateDialogProps {
   onReplace?: (source: string, target: string) => Promise<void>;
 }
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const dialogStyle: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: 8,
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  minWidth: 600,
-  maxWidth: 720,
-  width: '100%',
-  margin: 20,
-};
-
-const headerStyle: CSSProperties = {
-  padding: '16px 20px 12px',
-  borderBottom: '1px solid var(--doc-border, #ddd)',
-  fontSize: 16,
-  fontWeight: 600,
-  color: 'var(--doc-text-on-surface, #1f2937)',
-};
-
 const bodyStyle: CSSProperties = {
-  padding: '16px 20px',
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
-  maxHeight: '60vh',
-  overflowY: 'auto',
 };
 
 const langRowStyle: CSSProperties = {
@@ -164,14 +134,6 @@ const copyBtnStyle: CSSProperties = {
   alignSelf: 'flex-end',
 };
 
-const footerStyle: CSSProperties = {
-  padding: '12px 20px 16px',
-  borderTop: '1px solid var(--doc-border, #ddd)',
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: 8,
-};
-
 export function TranslateDialog({ isOpen, onClose, initialText, onReplace }: TranslateDialogProps) {
   const [source, setSource] = useState('en');
   const [target, setTarget] = useState('es');
@@ -220,17 +182,6 @@ export function TranslateDialog({ isOpen, onClose, initialText, onReplace }: Tra
     return () => controller.abort();
   }, [isOpen, text, source, target]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   const swap = () => {
     setSource(target);
     setTarget(source);
@@ -248,108 +199,14 @@ export function TranslateDialog({ isOpen, onClose, initialText, onReplace }: Tra
   };
 
   return (
-    <div
-      className="ep-dialog-overlay"
-      style={overlayStyle}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="ep-dialog-shell"
-        style={dialogStyle}
-        role="dialog"
-        aria-label="Translate"
-        data-testid="translate-dialog"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div style={headerStyle}>Translate</div>
-        <div style={bodyStyle}>
-          <div style={langRowStyle}>
-            <select
-              style={selectStyle}
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              data-testid="translate-source"
-              aria-label="Source language"
-            >
-              {LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              style={swapBtnStyle}
-              data-testid="translate-swap"
-              onClick={swap}
-              aria-label="Swap languages"
-            >
-              ⇄
-            </button>
-            <select
-              style={selectStyle}
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              data-testid="translate-target"
-              aria-label="Target language"
-            >
-              {LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={langRowStyle}>
-            <div style={sideStyle}>
-              <span style={labelStyle}>Original</span>
-              <div style={sourceBoxStyle} data-testid="translate-source-text">
-                {text || <span style={{ color: 'var(--doc-text-muted)' }}>(no selection)</span>}
-              </div>
-            </div>
-            <span style={arrowStyle} aria-hidden="true">
-              →
-            </span>
-            <div style={sideStyle}>
-              <span style={labelStyle}>Translation</span>
-              {status === 'loading' && <PanelState kind="loading" message="Translating…" />}
-              {status === 'error' && (
-                <PanelState
-                  kind="error"
-                  message="Couldn't reach the translation service."
-                  hint="Check your connection and try again."
-                  onRetry={() => setText((t) => t)}
-                />
-              )}
-              {status === 'idle' && (
-                <div style={targetBoxStyle}>
-                  <span style={{ color: 'var(--doc-text-muted)' }}>
-                    Select text in the document, or paste it on the left.
-                  </span>
-                </div>
-              )}
-              {status === 'success' && (
-                <>
-                  <div style={targetBoxStyle} data-testid="translate-result">
-                    {result}
-                  </div>
-                  <button
-                    type="button"
-                    style={copyBtnStyle}
-                    data-testid="translate-copy"
-                    onClick={copy}
-                  >
-                    {copyHint ? 'Copied' : 'Copy'}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-        <div style={footerStyle}>
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Translate"
+      width={720}
+      testId="translate-dialog"
+      footer={
+        <>
           <button type="button" style={secondaryBtnStyle} onClick={onClose}>
             Close
           </button>
@@ -383,9 +240,95 @@ export function TranslateDialog({ isOpen, onClose, initialText, onReplace }: Tra
               {replaceStatus === 'running' ? 'Replacing…' : 'Replace in document'}
             </button>
           )}
+        </>
+      }
+    >
+      <div style={bodyStyle}>
+        <div style={langRowStyle}>
+          <select
+            style={selectStyle}
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            data-testid="translate-source"
+            aria-label="Source language"
+          >
+            {LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            style={swapBtnStyle}
+            data-testid="translate-swap"
+            onClick={swap}
+            aria-label="Swap languages"
+          >
+            ⇄
+          </button>
+          <select
+            style={selectStyle}
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            data-testid="translate-target"
+            aria-label="Target language"
+          >
+            {LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={langRowStyle}>
+          <div style={sideStyle}>
+            <span style={labelStyle}>Original</span>
+            <div style={sourceBoxStyle} data-testid="translate-source-text">
+              {text || <span style={{ color: 'var(--doc-text-muted)' }}>(no selection)</span>}
+            </div>
+          </div>
+          <span style={arrowStyle} aria-hidden="true">
+            →
+          </span>
+          <div style={sideStyle}>
+            <span style={labelStyle}>Translation</span>
+            {status === 'loading' && <PanelState kind="loading" message="Translating…" />}
+            {status === 'error' && (
+              <PanelState
+                kind="error"
+                message="Couldn't reach the translation service."
+                hint="Check your connection and try again."
+                onRetry={() => setText((t) => t)}
+              />
+            )}
+            {status === 'idle' && (
+              <div style={targetBoxStyle}>
+                <span style={{ color: 'var(--doc-text-muted)' }}>
+                  Select text in the document, or paste it on the left.
+                </span>
+              </div>
+            )}
+            {status === 'success' && (
+              <>
+                <div style={targetBoxStyle} data-testid="translate-result">
+                  {result}
+                </div>
+                <button
+                  type="button"
+                  style={copyBtnStyle}
+                  data-testid="translate-copy"
+                  onClick={copy}
+                >
+                  {copyHint ? 'Copied' : 'Copy'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
