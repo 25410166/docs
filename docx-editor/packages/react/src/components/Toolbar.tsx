@@ -539,13 +539,14 @@ export function ToolbarGroup({ label, children, className }: ToolbarGroupProps) 
     <div
       className={cn(
         // Visual rhythm: gap-0.5 between buttons (2 px) gives quiet
-        // breathing room without spreading the bar; px-2 around the
-        // group + a soft --doc-border-light divider on the right makes
-        // each group read as its own unit. The first group has no
+        // breathing room without spreading the bar; px-2.5 around the
+        // group + a --doc-border divider on the right makes each group
+        // read as its own unit. The lighter --doc-border-light was too
+        // faint — groups blurred into one strip. The first group has no
         // left padding so it sits flush with the bar's leading edge,
         // and the last group drops its divider so the bar doesn't end
         // with a phantom line.
-        'flex items-center gap-0.5 px-2 border-r border-[color:var(--doc-border-light)] last:border-r-0 first:pl-0',
+        'flex items-center gap-0.5 px-2.5 border-r border-[color:var(--doc-border)] last:border-r-0 first:pl-0',
         className
       )}
       role="group"
@@ -562,7 +563,7 @@ export function ToolbarGroup({ label, children, className }: ToolbarGroupProps) 
 export function ToolbarSeparator() {
   // Use the shared border token (like ToolbarGroup's divider), not hardcoded
   // slate — so it stays consistent across light/dark and any theme retint.
-  return <div className="w-px h-6 mx-1.5 bg-[color:var(--doc-border-light)]" role="separator" />;
+  return <div className="w-px h-6 mx-2 bg-[color:var(--doc-border)]" role="separator" />;
 }
 
 // ============================================================================
