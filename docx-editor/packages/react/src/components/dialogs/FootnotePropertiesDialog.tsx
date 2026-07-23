@@ -26,6 +26,7 @@ import type {
 import { useTranslation } from '../../i18n';
 import type { TranslationKey } from '../../i18n';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 // ============================================================================
 // TYPES
@@ -77,22 +78,6 @@ const inputStyle: CSSProperties = {
   borderRadius: 4,
   fontSize: 13,
   marginBottom: 8,
-};
-
-const buttonStyle: CSSProperties = {
-  padding: '6px 16px',
-  border: '1px solid var(--doc-border, #ccc)',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontSize: 13,
-  backgroundColor: 'var(--doc-surface, white)',
-};
-
-const primaryButtonStyle: CSSProperties = {
-  ...buttonStyle,
-  backgroundColor: 'var(--doc-primary)',
-  color: 'white',
-  border: '1px solid var(--doc-primary)',
 };
 
 // ============================================================================
@@ -164,12 +149,12 @@ export function FootnotePropertiesDialog({
       testId="footnote-properties-dialog"
       footer={
         <>
-          <button type="button" style={buttonStyle} onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             {t('common.cancel')}
-          </button>
-          <button type="button" style={primaryButtonStyle} onClick={handleApply}>
+          </Button>
+          <Button type="button" variant="default" size="sm" onClick={handleApply}>
             {t('common.apply')}
-          </button>
+          </Button>
         </>
       }
     >

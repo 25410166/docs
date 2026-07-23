@@ -21,6 +21,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 export interface WatermarkValue {
   text: string;
@@ -93,36 +94,6 @@ const hintStyle: CSSProperties = {
   color: 'var(--doc-text-muted, #6b7280)',
 };
 
-const btnBase: CSSProperties = {
-  padding: '6px 16px',
-  fontSize: 13,
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontWeight: 500,
-};
-
-const primaryBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-primary, #1a73e8)',
-  background: 'var(--doc-primary, #1a73e8)',
-  color: 'white',
-};
-
-const secondaryBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-border, #d1d5db)',
-  background: 'transparent',
-  color: 'var(--doc-text-on-surface, #1f2937)',
-};
-
-const dangerBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-border, #d1d5db)',
-  background: 'transparent',
-  color: 'var(--doc-error, #d93025)',
-  marginRight: 'auto',
-};
-
 const colorInputStyle: CSSProperties = {
   width: 36,
   height: 28,
@@ -189,9 +160,11 @@ export function WatermarkDialog({ isOpen, onClose, current, onApply }: Watermark
       footer={
         <>
           {current && (
-            <button
+            <Button
               type="button"
-              style={dangerBtnStyle}
+              variant="outline"
+              size="sm"
+              className="mr-auto text-[color:var(--doc-error,#d93025)]"
               data-testid="watermark-remove"
               onClick={() => {
                 onApply(undefined);
@@ -199,20 +172,21 @@ export function WatermarkDialog({ isOpen, onClose, current, onApply }: Watermark
               }}
             >
               Remove
-            </button>
+            </Button>
           )}
-          <button type="button" style={secondaryBtnStyle} onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            style={primaryBtnStyle}
+            variant="default"
+            size="sm"
             data-testid="watermark-apply"
             disabled={trimmed.length === 0}
             onClick={apply}
           >
             Apply
-          </button>
+          </Button>
         </>
       }
     >

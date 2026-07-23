@@ -16,6 +16,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Dialog } from '../ui/Dialog';
 import { PanelState } from '../ui/PanelState';
+import { Button } from '../ui/Button';
 
 export interface DictionaryDialogProps {
   isOpen: boolean;
@@ -67,13 +68,6 @@ const primaryBtnStyle: CSSProperties = {
   border: '1px solid var(--doc-primary, #1a73e8)',
   background: 'var(--doc-primary, #1a73e8)',
   color: 'white',
-};
-
-const secondaryBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-border, #d1d5db)',
-  background: 'transparent',
-  color: 'var(--doc-text-on-surface, #1f2937)',
 };
 
 const meaningStyle: CSSProperties = {
@@ -184,9 +178,9 @@ export function DictionaryDialog({ isOpen, onClose, initialWord }: DictionaryDia
       width={520}
       testId="dictionary-dialog"
       footer={
-        <button type="button" style={secondaryBtnStyle} onClick={onClose}>
+        <Button type="button" variant="outline" size="sm" onClick={onClose}>
           Close
-        </button>
+        </Button>
       }
     >
       <div style={contentStyle}>

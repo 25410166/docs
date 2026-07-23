@@ -19,6 +19,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { PanelState } from '../ui/PanelState';
 import { translateText, TRANSLATE_LANGUAGES as LANGUAGES } from '../../lib/translate';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 export interface TranslateDialogProps {
   isOpen: boolean;
@@ -107,21 +108,6 @@ const swapBtnStyle: CSSProperties = {
   cursor: 'pointer',
 };
 
-const btnBase: CSSProperties = {
-  padding: '6px 16px',
-  fontSize: 13,
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontWeight: 500,
-};
-
-const secondaryBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-border, #d1d5db)',
-  background: 'transparent',
-  color: 'var(--doc-text-on-surface, #1f2937)',
-};
-
 const copyBtnStyle: CSSProperties = {
   padding: '4px 10px',
   fontSize: 12,
@@ -207,22 +193,15 @@ export function TranslateDialog({ isOpen, onClose, initialText, onReplace }: Tra
       testId="translate-dialog"
       footer={
         <>
-          <button type="button" style={secondaryBtnStyle} onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Close
-          </button>
+          </Button>
           {onReplace && (
-            <button
+            <Button
               type="button"
+              variant="default"
+              size="sm"
               data-testid="translate-replace"
-              style={{
-                ...btnBase,
-                border: '1px solid var(--doc-primary, #1a73e8)',
-                background: 'var(--doc-primary, #1a73e8)',
-                color: 'white',
-                opacity: status === 'success' && replaceStatus === 'idle' ? 1 : 0.6,
-                cursor:
-                  status === 'success' && replaceStatus === 'idle' ? 'pointer' : 'not-allowed',
-              }}
               disabled={status !== 'success' || replaceStatus !== 'idle'}
               onClick={async () => {
                 setReplaceStatus('running');
@@ -238,7 +217,7 @@ export function TranslateDialog({ isOpen, onClose, initialText, onReplace }: Tra
               }}
             >
               {replaceStatus === 'running' ? 'Replacing…' : 'Replace in document'}
-            </button>
+            </Button>
           )}
         </>
       }

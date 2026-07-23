@@ -25,6 +25,7 @@ import { Slice, Fragment as PMFragment } from 'prosemirror-model';
 import type { EditorView } from 'prosemirror-view';
 import { PanelState } from '../ui/PanelState';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 import { translateFragment, TRANSLATE_LANGUAGES as LANGUAGES } from '../../lib/translate';
 import { translateDocViaMarkdown, type ChunkTranslationState } from '../../lib/translateMarkdown';
 import { isLlmReady } from '../../lib/writer/controller';
@@ -146,13 +147,6 @@ const secondaryBtnStyle: CSSProperties = {
   border: '1px solid var(--doc-border, #d1d5db)',
   background: 'transparent',
   color: 'var(--doc-text-on-surface)',
-};
-
-const primaryBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-primary, #1a73e8)',
-  background: 'var(--doc-primary, #1a73e8)',
-  color: 'white',
 };
 
 function downloadBuffer(buffer: ArrayBuffer, filename: string): void {
@@ -401,28 +395,26 @@ export function TranslateDocumentDialog({
       helper="Your open document is unchanged — only the downloaded copy is translated."
       footer={
         <>
-          <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={exporting}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={exporting}>
             Close
-          </button>
+          </Button>
           {!hasStarted && previewStatus !== 'ready' && (
-            <button
+            <Button
               type="button"
-              style={{
-                ...primaryBtnStyle,
-                opacity: originalBuffer && source !== target ? 1 : 0.6,
-                cursor: originalBuffer && source !== target ? 'pointer' : 'not-allowed',
-              }}
+              variant="default"
+              size="sm"
               disabled={!originalBuffer || source === target}
               onClick={() => setHasStarted(true)}
               data-testid="translate-doc-start"
             >
               {source === target ? 'Pick a different language' : `Translate to ${targetLangLabel}`}
-            </button>
+            </Button>
           )}
           {hasStarted && previewStatus === 'loading' && (
-            <button
+            <Button
               type="button"
-              style={secondaryBtnStyle}
+              variant="outline"
+              size="sm"
               onClick={() => {
                 abortRef.current?.abort();
                 setHasStarted(false);
@@ -434,18 +426,19 @@ export function TranslateDocumentDialog({
               data-testid="translate-doc-stop"
             >
               Stop
-            </button>
+            </Button>
           )}
           {previewStatus === 'ready' && (
-            <button
+            <Button
               type="button"
-              style={primaryBtnStyle}
+              variant="default"
+              size="sm"
               disabled={exporting || !translatedBuffer}
               onClick={handleDownload}
               data-testid="translate-doc-export"
             >
               {exporting ? 'Downloading…' : 'Download .docx'}
-            </button>
+            </Button>
           )}
         </>
       }

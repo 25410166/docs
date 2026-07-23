@@ -15,6 +15,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslation } from '../../i18n';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 // ============================================================================
 // TYPES
@@ -90,16 +91,6 @@ const inputStyle: CSSProperties = {
 
 const selectStyle: CSSProperties = {
   ...inputStyle,
-};
-
-const btnStyle: CSSProperties = {
-  background: 'var(--doc-surface)',
-  color: 'var(--doc-text-on-surface)',
-  padding: '6px 16px',
-  fontSize: 13,
-  border: '1px solid var(--doc-border)',
-  borderRadius: 4,
-  cursor: 'pointer',
 };
 
 // ============================================================================
@@ -206,21 +197,12 @@ export function ImagePositionDialog({
       testId="image-position-dialog"
       footer={
         <>
-          <button type="button" style={btnStyle} onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            style={{
-              ...btnStyle,
-              backgroundColor: 'var(--doc-primary)',
-              color: 'white',
-              borderColor: 'var(--doc-primary)',
-            }}
-            onClick={handleApply}
-          >
+          </Button>
+          <Button type="button" variant="default" size="sm" onClick={handleApply}>
             {t('common.apply')}
-          </button>
+          </Button>
         </>
       }
     >

@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslation } from '../../i18n';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 export interface SplitCellDialogProps {
   isOpen: boolean;
@@ -54,16 +55,6 @@ const helperStyle: CSSProperties = {
 const errorStyle: CSSProperties = {
   ...helperStyle,
   color: 'var(--doc-error)',
-};
-
-const btnStyle: CSSProperties = {
-  background: 'var(--doc-surface)',
-  color: 'var(--doc-text-on-surface)',
-  padding: '6px 16px',
-  fontSize: 13,
-  border: '1px solid var(--doc-border)',
-  borderRadius: 4,
-  cursor: 'pointer',
 };
 
 export function SplitCellDialog({
@@ -118,24 +109,18 @@ export function SplitCellDialog({
       testId="split-cell-dialog"
       footer={
         <>
-          <button type="button" style={btnStyle} onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             {t('common.cancel')}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            style={{
-              ...btnStyle,
-              backgroundColor: 'var(--doc-primary)',
-              color: 'white',
-              borderColor: 'var(--doc-primary)',
-              opacity: validationError ? 0.6 : 1,
-              cursor: validationError ? 'not-allowed' : 'pointer',
-            }}
+            variant="default"
+            size="sm"
             disabled={!!validationError}
             onClick={handleApply}
           >
             {t('common.apply')}
-          </button>
+          </Button>
         </>
       }
     >

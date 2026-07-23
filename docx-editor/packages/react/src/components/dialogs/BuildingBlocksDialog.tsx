@@ -22,6 +22,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import type { BuildingBlock } from '../../utils/buildingBlocks';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 export interface BuildingBlocksDialogProps {
   isOpen: boolean;
@@ -132,13 +133,6 @@ const primaryBtnStyle: CSSProperties = {
   color: 'white',
 };
 
-const secondaryBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-border, #d1d5db)',
-  background: 'transparent',
-  color: 'var(--doc-text-on-surface, #1f2937)',
-};
-
 const rowBtnStyle: CSSProperties = {
   padding: '4px 10px',
   fontSize: 12,
@@ -194,9 +188,9 @@ export function BuildingBlocksDialog({
       width={560}
       testId="building-blocks-dialog"
       footer={
-        <button type="button" style={secondaryBtnStyle} onClick={onClose}>
+        <Button type="button" variant="outline" size="sm" onClick={onClose}>
           Close
-        </button>
+        </Button>
       }
     >
       <div style={bodyStyle}>

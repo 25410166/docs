@@ -22,6 +22,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import type { Citation, CitationStyle } from '../../utils/citations';
 import { formatCitation } from '../../utils/citations';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 export interface CitationsDialogProps {
   isOpen: boolean;
@@ -77,13 +78,6 @@ const primaryBtnStyle: CSSProperties = {
   border: '1px solid var(--doc-primary, #1a73e8)',
   background: 'var(--doc-primary, #1a73e8)',
   color: 'white',
-};
-
-const secondaryBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-border, #d1d5db)',
-  background: 'transparent',
-  color: 'var(--doc-text-on-surface, #1f2937)',
 };
 
 const styleRowStyle: CSSProperties = {
@@ -186,9 +180,9 @@ export function CitationsDialog({
       width={640}
       testId="citations-dialog"
       footer={
-        <button type="button" style={secondaryBtnStyle} onClick={onClose}>
+        <Button type="button" variant="outline" size="sm" onClick={onClose}>
           Close
-        </button>
+        </Button>
       }
     >
       <div style={bodyStyle}>

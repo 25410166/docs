@@ -18,6 +18,7 @@ import { TWIPS_PER_INCH } from '@eigenpal/docx-core/utils';
 import { useTranslation } from '../../i18n';
 import { Dialog } from '../ui/Dialog';
 import { ColorPicker } from '../ui/ColorPicker';
+import { Button } from '../ui/Button';
 
 /** Common page sizes in twips (width x height in portrait orientation) */
 const PAGE_SIZES = [
@@ -254,21 +255,12 @@ export function PageSetupDialog({
       testId="page-setup-dialog"
       footer={
         <>
-          <button type="button" style={btnStyle} onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            style={{
-              ...btnStyle,
-              backgroundColor: 'var(--doc-primary)',
-              color: 'white',
-              borderColor: 'var(--doc-primary)',
-            }}
-            onClick={handleApply}
-          >
+          </Button>
+          <Button type="button" variant="default" size="sm" onClick={handleApply}>
             {t('common.apply')}
-          </button>
+          </Button>
         </>
       }
     >

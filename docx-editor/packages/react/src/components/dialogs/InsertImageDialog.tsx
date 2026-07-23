@@ -20,6 +20,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { CSSProperties, DragEvent, ChangeEvent } from 'react';
 import { useTranslation } from '../../i18n';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 // ============================================================================
 // TYPES
@@ -181,35 +182,6 @@ const FILE_INFO_STYLE: CSSProperties = {
   color: 'var(--doc-text-muted)',
   marginTop: '8px',
   textAlign: 'center',
-};
-
-const BUTTON_BASE_STYLE: CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: '4px',
-  fontSize: '14px',
-  fontWeight: 500,
-  cursor: 'pointer',
-  border: 'none',
-};
-
-const PRIMARY_BUTTON_STYLE: CSSProperties = {
-  ...BUTTON_BASE_STYLE,
-  backgroundColor: 'var(--doc-primary)',
-  color: 'white',
-};
-
-const SECONDARY_BUTTON_STYLE: CSSProperties = {
-  ...BUTTON_BASE_STYLE,
-  backgroundColor: 'var(--doc-bg-subtle)',
-  color: 'var(--doc-text)',
-  border: '1px solid var(--doc-border-input)',
-};
-
-const DISABLED_BUTTON_STYLE: CSSProperties = {
-  ...BUTTON_BASE_STYLE,
-  backgroundColor: 'var(--doc-border-input)',
-  color: 'var(--doc-text-muted)',
-  cursor: 'not-allowed',
 };
 
 // ============================================================================
@@ -529,23 +501,25 @@ export function InsertImageDialog({
       testId="insert-image-dialog"
       footer={
         <>
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             className="docx-insert-image-dialog-cancel"
-            style={SECONDARY_BUTTON_STYLE}
             onClick={onClose}
           >
             {t('common.cancel')}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="default"
+            size="sm"
             className="docx-insert-image-dialog-insert"
-            style={canInsert ? PRIMARY_BUTTON_STYLE : DISABLED_BUTTON_STYLE}
             onClick={handleInsert}
             disabled={!canInsert}
           >
             {t('dialogs.insertImage.insertButton')}
-          </button>
+          </Button>
         </>
       }
     >

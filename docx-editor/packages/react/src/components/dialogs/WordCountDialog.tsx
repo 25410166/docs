@@ -23,6 +23,7 @@
 import React from 'react';
 import type { CSSProperties } from 'react';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 import { useTranslation } from '../../i18n';
 
 export interface WordCountStats {
@@ -76,19 +77,6 @@ const valueStyle: CSSProperties = {
   letterSpacing: '-0.005em',
 };
 
-const closeBtnStyle: CSSProperties = {
-  padding: '7px 16px',
-  borderRadius: 6,
-  border: '1px solid var(--doc-border)',
-  background: 'var(--doc-surface)',
-  color: 'var(--doc-text)',
-  fontSize: 13,
-  fontWeight: 500,
-  cursor: 'pointer',
-  transition:
-    'background 80ms cubic-bezier(0.4, 0, 0.2, 1), border-color 80ms cubic-bezier(0.4, 0, 0.2, 1)',
-};
-
 export function WordCountDialog({
   isOpen,
   onClose,
@@ -125,14 +113,15 @@ export function WordCountDialog({
       width={400}
       testId="word-count-dialog"
       footer={
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={onClose}
-          style={closeBtnStyle}
           data-testid="word-count-dialog-close"
         >
           {t('common.close')}
-        </button>
+        </Button>
       }
     >
       <div style={bodyStyle}>

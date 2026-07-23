@@ -14,6 +14,7 @@
 import React, { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from '../../i18n';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 export interface CharacterSpacingValue {
   /** Horizontal text scale, percent (w:w). null = default 100%. */
@@ -65,23 +66,6 @@ const inputStyle: CSSProperties = {
   color: 'var(--doc-text-on-surface)',
   boxSizing: 'border-box',
   width: '100%',
-};
-
-const btnStyle: CSSProperties = {
-  fontSize: 13,
-  padding: '6px 16px',
-  borderRadius: 4,
-  border: '1px solid var(--doc-border)',
-  background: 'var(--doc-surface)',
-  color: 'var(--doc-text-on-surface)',
-  cursor: 'pointer',
-};
-
-const primaryBtnStyle: CSSProperties = {
-  ...btnStyle,
-  background: 'var(--doc-accent, #2563eb)',
-  borderColor: 'var(--doc-accent, #2563eb)',
-  color: 'white',
 };
 
 /** twips → pt (20 twips per pt). */
@@ -190,17 +174,18 @@ export function CharacterSpacingDialog({
       testId="character-spacing-dialog"
       footer={
         <>
-          <button type="button" style={btnStyle} onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             {t('common.cancel')}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            style={primaryBtnStyle}
+            variant="default"
+            size="sm"
             onClick={submit}
             data-testid="character-spacing-ok"
           >
             {t('common.ok')}
-          </button>
+          </Button>
         </>
       }
     >

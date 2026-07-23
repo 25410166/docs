@@ -19,6 +19,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 import { formatSize } from '../../utils/recent-files';
 
 export interface FilePropertiesValue {
@@ -99,23 +100,6 @@ const sectionStyle: CSSProperties = {
   gap: 10,
 };
 
-const btnStyle: CSSProperties = {
-  padding: '6px 16px',
-  fontSize: 13,
-  border: '1px solid var(--doc-border, #ccc)',
-  borderRadius: 4,
-  cursor: 'pointer',
-  background: 'var(--doc-surface, white)',
-  color: 'var(--doc-text-on-surface, #1f2937)',
-};
-
-const primaryBtnStyle: CSSProperties = {
-  ...btnStyle,
-  background: 'var(--doc-primary)',
-  color: 'white',
-  borderColor: 'var(--doc-primary)',
-};
-
 function formatDate(d: Date | undefined): string {
   if (!d) return '—';
   // Guard Invalid Date (e.g. an unparseable core.xml timestamp) — toLocaleString
@@ -183,17 +167,18 @@ export function FilePropertiesDialog({
       testId="file-properties-dialog"
       footer={
         <>
-          <button type="button" style={btnStyle} onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            style={primaryBtnStyle}
+            variant="default"
+            size="sm"
             data-testid="fp-apply"
             onClick={handleApply}
           >
             Apply
-          </button>
+          </Button>
         </>
       }
     >
