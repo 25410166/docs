@@ -34,26 +34,47 @@ interface HomeProps {
 
 type CategoryFilter = 'All' | TemplateCategory;
 
+// Theme-aware — these resolve through the editor's design tokens (loaded
+// globally via styles.css -> editor.css -> tokens.css), which flip on
+// [data-theme='dark'] the same way the editor's own dark mode does. The
+// literal hex after each comma is the light-mode fallback (byte-identical
+// to the pre-dark-mode palette) in case the tokens aren't present.
 const COLORS = {
-  ink: '#0b0e15',
-  inkMuted: '#3b4354',
-  inkSubtle: '#8b93a3',
+  ink: 'var(--color-text, #0b0e15)',
+  inkMuted: 'var(--color-text-secondary, #3b4354)',
+  inkSubtle: 'var(--color-text-muted, #8b93a3)',
+  // Fixed near-black — the "Open file" button and the active category pill
+  // are solid dark chips with white text in BOTH themes. They must not
+  // track body-text color, which flips to near-white in dark mode and would
+  // make these chips illegible.
+  inkSolid: '#0b0e15',
+  // Real document previews (template cards, the blank-card icon tile) stay
+  // literal white "paper" in both themes — matching how the editor's own
+  // page canvas stays light even in dark mode.
   paper: '#ffffff',
-  surface: '#f6f8fc',
-  surface2: '#eef2f8',
-  border: '#e3e8f1',
-  borderHover: '#9aa1b0',
-  brand: '#2f56ff',
-  brandHover: '#2647d6',
-  brandSoft: '#e9edff',
+  // An elevated UI-control surface (search box, filter pills, recent-file
+  // rows, the auto-reopen banner) — white in light mode (unchanged), a
+  // raised dark panel in dark mode.
+  surfaceRaised: 'var(--color-surface-raised, #ffffff)',
+  surface: 'var(--color-surface-strip, #f6f8fc)',
+  surface2: 'var(--color-surface-alt, #eef2f8)',
+  border: 'var(--color-divider, #e3e8f1)',
+  borderHover: 'var(--color-border-strong, #9aa1b0)',
+  brand: 'var(--color-accent, #2f56ff)',
+  brandHover: 'var(--color-accent-hover, #2647d6)',
+  brandSoft: 'var(--color-accent-soft, #e9edff)',
+  // Fixed brand blue — keeps >=4.5:1 contrast with white text in both
+  // themes. Used for the one "Reopen" CTA chip; the theme accent itself
+  // lightens in dark mode and would fail contrast with white text there.
+  ctaSolid: '#1d4ed8',
 };
 
 const styles: Record<string, CSSProperties> = {
   page: {
     minHeight: '100vh',
     background:
-      'radial-gradient(1100px 700px at 8% -10%, #dde4ff 0%, transparent 55%),' +
-      'radial-gradient(900px 500px at 100% 0%, #ece6ff 0%, transparent 50%),' +
+      'radial-gradient(1100px 700px at 8% -10%, rgba(110,139,255,0.35) 0%, transparent 55%),' +
+      'radial-gradient(900px 500px at 100% 0%, rgba(167,139,250,0.28) 0%, transparent 50%),' +
       `linear-gradient(180deg, ${COLORS.surface} 0%, ${COLORS.surface2} 100%)`,
     boxSizing: 'border-box',
     fontFamily:
@@ -139,7 +160,7 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    background: COLORS.paper,
+    background: COLORS.surfaceRaised,
     border: `1px solid ${COLORS.border}`,
     borderRadius: '10px',
     padding: '8px 12px',
@@ -161,7 +182,7 @@ const styles: Record<string, CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '8px',
-    background: COLORS.ink,
+    background: COLORS.inkSolid,
     color: '#ffffff',
     border: 'none',
     borderRadius: '10px',
@@ -182,7 +203,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '13px',
     fontWeight: 500,
     color: COLORS.inkMuted,
-    background: COLORS.paper,
+    background: COLORS.surfaceRaised,
     border: `1px solid ${COLORS.border}`,
     borderRadius: '999px',
     padding: '6px 14px',
@@ -191,9 +212,9 @@ const styles: Record<string, CSSProperties> = {
     font: 'inherit',
   },
   pillActive: {
-    background: COLORS.ink,
+    background: COLORS.inkSolid,
     color: '#ffffff',
-    borderColor: COLORS.ink,
+    borderColor: COLORS.inkSolid,
   },
 
   section: {
@@ -292,7 +313,9 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 16,
     background: COLORS.paper,
     border: `1px dashed ${COLORS.borderHover}`,
-    color: COLORS.inkMuted,
+    // Fixed — this tile is always a light "paper" swatch (see COLORS.paper),
+    // so its icon must stay fixed-dark too, not track the page theme.
+    color: '#3b4354',
   },
   cardIconBadge: {
     position: 'absolute',
@@ -306,7 +329,9 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: COLORS.inkMuted,
+    // Fixed — this badge sits on a near-white translucent chip regardless
+    // of page theme, so its icon must stay fixed-dark too.
+    color: '#3b4354',
     boxShadow: '0 1px 2px rgba(15, 23, 42, 0.06)',
   },
   cardBody: {
@@ -318,7 +343,10 @@ const styles: Record<string, CSSProperties> = {
   cardTitle: {
     fontSize: '13.5px',
     fontWeight: 600,
-    color: COLORS.ink,
+    // Fixed — the card itself is always literal white "paper" (see
+    // COLORS.paper), so the title must stay fixed-dark too, not track the
+    // page theme (which would flip this to near-white-on-white).
+    color: '#0b0e15',
     letterSpacing: '-0.005em',
   },
   cardCategory: {
@@ -558,7 +586,7 @@ const autoReopenBannerStyle: React.CSSProperties = {
   margin: '12px 24px 0',
   borderRadius: 10,
   border: `1px solid ${COLORS.border}`,
-  background: COLORS.paper,
+  background: COLORS.surfaceRaised,
   boxShadow: '0 1px 1px rgba(15, 23, 42, 0.03)',
 };
 
@@ -566,7 +594,7 @@ const autoReopenBannerOpenStyle: React.CSSProperties = {
   padding: '6px 14px',
   borderRadius: 6,
   border: '1px solid transparent',
-  background: COLORS.brand,
+  background: COLORS.ctaSolid,
   color: '#fff',
   fontSize: 13,
   fontWeight: 600,
@@ -592,7 +620,7 @@ const autoReopenBannerDismissStyle: React.CSSProperties = {
 // not pre-painted to PNG the way bundled templates are). Microsoft
 // Word's Home uses this same shape for its Recent / Pinned list.
 const recentCardStyle: CSSProperties = {
-  background: COLORS.paper,
+  background: COLORS.surfaceRaised,
   border: `1px solid ${COLORS.border}`,
   borderRadius: '10px',
   padding: '10px 12px',
@@ -884,7 +912,7 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
           style={{ ...styles.openFileBtn, ...(isMobile && mobile.openFileBtn) }}
           onClick={() => fileInputRef.current?.click()}
           onMouseEnter={(e) => (e.currentTarget.style.background = COLORS.brandHover)}
-          onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.ink)}
+          onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.inkSolid)}
           data-testid="home-open-from-disk"
         >
           <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden="true">
@@ -1046,7 +1074,7 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
       >
         <div
           style={{
-            background: COLORS.brandSoft,
+            background: '#e9edff',
             border: `1px solid #bfdbfe`,
             borderRadius: '10px',
             padding: isMobile ? '10px 14px' : '10px 16px',
@@ -1061,7 +1089,7 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
               display: 'inline-block',
               fontSize: '10.5px',
               fontWeight: 700,
-              color: COLORS.brand,
+              color: '#1d4ed8',
               background: '#dbeafe',
               border: `1px solid #93c5fd`,
               padding: '2px 8px',
@@ -1073,8 +1101,8 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
           >
             Pre-release
           </span>
-          <span style={{ fontSize: '13px', color: COLORS.inkMuted, lineHeight: 1.4 }}>
-            <strong style={{ color: COLORS.ink }}>AI features are on the way</strong> — inline ask,
+          <span style={{ fontSize: '13px', color: '#475569', lineHeight: 1.4 }}>
+            <strong style={{ color: '#0f172a' }}>AI features are on the way</strong> — inline ask,
             rewrite panel, and a DocOps chat panel. On-device in the desktop app, or the Anthropic
             API on the web.
           </span>
@@ -1086,7 +1114,7 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
               marginLeft: 'auto',
               fontSize: '13px',
               fontWeight: 600,
-              color: COLORS.brand,
+              color: '#1d4ed8',
               textDecoration: 'none',
               whiteSpace: 'nowrap',
               flexShrink: 0,
