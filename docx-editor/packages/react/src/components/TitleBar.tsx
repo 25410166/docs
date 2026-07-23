@@ -23,6 +23,7 @@ import { TableGridInline } from './ui/TableGridInline';
 import { WriterStatusPill } from './WriterStatusPill';
 import { useEditorToolbar } from './EditorToolbarContext';
 import { useDialogActions } from './DialogActionsContext';
+import { useViewState } from './ViewStateContext';
 import type { FormattingAction } from './Toolbar';
 import { useTranslation } from '../i18n';
 import { openReportIssue } from './reportIssue';
@@ -290,10 +291,10 @@ export function MenuBar() {
     onConvertTableToText,
     onOpenTranslate,
     onTranslateDocument,
-    onToggleSpellcheck,
-    spellcheckEnabled,
-    onToggleGrammar,
-    grammarEnabled,
+    onToggleSpellcheck: onToggleSpellcheckProp,
+    spellcheckEnabled: spellcheckEnabledProp,
+    onToggleGrammar: onToggleGrammarProp,
+    grammarEnabled: grammarEnabledProp,
     onOpenWritingAssistant,
     onOpenExplore,
     onInsertShape,
@@ -322,17 +323,38 @@ export function MenuBar() {
     onInsertTOC,
     onInsertHorizontalRule,
     onInsertFootnote,
-    onToggleShowRuler,
-    rulerVisible,
-    onToggleShowVerticalRuler,
-    verticalRulerVisible,
-    onToggleShowFormattingMarks,
-    showFormattingMarks,
-    onToggleOutline,
-    outlineVisible,
+    onToggleShowRuler: onToggleShowRulerProp,
+    rulerVisible: rulerVisibleProp,
+    onToggleShowVerticalRuler: onToggleShowVerticalRulerProp,
+    verticalRulerVisible: verticalRulerVisibleProp,
+    onToggleShowFormattingMarks: onToggleShowFormattingMarksProp,
+    showFormattingMarks: showFormattingMarksProp,
+    onToggleOutline: onToggleOutlineProp,
+    outlineVisible: outlineVisibleProp,
     onRefocusEditor,
     onMenuOpenChange,
   } = ctx;
+
+  // View-toggle handlers + state now arrive via ViewStateContext instead of
+  // 14 individual props on the <EditorToolbar> call site (see
+  // ViewStateContext.tsx) — same pattern as DialogActionsContext just above.
+  // An explicitly-passed prop still wins (public ToolbarProps contract is
+  // unchanged); the context is only the fallback DocxEditor's own toolbar
+  // tree relies on internally.
+  const vs = useViewState();
+  const onToggleSpellcheck = onToggleSpellcheckProp ?? vs.onToggleSpellcheck;
+  const spellcheckEnabled = spellcheckEnabledProp ?? vs.spellcheckEnabled;
+  const onToggleGrammar = onToggleGrammarProp ?? vs.onToggleGrammar;
+  const grammarEnabled = grammarEnabledProp ?? vs.grammarEnabled;
+  const onToggleShowRuler = onToggleShowRulerProp ?? vs.onToggleShowRuler;
+  const rulerVisible = rulerVisibleProp ?? vs.rulerVisible;
+  const onToggleShowVerticalRuler = onToggleShowVerticalRulerProp ?? vs.onToggleShowVerticalRuler;
+  const verticalRulerVisible = verticalRulerVisibleProp ?? vs.verticalRulerVisible;
+  const onToggleShowFormattingMarks =
+    onToggleShowFormattingMarksProp ?? vs.onToggleShowFormattingMarks;
+  const showFormattingMarks = showFormattingMarksProp ?? vs.showFormattingMarks;
+  const onToggleOutline = onToggleOutlineProp ?? vs.onToggleOutline;
+  const outlineVisible = outlineVisibleProp ?? vs.outlineVisible;
 
   // Dialog-open handlers now arrive via DialogActionsContext instead of ~16
   // individual props on the <EditorToolbar> call site (see
