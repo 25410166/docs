@@ -35,6 +35,7 @@ import { ToolbarButton, ToolbarGroup } from './Toolbar';
 import type { ToolbarProps, FormattingAction } from './Toolbar';
 import { EditorToolbarContext } from './EditorToolbarContext';
 import { useDialogActions } from './DialogActionsContext';
+import { useViewState } from './ViewStateContext';
 
 const ICON_SIZE = 18;
 
@@ -112,8 +113,8 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
     onInsertImage,
     onOpenParagraphDialog,
     onAddComment,
-    onPaintFormat,
-    paintFormatArmed,
+    onPaintFormat: onPaintFormatProp,
+    paintFormatArmed: paintFormatArmedProp,
     inline = false,
   } = props as FormattingBarProps;
 
@@ -123,6 +124,13 @@ export function FormattingBar(explicitProps: FormattingBarProps) {
   const dialogActions = useDialogActions();
   const openImageProperties = onOpenImageProperties ?? dialogActions.openImageProperties;
   const openParagraphDialog = onOpenParagraphDialog ?? dialogActions.openParagraphDialog;
+
+  // Same pattern, same rationale, for the paint-format toggle — now sourced
+  // from ViewStateContext when used inside <EditorToolbar> (see
+  // ViewStateContext.tsx).
+  const viewState = useViewState();
+  const onPaintFormat = onPaintFormatProp ?? viewState.onPaintFormat;
+  const paintFormatArmed = paintFormatArmedProp ?? viewState.paintFormatArmed;
 
   const barRef = useRef<HTMLDivElement>(null);
 
