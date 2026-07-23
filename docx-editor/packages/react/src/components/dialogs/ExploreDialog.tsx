@@ -14,10 +14,17 @@
  *
  * Loading / error states route through `PanelState` so this dialog
  * looks like the rest of the editor.
+ *
+ * Migrated onto the shared <Dialog> shell — the shell owns the
+ * backdrop / blur / scale-in motion / close X / focus trap / Esc +
+ * backdrop dismissal. This file only describes the search body + the
+ * footer Close action.
  */
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { PanelState } from '../ui/PanelState';
+import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 export interface ExploreDialogProps {
   isOpen: boolean;
@@ -41,41 +48,10 @@ interface ApiResponse {
   type?: string;
 }
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const dialogStyle: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: 8,
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  minWidth: 520,
-  maxWidth: 640,
-  width: '100%',
-  margin: 20,
-};
-
-const headerStyle: CSSProperties = {
-  padding: '16px 20px 12px',
-  borderBottom: '1px solid var(--doc-border, #ddd)',
-  fontSize: 16,
-  fontWeight: 600,
-  color: 'var(--doc-text-on-surface, #1f2937)',
-};
-
-const bodyStyle: CSSProperties = {
-  padding: '16px 20px',
+const bodyWrapStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
-  maxHeight: '60vh',
-  overflowY: 'auto',
 };
 
 const lookupRowStyle: CSSProperties = {
@@ -105,13 +81,6 @@ const primaryBtnStyle: CSSProperties = {
   border: '1px solid var(--doc-primary, #1a73e8)',
   background: 'var(--doc-primary, #1a73e8)',
   color: 'white',
-};
-
-const secondaryBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-border, #d1d5db)',
-  background: 'transparent',
-  color: 'var(--doc-text-on-surface, #1f2937)',
 };
 
 const titleStyle: CSSProperties = {
@@ -147,14 +116,6 @@ const sourceLabelStyle: CSSProperties = {
   letterSpacing: '0.04em',
   fontWeight: 600,
   color: 'var(--doc-text-muted, #6b7280)',
-};
-
-const footerStyle: CSSProperties = {
-  padding: '12px 20px 16px',
-  borderTop: '1px solid var(--doc-border, #ddd)',
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: 8,
 };
 
 const citeBtnStyle: CSSProperties = {
@@ -217,17 +178,6 @@ export function ExploreDialog({ isOpen, onClose, initialQuery, onCite }: Explore
     return () => controller.abort();
   }, [isOpen, activeQuery]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   const submit = () => {
     const trimmed = input.trim();
     if (!trimmed) return;
@@ -235,106 +185,96 @@ export function ExploreDialog({ isOpen, onClose, initialQuery, onCite }: Explore
   };
 
   return (
-    <div
-      className="ep-dialog-overlay"
-      style={overlayStyle}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Explore"
+      width={600}
+      testId="explore-dialog"
+      footer={
+        <Button type="button" variant="outline" size="sm" onClick={onClose}>
+          Close
+        </Button>
+      }
     >
-      <div
-        className="ep-dialog-shell"
-        style={dialogStyle}
-        role="dialog"
-        aria-label="Explore"
-        data-testid="explore-dialog"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div style={headerStyle}>Explore</div>
-        <div style={bodyStyle}>
-          <div style={lookupRowStyle}>
-            <input
-              type="text"
-              placeholder="Search Wikipedia"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submit();
-              }}
-              data-testid="explore-input"
-              style={inputStyle}
-              autoFocus
-            />
-            <button
-              type="button"
-              style={primaryBtnStyle}
-              data-testid="explore-search"
-              disabled={input.trim().length === 0}
-              onClick={submit}
-            >
-              Search
-            </button>
-          </div>
-
-          {status === 'loading' && (
-            <PanelState kind="loading" message={`Searching for “${activeQuery ?? ''}”…`} />
-          )}
-          {status === 'not-found' && (
-            <PanelState
-              kind="error"
-              message={`No Wikipedia article found for “${activeQuery ?? ''}”.`}
-              hint="Try a more specific search term."
-            />
-          )}
-          {status === 'error' && (
-            <PanelState
-              kind="error"
-              message="Couldn't reach Wikipedia."
-              hint="Check your connection and try again."
-              onRetry={() => setActiveQuery((q) => (q ? `${q}` : q))}
-            />
-          )}
-          {status === 'success' && result && (
-            <>
-              <span style={sourceLabelStyle}>Wikipedia</span>
-              <h3 style={titleStyle} data-testid="explore-result-title">
-                {result.title}
-              </h3>
-              <p style={extractStyle} data-testid="explore-result-extract">
-                {result.extract}
-              </p>
-              <div style={actionRowStyle}>
-                <a
-                  style={linkStyle}
-                  href={result.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  data-testid="explore-open-link"
-                >
-                  Open in Wikipedia ↗
-                </a>
-                <button
-                  type="button"
-                  style={citeBtnStyle}
-                  data-testid="explore-cite"
-                  onClick={() => {
-                    onCite(result.title, result.url);
-                    onClose();
-                  }}
-                >
-                  Cite this
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-        <div style={footerStyle}>
-          <button type="button" style={secondaryBtnStyle} onClick={onClose}>
-            Close
+      <div style={bodyWrapStyle}>
+        <div style={lookupRowStyle}>
+          <input
+            type="text"
+            placeholder="Search Wikipedia"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submit();
+            }}
+            data-testid="explore-input"
+            style={inputStyle}
+            autoFocus
+          />
+          <button
+            type="button"
+            style={primaryBtnStyle}
+            data-testid="explore-search"
+            disabled={input.trim().length === 0}
+            onClick={submit}
+          >
+            Search
           </button>
         </div>
+
+        {status === 'loading' && (
+          <PanelState kind="loading" message={`Searching for “${activeQuery ?? ''}”…`} />
+        )}
+        {status === 'not-found' && (
+          <PanelState
+            kind="error"
+            message={`No Wikipedia article found for “${activeQuery ?? ''}”.`}
+            hint="Try a more specific search term."
+          />
+        )}
+        {status === 'error' && (
+          <PanelState
+            kind="error"
+            message="Couldn't reach Wikipedia."
+            hint="Check your connection and try again."
+            onRetry={() => setActiveQuery((q) => (q ? `${q}` : q))}
+          />
+        )}
+        {status === 'success' && result && (
+          <>
+            <span style={sourceLabelStyle}>Wikipedia</span>
+            <h3 style={titleStyle} data-testid="explore-result-title">
+              {result.title}
+            </h3>
+            <p style={extractStyle} data-testid="explore-result-extract">
+              {result.extract}
+            </p>
+            <div style={actionRowStyle}>
+              <a
+                style={linkStyle}
+                href={result.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                data-testid="explore-open-link"
+              >
+                Open in Wikipedia ↗
+              </a>
+              <button
+                type="button"
+                style={citeBtnStyle}
+                data-testid="explore-cite"
+                onClick={() => {
+                  onCite(result.title, result.url);
+                  onClose();
+                }}
+              >
+                Cite this
+              </button>
+            </div>
+          </>
+        )}
       </div>
-    </div>
+    </Dialog>
   );
 }
 

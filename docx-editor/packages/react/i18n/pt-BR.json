@@ -90,7 +90,33 @@
     "shapeLine": null,
     "shapeRectangle": null,
     "showOutline": null,
-    "versionHistory": null
+    "versionHistory": null,
+    "aboutCasualEditor": null,
+    "callout": null,
+    "clearFormatting": null,
+    "copy": null,
+    "cut": null,
+    "edit": null,
+    "exportMarkdown": null,
+    "exportOdt": null,
+    "exportPdf": null,
+    "exportPlainText": null,
+    "find": null,
+    "findAndReplace": null,
+    "new": null,
+    "paste": null,
+    "pasteWithoutFormatting": null,
+    "properties": null,
+    "redo": null,
+    "resetZoom": null,
+    "selectAll": null,
+    "textBox": null,
+    "translateDocument": null,
+    "undo": null,
+    "view": null,
+    "writingAssistant": null,
+    "zoomIn": null,
+    "zoomOut": null
   },
   "formattingBar": {
     "groups": {
@@ -743,7 +769,9 @@
     "expand": null
   },
   "sidebar": {
-    "ariaLabel": "Barra lateral de anotações"
+    "ariaLabel": "Barra lateral de anotações",
+    "commentsEmptyHint": null,
+    "commentsEmptyTitle": null
   },
   "titleBar": {
     "untitled": "Sem título",

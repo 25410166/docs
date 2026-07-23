@@ -19,7 +19,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { CSSProperties, DragEvent, ChangeEvent } from 'react';
 import { useTranslation } from '../../i18n';
-import { FocusTrap } from '../ui/FocusTrap';
+import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 // ============================================================================
 // TYPES
@@ -68,60 +69,6 @@ export interface InsertImageDialogProps {
 // ============================================================================
 // STYLES
 // ============================================================================
-
-const DIALOG_OVERLAY_STYLE: CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const DIALOG_CONTENT_STYLE: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: '8px',
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  minWidth: '450px',
-  maxWidth: '600px',
-  width: '100%',
-  margin: 'clamp(8px, 2.5vw, 20px)',
-  maxHeight: '90vh',
-  overflow: 'auto',
-};
-
-const DIALOG_HEADER_STYLE: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: '16px 20px',
-  borderBottom: '1px solid var(--doc-border)',
-};
-
-const DIALOG_TITLE_STYLE: CSSProperties = {
-  margin: 0,
-  fontSize: '18px',
-  fontWeight: 600,
-  color: 'var(--doc-text)',
-};
-
-const CLOSE_BUTTON_STYLE: CSSProperties = {
-  background: 'none',
-  border: 'none',
-  fontSize: '20px',
-  cursor: 'pointer',
-  color: 'var(--doc-text-muted)',
-  padding: '4px 8px',
-  lineHeight: 1,
-};
-
-const DIALOG_BODY_STYLE: CSSProperties = {
-  padding: '20px',
-};
 
 const DROP_ZONE_STYLE: CSSProperties = {
   border: '2px dashed var(--doc-border-input)',
@@ -237,43 +184,6 @@ const FILE_INFO_STYLE: CSSProperties = {
   textAlign: 'center',
 };
 
-const DIALOG_FOOTER_STYLE: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: '12px',
-  padding: '16px 20px',
-  borderTop: '1px solid var(--doc-border)',
-};
-
-const BUTTON_BASE_STYLE: CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: '4px',
-  fontSize: '14px',
-  fontWeight: 500,
-  cursor: 'pointer',
-  border: 'none',
-};
-
-const PRIMARY_BUTTON_STYLE: CSSProperties = {
-  ...BUTTON_BASE_STYLE,
-  backgroundColor: 'var(--doc-primary)',
-  color: 'white',
-};
-
-const SECONDARY_BUTTON_STYLE: CSSProperties = {
-  ...BUTTON_BASE_STYLE,
-  backgroundColor: 'var(--doc-bg-subtle)',
-  color: 'var(--doc-text)',
-  border: '1px solid var(--doc-border-input)',
-};
-
-const DISABLED_BUTTON_STYLE: CSSProperties = {
-  ...BUTTON_BASE_STYLE,
-  backgroundColor: 'var(--doc-border-input)',
-  color: 'var(--doc-text-muted)',
-  cursor: 'not-allowed',
-};
-
 // ============================================================================
 // ICONS
 // ============================================================================
@@ -356,8 +266,6 @@ export function InsertImageDialog({
   maxWidth = 800,
   maxHeight = 600,
   accept = 'image/*',
-  className,
-  style,
 }: InsertImageDialogProps): React.ReactElement | null {
   const { t } = useTranslation();
 
@@ -373,7 +281,6 @@ export function InsertImageDialog({
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   // Reset state when dialog opens/closes
   useEffect(() => {
@@ -562,18 +469,6 @@ export function InsertImageDialog({
   );
 
   /**
-   * Handle overlay click
-   */
-  const handleOverlayClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) {
-        onClose();
-      }
-    },
-    [onClose]
-  );
-
-  /**
    * Clear current image
    */
   const handleClear = useCallback(() => {
@@ -587,11 +482,6 @@ export function InsertImageDialog({
     }
   }, []);
 
-  // Don't render if not open
-  if (!isOpen) {
-    return null;
-  }
-
   const canInsert = imageData !== null && width > 0 && height > 0;
 
   // Get drop zone style
@@ -602,205 +492,179 @@ export function InsertImageDialog({
   };
 
   return (
-    <FocusTrap>
-      <div
-        className={`docx-insert-image-dialog-overlay ${className || ''}`}
-        style={{ ...DIALOG_OVERLAY_STYLE, ...style }}
-        onClick={handleOverlayClick}
-        onKeyDown={handleKeyDown}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="insert-image-dialog-title"
-      >
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={<span id="insert-image-dialog-title">{t('dialogs.insertImage.title')}</span>}
+      ariaLabel={t('dialogs.insertImage.title')}
+      width={600}
+      testId="insert-image-dialog"
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="docx-insert-image-dialog-cancel"
+            onClick={onClose}
+          >
+            {t('common.cancel')}
+          </Button>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            className="docx-insert-image-dialog-insert"
+            onClick={handleInsert}
+            disabled={!canInsert}
+          >
+            {t('dialogs.insertImage.insertButton')}
+          </Button>
+        </>
+      }
+    >
+      {/* Body */}
+      <div className="docx-insert-image-dialog-body" onKeyDown={handleKeyDown}>
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={accept}
+          onChange={handleFileChange}
+          style={{ display: 'none' }}
+        />
+
+        {/* Drop zone / Preview */}
         <div
-          ref={dialogRef}
-          className="docx-insert-image-dialog"
-          style={DIALOG_CONTENT_STYLE}
-          tabIndex={-1}
+          className="docx-insert-image-dropzone"
+          style={getDropZoneStyle()}
+          onClick={handleDropZoneClick}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          role="button"
+          tabIndex={0}
+          aria-label={t('dialogs.insertImage.uploadAriaLabel')}
         >
-          {/* Header */}
-          <div className="docx-insert-image-dialog-header" style={DIALOG_HEADER_STYLE}>
-            <h2 id="insert-image-dialog-title" style={DIALOG_TITLE_STYLE}>
-              {t('dialogs.insertImage.title')}
-            </h2>
+          {imageData ? (
+            <div style={PREVIEW_CONTAINER_STYLE}>
+              <img src={imageData.src} alt={altText || 'Preview'} style={PREVIEW_IMAGE_STYLE} />
+            </div>
+          ) : (
+            <>
+              <div style={DROP_ZONE_ICON_STYLE}>
+                <ImageIcon />
+              </div>
+              <div style={DROP_ZONE_TEXT_STYLE}>{t('dialogs.insertImage.uploadText')}</div>
+              <div style={DROP_ZONE_SUBTEXT_STYLE}>{t('dialogs.insertImage.uploadSubtext')}</div>
+            </>
+          )}
+        </div>
+
+        {/* File info */}
+        {imageData?.fileName && (
+          <div style={FILE_INFO_STYLE}>
+            {imageData.fileName}
             <button
               type="button"
-              className="docx-insert-image-dialog-close"
-              style={CLOSE_BUTTON_STYLE}
-              onClick={onClose}
-              aria-label={t('common.closeDialog')}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClear();
+              }}
+              style={{
+                marginLeft: '8px',
+                background: 'none',
+                border: 'none',
+                color: 'var(--doc-primary)',
+                cursor: 'pointer',
+                fontSize: '12px',
+              }}
             >
-              &times;
+              {t('common.change')}
             </button>
           </div>
+        )}
 
-          {/* Body */}
-          <div className="docx-insert-image-dialog-body" style={DIALOG_BODY_STYLE}>
-            {/* Hidden file input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={accept}
-              onChange={handleFileChange}
-              style={{ display: 'none' }}
-            />
+        {/* Error message */}
+        {error && (
+          <div
+            style={{
+              color: 'var(--doc-error)',
+              fontSize: '14px',
+              marginBottom: '16px',
+              textAlign: 'center',
+            }}
+          >
+            {error}
+          </div>
+        )}
 
-            {/* Drop zone / Preview */}
-            <div
-              className="docx-insert-image-dropzone"
-              style={getDropZoneStyle()}
-              onClick={handleDropZoneClick}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              role="button"
-              tabIndex={0}
-              aria-label={t('dialogs.insertImage.uploadAriaLabel')}
-            >
-              {imageData ? (
-                <div style={PREVIEW_CONTAINER_STYLE}>
-                  <img src={imageData.src} alt={altText || 'Preview'} style={PREVIEW_IMAGE_STYLE} />
-                </div>
-              ) : (
-                <>
-                  <div style={DROP_ZONE_ICON_STYLE}>
-                    <ImageIcon />
-                  </div>
-                  <div style={DROP_ZONE_TEXT_STYLE}>{t('dialogs.insertImage.uploadText')}</div>
-                  <div style={DROP_ZONE_SUBTEXT_STYLE}>
-                    {t('dialogs.insertImage.uploadSubtext')}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* File info */}
-            {imageData?.fileName && (
-              <div style={FILE_INFO_STYLE}>
-                {imageData.fileName}
+        {/* Size controls */}
+        {imageData && (
+          <>
+            <div style={FORM_GROUP_STYLE}>
+              <label style={LABEL_STYLE}>{t('dialogs.insertImage.dimensions')}</label>
+              <div style={SIZE_ROW_STYLE}>
+                <span style={{ fontSize: '14px', color: 'var(--doc-text-muted)' }}>
+                  {t('dialogs.insertImage.widthLabel')}
+                </span>
+                <input
+                  type="number"
+                  value={width}
+                  onChange={handleWidthChange}
+                  min={1}
+                  max={maxWidth}
+                  style={SIZE_INPUT_STYLE}
+                />
+                <span style={{ fontSize: '14px', color: 'var(--doc-text-muted)' }}>
+                  {t('common.px')}
+                </span>
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleClear();
-                  }}
-                  style={{
-                    marginLeft: '8px',
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--doc-primary)',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                  }}
+                  onClick={() => setAspectLocked(!aspectLocked)}
+                  style={aspectLocked ? LOCK_BUTTON_ACTIVE_STYLE : LOCK_BUTTON_STYLE}
+                  title={
+                    aspectLocked
+                      ? t('dialogs.insertImage.aspectRatioLocked')
+                      : t('dialogs.insertImage.aspectRatioUnlocked')
+                  }
                 >
-                  {t('common.change')}
+                  <LockIcon locked={aspectLocked} />
                 </button>
+                <span style={{ fontSize: '14px', color: 'var(--doc-text-muted)' }}>
+                  {t('dialogs.insertImage.heightLabel')}
+                </span>
+                <input
+                  type="number"
+                  value={height}
+                  onChange={handleHeightChange}
+                  min={1}
+                  max={maxHeight}
+                  style={SIZE_INPUT_STYLE}
+                />
+                <span style={{ fontSize: '14px', color: 'var(--doc-text-muted)' }}>
+                  {t('common.px')}
+                </span>
               </div>
-            )}
+            </div>
 
-            {/* Error message */}
-            {error && (
-              <div
-                style={{
-                  color: 'var(--doc-error)',
-                  fontSize: '14px',
-                  marginBottom: '16px',
-                  textAlign: 'center',
-                }}
-              >
-                {error}
-              </div>
-            )}
-
-            {/* Size controls */}
-            {imageData && (
-              <>
-                <div style={FORM_GROUP_STYLE}>
-                  <label style={LABEL_STYLE}>{t('dialogs.insertImage.dimensions')}</label>
-                  <div style={SIZE_ROW_STYLE}>
-                    <span style={{ fontSize: '14px', color: 'var(--doc-text-muted)' }}>
-                      {t('dialogs.insertImage.widthLabel')}
-                    </span>
-                    <input
-                      type="number"
-                      value={width}
-                      onChange={handleWidthChange}
-                      min={1}
-                      max={maxWidth}
-                      style={SIZE_INPUT_STYLE}
-                    />
-                    <span style={{ fontSize: '14px', color: 'var(--doc-text-muted)' }}>
-                      {t('common.px')}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setAspectLocked(!aspectLocked)}
-                      style={aspectLocked ? LOCK_BUTTON_ACTIVE_STYLE : LOCK_BUTTON_STYLE}
-                      title={
-                        aspectLocked
-                          ? t('dialogs.insertImage.aspectRatioLocked')
-                          : t('dialogs.insertImage.aspectRatioUnlocked')
-                      }
-                    >
-                      <LockIcon locked={aspectLocked} />
-                    </button>
-                    <span style={{ fontSize: '14px', color: 'var(--doc-text-muted)' }}>
-                      {t('dialogs.insertImage.heightLabel')}
-                    </span>
-                    <input
-                      type="number"
-                      value={height}
-                      onChange={handleHeightChange}
-                      min={1}
-                      max={maxHeight}
-                      style={SIZE_INPUT_STYLE}
-                    />
-                    <span style={{ fontSize: '14px', color: 'var(--doc-text-muted)' }}>
-                      {t('common.px')}
-                    </span>
-                  </div>
-                </div>
-
-                <div style={FORM_GROUP_STYLE}>
-                  <label htmlFor="insert-image-alt" style={LABEL_STYLE}>
-                    {t('dialogs.insertImage.altTextLabel')}
-                  </label>
-                  <input
-                    id="insert-image-alt"
-                    type="text"
-                    value={altText}
-                    onChange={(e) => setAltText(e.target.value)}
-                    placeholder={t('dialogs.insertImage.altTextPlaceholder')}
-                    style={INPUT_STYLE}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="docx-insert-image-dialog-footer" style={DIALOG_FOOTER_STYLE}>
-            <button
-              type="button"
-              className="docx-insert-image-dialog-cancel"
-              style={SECONDARY_BUTTON_STYLE}
-              onClick={onClose}
-            >
-              {t('common.cancel')}
-            </button>
-            <button
-              type="button"
-              className="docx-insert-image-dialog-insert"
-              style={canInsert ? PRIMARY_BUTTON_STYLE : DISABLED_BUTTON_STYLE}
-              onClick={handleInsert}
-              disabled={!canInsert}
-            >
-              {t('dialogs.insertImage.insertButton')}
-            </button>
-          </div>
-        </div>
+            <div style={FORM_GROUP_STYLE}>
+              <label htmlFor="insert-image-alt" style={LABEL_STYLE}>
+                {t('dialogs.insertImage.altTextLabel')}
+              </label>
+              <input
+                id="insert-image-alt"
+                type="text"
+                value={altText}
+                onChange={(e) => setAltText(e.target.value)}
+                placeholder={t('dialogs.insertImage.altTextPlaceholder')}
+                style={INPUT_STYLE}
+              />
+            </div>
+          </>
+        )}
       </div>
-    </FocusTrap>
+    </Dialog>
   );
 }
 

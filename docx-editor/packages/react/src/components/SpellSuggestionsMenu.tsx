@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Z_INDEX } from '../styles/zIndex';
+import { PanelState } from './ui/PanelState';
 
 export interface SpellSuggestionsMenuProps {
   isOpen: boolean;
@@ -172,7 +173,15 @@ export function SpellSuggestionsMenu({
     >
       <div style={headerStyle}>“{word}”</div>
       {suggestions.length === 0 && (
-        <div style={{ ...itemStyle, color: 'var(--doc-text-subtle, #6b7280)' }}>No suggestions</div>
+        // Compact empty state — routed through the shared `PanelState`
+        // primitive for a consistent look, but with tightened padding so
+        // it reads as a menu row rather than a full-height panel.
+        <PanelState
+          kind="empty"
+          icon="spellcheck"
+          message="No suggestions"
+          style={{ padding: '10px 14px 12px', gap: 4 }}
+        />
       )}
       {suggestions.map((s, idx) => (
         <button

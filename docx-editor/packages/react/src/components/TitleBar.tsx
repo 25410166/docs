@@ -324,6 +324,8 @@ export function MenuBar() {
     onInsertFootnote,
     onToggleShowRuler,
     rulerVisible,
+    onToggleShowVerticalRuler,
+    verticalRulerVisible,
     onToggleShowFormattingMarks,
     showFormattingMarks,
     onToggleOutline,
@@ -395,7 +397,7 @@ export function MenuBar() {
       ? [
           {
             icon: 'note_add',
-            label: 'New',
+            label: t('toolbar.new'),
             shortcut: 'Ctrl+N',
             onClick: onNew,
           } as MenuEntry,
@@ -465,7 +467,7 @@ export function MenuBar() {
       ? [
           {
             icon: 'file_download',
-            label: 'Export as PDF',
+            label: t('toolbar.exportPdf'),
             onClick: onExportPdf,
           } as MenuEntry,
         ]
@@ -474,7 +476,7 @@ export function MenuBar() {
       ? [
           {
             icon: 'file_download',
-            label: 'Export as ODT',
+            label: t('toolbar.exportOdt'),
             onClick: onExportOdt,
           } as MenuEntry,
         ]
@@ -483,7 +485,7 @@ export function MenuBar() {
       ? [
           {
             icon: 'file_download',
-            label: 'Export as Markdown',
+            label: t('toolbar.exportMarkdown'),
             onClick: onExportMd,
           } as MenuEntry,
         ]
@@ -492,7 +494,7 @@ export function MenuBar() {
       ? [
           {
             icon: 'file_download',
-            label: 'Export as Plain Text',
+            label: t('toolbar.exportPlainText'),
             onClick: onExportTxt,
           } as MenuEntry,
         ]
@@ -510,7 +512,7 @@ export function MenuBar() {
       ? [
           {
             icon: 'tune',
-            label: 'Properties',
+            label: t('toolbar.properties'),
             onClick: onFileProperties,
           } as MenuEntry,
         ]
@@ -520,14 +522,14 @@ export function MenuBar() {
   const editItems: MenuEntry[] = [
     {
       icon: 'undo',
-      label: 'Undo',
+      label: t('toolbar.undo'),
       shortcut: 'Ctrl+Z',
       onClick: onUndo ?? (() => {}),
       disabled: !canUndo,
     } as MenuEntry,
     {
       icon: 'redo',
-      label: 'Redo',
+      label: t('toolbar.redo'),
       shortcut: 'Ctrl+Y',
       onClick: onRedo ?? (() => {}),
       disabled: !canRedo,
@@ -538,7 +540,7 @@ export function MenuBar() {
     // shortcut label educates users to fall back to ⌘V.
     {
       icon: 'content_cut',
-      label: 'Cut',
+      label: t('toolbar.cut'),
       shortcut: 'Ctrl+X',
       onClick: () => {
         onRefocusEditor?.();
@@ -547,7 +549,7 @@ export function MenuBar() {
     } as MenuEntry,
     {
       icon: 'content_copy',
-      label: 'Copy',
+      label: t('toolbar.copy'),
       shortcut: 'Ctrl+C',
       onClick: () => {
         onRefocusEditor?.();
@@ -556,7 +558,7 @@ export function MenuBar() {
     } as MenuEntry,
     {
       icon: 'content_paste',
-      label: 'Paste',
+      label: t('toolbar.paste'),
       shortcut: 'Ctrl+V',
       onClick: () => {
         onRefocusEditor?.();
@@ -565,7 +567,7 @@ export function MenuBar() {
     } as MenuEntry,
     {
       icon: 'content_paste_go',
-      label: 'Paste without formatting',
+      label: t('toolbar.pasteWithoutFormatting'),
       shortcut: 'Ctrl+Shift+V',
       onClick: async () => {
         onRefocusEditor?.();
@@ -582,7 +584,7 @@ export function MenuBar() {
       ? [
           {
             icon: 'search',
-            label: 'Find…',
+            label: t('toolbar.find'),
             shortcut: 'Ctrl+F',
             onClick: onOpenFind,
           } as MenuEntry,
@@ -592,7 +594,7 @@ export function MenuBar() {
       ? [
           {
             icon: 'find_replace',
-            label: 'Find and replace…',
+            label: t('toolbar.findAndReplace'),
             shortcut: 'Ctrl+H',
             onClick: onOpenFindReplace,
           } as MenuEntry,
@@ -601,7 +603,7 @@ export function MenuBar() {
     ...(onOpenFind || onOpenFindReplace ? [{ type: 'separator' as const } as MenuEntry] : []),
     {
       icon: 'select_all',
-      label: 'Select all',
+      label: t('toolbar.selectAll'),
       shortcut: 'Ctrl+A',
       onClick: () => handleFormat('selectAll'),
     } as MenuEntry,
@@ -675,7 +677,7 @@ export function MenuBar() {
     { type: 'separator' as const } as MenuEntry,
     {
       icon: 'format_clear',
-      label: 'Clear formatting',
+      label: t('toolbar.clearFormatting'),
       shortcut: 'Ctrl+\\',
       onClick: () => handleFormat('clearFormatting'),
     } as MenuEntry,
@@ -697,19 +699,19 @@ export function MenuBar() {
       ? [
           {
             icon: 'add',
-            label: 'Zoom in',
+            label: t('toolbar.zoomIn'),
             shortcut: 'Ctrl+=',
             onClick: () => onZoomChange(Math.min((zoom ?? 1) * 1.1, 4)),
           } as MenuEntry,
           {
             icon: 'remove',
-            label: 'Zoom out',
+            label: t('toolbar.zoomOut'),
             shortcut: 'Ctrl+-',
             onClick: () => onZoomChange(Math.max((zoom ?? 1) / 1.1, 0.25)),
           } as MenuEntry,
           {
             icon: 'restart_alt',
-            label: 'Reset zoom (100%)',
+            label: t('toolbar.resetZoom'),
             shortcut: 'Ctrl+0',
             onClick: () => onZoomChange(1),
           } as MenuEntry,
@@ -722,6 +724,17 @@ export function MenuBar() {
             icon: 'straighten',
             label: `${rulerVisible ? '✓ ' : ''}Show ruler`,
             onClick: onToggleShowRuler,
+          } as MenuEntry,
+        ]
+      : []),
+    // Vertical ruler is a separate opt-in; only meaningful while the ruler
+    // is shown, so gate the entry on rulerVisible.
+    ...(onToggleShowVerticalRuler && rulerVisible
+      ? [
+          {
+            icon: 'straighten',
+            label: `${verticalRulerVisible ? '✓ ' : ''}Vertical ruler`,
+            onClick: onToggleShowVerticalRuler,
           } as MenuEntry,
         ]
       : []),
@@ -857,12 +870,12 @@ export function MenuBar() {
       ? [
           {
             icon: 'edit_note',
-            label: 'Text box',
+            label: t('toolbar.textBox'),
             onClick: () => onInsertTextBox('plain'),
           } as MenuEntry,
           {
             icon: 'chat_bubble_outline',
-            label: 'Callout',
+            label: t('toolbar.callout'),
             onClick: () => onInsertTextBox('callout'),
           } as MenuEntry,
         ]
@@ -992,7 +1005,7 @@ export function MenuBar() {
       ? [
           {
             icon: 'description',
-            label: 'Translate document…',
+            label: t('toolbar.translateDocument'),
             onClick: onTranslateDocument,
           } as MenuEntry,
         ]
@@ -1019,7 +1032,7 @@ export function MenuBar() {
       ? [
           {
             icon: 'auto_awesome',
-            label: 'Writing assistant…',
+            label: t('toolbar.writingAssistant'),
             onClick: onOpenWritingAssistant,
           } as MenuEntry,
         ]
@@ -1082,7 +1095,7 @@ export function MenuBar() {
           { type: 'separator' as const } as MenuEntry,
           {
             icon: 'info',
-            label: 'About Casual Editor',
+            label: t('toolbar.aboutCasualEditor'),
             onClick: onShowAbout,
           } as MenuEntry,
         ]
@@ -1103,11 +1116,11 @@ export function MenuBar() {
   // matches the previous inline order so desktop rendering is unchanged.
   const menus = [
     { id: 'file', label: t('toolbar.file'), items: fileItems, show: hasFileMenu },
-    { id: 'edit', label: 'Edit', items: editItems, show: true },
+    { id: 'edit', label: t('toolbar.edit'), items: editItems, show: true },
     { id: 'format', label: t('toolbar.format'), items: formatItems, show: true },
     {
       id: 'view',
-      label: 'View',
+      label: t('toolbar.view'),
       items: viewItems,
       show:
         onZoomChange ||

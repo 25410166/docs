@@ -18,6 +18,7 @@
 import { useEffect, type CSSProperties } from 'react';
 import { MaterialSymbol } from './ui/Icons';
 import { RightDockPanel } from './RightDockPanel';
+import { PanelState } from './ui/PanelState';
 
 export type AISuggestionMode = 'rewrite' | 'summarize';
 
@@ -90,13 +91,6 @@ const suggestionCardStyle: CSSProperties = {
   minHeight: 80,
   maxHeight: 320,
   overflow: 'auto',
-};
-
-const errorCardStyle: CSSProperties = {
-  ...suggestionCardStyle,
-  border: '1px solid var(--doc-error-border, #f9c0bd)',
-  background: 'var(--doc-error-bg, #fce8e6)',
-  color: 'var(--doc-error, #c5221f)',
 };
 
 const toneRowStyle: CSSProperties = {
@@ -288,27 +282,47 @@ export function AISuggestionPanel({
 
         <section>
           <p style={sectionHeadingStyle}>{mode === 'rewrite' ? 'Suggested' : 'Summary'}</p>
+          {/* The `ai-suggestion-pane` testid is kept on the wrapper in every
+              state so selectors stay stable; the rest-states (error / loading /
+              idle) are routed through the shared `PanelState` primitive, while
+              a real (possibly still-streaming) result keeps the card. */}
           {error ? (
-            <div style={errorCardStyle} data-testid="ai-suggestion-pane">
-              {error}
+            <div data-testid="ai-suggestion-pane">
+              <PanelState kind="error" icon="bug_report" message={error} onRetry={onRetry} />
+            </div>
+          ) : suggestion ? (
+            <div style={suggestionCardStyle} data-testid="ai-suggestion-pane">
+              {suggestion}
+            </div>
+          ) : busy ? (
+            <div data-testid="ai-suggestion-pane">
+              <PanelState
+                kind="loading"
+                message={mode === 'rewrite' ? 'Rewriting…' : 'Summarizing…'}
+              />
             </div>
           ) : (
-            <div style={suggestionCardStyle} data-testid="ai-suggestion-pane">
-              {suggestion ?? (busy ? '' : 'Waiting…')}
+            <div data-testid="ai-suggestion-pane">
+              <PanelState kind="empty" icon="auto_awesome" message="Waiting…" />
             </div>
           )}
-          <div style={{ ...statusRowStyle, marginTop: 6 }}>
-            {busy && <span style={spinnerStyle} aria-hidden="true" />}
-            <span>
-              {busy
-                ? mode === 'rewrite'
-                  ? 'Rewriting…'
-                  : 'Summarizing…'
-                : inferenceMs !== null
-                  ? `${inferenceMs} ms · on-device`
-                  : 'On-device'}
-            </span>
-          </div>
+          {/* Latency / provenance line — only meaningful once there's a result
+              (shows "Rewriting…" while a stream is still landing, then the
+              inference time). The rest-states above carry their own messaging. */}
+          {suggestion && (
+            <div style={{ ...statusRowStyle, marginTop: 6 }}>
+              {busy && <span style={spinnerStyle} aria-hidden="true" />}
+              <span>
+                {busy
+                  ? mode === 'rewrite'
+                    ? 'Rewriting…'
+                    : 'Summarizing…'
+                  : inferenceMs !== null
+                    ? `${inferenceMs} ms · on-device`
+                    : 'On-device'}
+              </span>
+            </div>
+          )}
         </section>
       </div>
       {/* Removed legacy footer markup below — moved into <RightDockPanel footer=…>.

@@ -26,15 +26,14 @@
  * other rules per the CSS @import ordering requirement. */
 @import './fonts.css';
 
-/* Casual design system tokens (@schnsrw/design-system), vendored as a git
- * submodule at docx-editor/vendor/design-system. The committed dist/ is the
- * source of truth — no build step. This barrel pulls in colors, typography,
- * spacing/radius/shadow, motion, the docs accent override ([data-app='docs'])
- * and the Inter + Material Symbols webfonts. Imported here so the Tailwind CLI
- * inlines the tokens straight into the published dist/styles.css (the package
- * isn't on npm, so consumers must not need it at runtime). The doc editor maps
- * its own --doc-* vars onto these DS tokens below. */
-@import '../../../../vendor/design-system/dist/tokens.css';
+/* Design tokens — self-contained in this repo (./tokens.css). Defines the
+ * color, shadow, motion, font, space and radius primitives that the --doc-
+ * and --ce- semantic layer below maps onto, for both light and dark. These
+ * formerly came from the vendored @schnsrw/design-system stub, which was
+ * empty on purpose — so the chrome rendered from scattered inline var()
+ * fallbacks. The editor now owns its own spine. Imported before @tailwind
+ * so the CLI inlines it into the published dist/styles.css. */
+@import './tokens.css';
 
 @tailwind utilities;
 
@@ -44,13 +43,24 @@
 
 /* Scoped to .ep-root to avoid clashing with host application CSS variables */
 .ep-root {
+  /* Native form controls (selects, scrollbars, unstyled inputs) inside the
+   * editor follow this. Without an explicit light value here, an unstyled
+   * native control falls back through to the page's
+   * <meta name="color-scheme" content="light dark"> — which means the
+   * BROWSER's own OS-level dark preference decides, not this app's chosen
+   * theme. A user with a dark OS but the app explicitly set to light would
+   * see native-rendered inputs (e.g. dialog search boxes with no explicit
+   * background) go dark while everything else stayed light. The
+   * [data-theme='dark'] rule below overrides this back to dark when the
+   * app itself is dark, exactly like every other token in this block. */
+  color-scheme: light;
   --background: 0 0% 100%;
   --foreground: 222.2 84% 4.9%;
   --card: 0 0% 100%;
   --card-foreground: 222.2 84% 4.9%;
   --popover: 0 0% 100%;
   --popover-foreground: 222.2 84% 4.9%;
-  --primary: 221.2 83.2% 53.3%;
+  --primary: 230 100% 59%; /* azure #2f56ff */
   --primary-foreground: 210 40% 98%;
   --secondary: 210 40% 96.1%;
   --secondary-foreground: 222.2 47.4% 11.2%;
@@ -62,7 +72,7 @@
   --destructive-foreground: 210 40% 98%;
   --border: 214.3 31.8% 91.4%;
   --input: 214.3 31.8% 91.4%;
-  --ring: 221.2 83.2% 53.3%;
+  --ring: 230 100% 59%; /* azure #2f56ff */
   --radius: 0.5rem;
 
   /* ========================================
@@ -240,9 +250,9 @@
        --color-border-strong 1.94 → 3.33:1 (input outlines + table borders;
                                             1.4.11 UI-component 3:1 floor)
      Everything else in the DS dark ramp already clears AA. */
-  --color-text-muted: #969aa3;
-  --color-text-disabled: #8b8e96;
-  --color-border-strong: #646a76;
+  --color-text-muted: #8b93a3;
+  --color-text-disabled: #7c8497;
+  --color-border-strong: #3a4150;
   /* Dim the white page to a soft off-white and deepen the desk to near-black
      so the page reads as a calm card instead of a glaring panel. Paper stays
      light (text unchanged); display-only, export keeps the real colors. */
@@ -256,7 +266,7 @@
   --card-foreground: 220 14% 91%;
   --popover: 220 6% 19%;
   --popover-foreground: 220 14% 91%;
-  --primary: 217 89% 61%; /* keep accent blue close-ish for contrast */
+  --primary: 226 100% 72%; /* azure #6e8bff (dark) */
   --primary-foreground: 220 14% 91%;
   --secondary: 220 5% 25%;
   --secondary-foreground: 220 14% 91%;
@@ -268,7 +278,7 @@
   --destructive-foreground: 220 14% 91%;
   --border: 220 5% 25%;
   --input: 220 5% 25%;
-  --ring: 217 89% 61%;
+  --ring: 226 100% 72%; /* azure #6e8bff (dark) */
 }
 
 /* ============================================================================

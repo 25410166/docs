@@ -13,7 +13,7 @@
  * - useFindReplace.ts   — React hook for dialog state management
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent, ChangeEvent } from 'react';
 import { useTranslation } from '../../i18n';
 
@@ -87,6 +87,10 @@ const DIALOG_OVERLAY_STYLE: CSSProperties = {
   left: 0,
   right: 0,
   bottom: 0,
+  // No scrim — Find is a NON-MODAL bar; the editor stays fully interactive
+  // beneath it. A transparent overlay + pointerEvents:none lets clicks fall
+  // through everywhere except the panel itself (which re-enables pointer
+  // events). This deliberately avoids dimming the document.
   backgroundColor: 'transparent',
   display: 'flex',
   alignItems: 'flex-start',
@@ -95,30 +99,39 @@ const DIALOG_OVERLAY_STYLE: CSSProperties = {
   pointerEvents: 'none',
 };
 
+/** Fallback top offset used only when the toolbar can't be measured (e.g.
+ *  toolbar hidden in embedded chrome). When the toolbar is present, the panel
+ *  is anchored to its measured bottom edge at runtime so it never overlaps. */
+const FALLBACK_TOP_OFFSET = 72;
+/** Gap between the toolbar's bottom edge and the top of the Find panel. */
+const TOOLBAR_GAP = 10;
+
 /* ============================================================
    FindReplaceDialog is a NON-MODAL floating panel — the editor
-   stays interactive while it's open. Premium pass keeps that
-   contract intact while bringing the chrome in line with the
-   modal Dialog shell:
-     - 12px corner radius (matches the modal shell's 14px family)
-     - Three-layer shadow (ambient + edge + landing)
-     - Hairline --doc-border-light outline
+   stays interactive while it's open. It is anchored just BELOW
+   the toolbar's bottom edge (measured at runtime) so it never
+   overlaps or obscures the formatting chrome:
+     - Real surface: solid --doc-surface, --doc-border, --doc-shadow
+     - 12px corner radius (matches the modal shell family)
      - Soft scale-in motion (200ms, same curve as the modal shell)
      - Refined header typography (-0.005em letterspaced)
      - Close X is a stroked SVG (not a glyph)
+   marginTop is applied dynamically by the component (see the
+   toolbar-measurement effect); the clamp here is only a fallback.
    ============================================================ */
 
 const DIALOG_CONTENT_STYLE: CSSProperties = {
   backgroundColor: 'var(--doc-surface, white)',
   borderRadius: '12px',
-  boxShadow:
-    '0 1px 1px rgba(0, 0, 0, 0.04), 0 6px 16px rgba(0, 0, 0, 0.08), 0 24px 64px rgba(15, 23, 42, 0.18)',
-  border: '1px solid var(--doc-border-light)',
+  boxShadow: 'var(--doc-shadow)',
+  border: '1px solid var(--doc-border)',
   minWidth: 'min(380px, calc(100vw - 32px))',
   maxWidth: '460px',
   width: '100%',
-  margin:
-    'clamp(40px, 8vw, 60px) clamp(8px, 2.5vw, 20px) clamp(8px, 2.5vw, 20px) clamp(8px, 2.5vw, 20px)',
+  marginTop: `${FALLBACK_TOP_OFFSET}px`,
+  marginRight: 'clamp(8px, 2.5vw, 20px)',
+  marginBottom: 'clamp(8px, 2.5vw, 20px)',
+  marginLeft: 'clamp(8px, 2.5vw, 20px)',
   pointerEvents: 'auto',
   animation: 'docFindReplaceIn 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
   overflow: 'hidden',
@@ -357,6 +370,31 @@ export function FindReplaceDialog({
   // Refs
   const searchInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+
+  // Anchor the panel just below the toolbar so it never overlaps the chrome.
+  // We measure the editor's toolbar (title bar + menus + formatting bar) at
+  // runtime because its height varies by chrome preset, host, and viewport
+  // width (touch layouts make it taller). Falls back to a constant when no
+  // toolbar is present (e.g. embedded/read-only chrome).
+  const [topOffset, setTopOffset] = useState<number>(FALLBACK_TOP_OFFSET);
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const measure = () => {
+      const toolbar =
+        typeof document !== 'undefined'
+          ? document.querySelector('[data-testid="editor-toolbar"]')
+          : null;
+      if (toolbar) {
+        const rect = toolbar.getBoundingClientRect();
+        setTopOffset(Math.max(0, rect.bottom) + TOOLBAR_GAP);
+      } else {
+        setTopOffset(FALLBACK_TOP_OFFSET);
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [isOpen]);
 
   // Sync with external result if provided
   useEffect(() => {
@@ -608,7 +646,7 @@ export function FindReplaceDialog({
       <div
         className="docx-find-replace-dialog"
         data-testid="find-replace-dialog"
-        style={DIALOG_CONTENT_STYLE}
+        style={{ ...DIALOG_CONTENT_STYLE, marginTop: topOffset }}
         role="dialog"
         aria-modal="false"
         aria-labelledby="find-replace-dialog-title"

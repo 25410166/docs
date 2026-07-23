@@ -167,42 +167,13 @@
 }
 
 /* ── Dark mode ────────────────────────────────────────────────────────────
- * Override the GitHub-light palette when the surface is dark. Applies via the
- * OS preference or an explicit [data-theme='dark'] on an ancestor.
+ * Override the GitHub-light palette when the surface is dark. Applies via an
+ * explicit [data-theme='dark'] on an ancestor — the app resolves 'system' to
+ * a concrete light/dark value itself (via matchMedia) and always stamps the
+ * result as this attribute, so keying off [data-theme='dark'] alone (and NOT
+ * a parallel `@media (prefers-color-scheme: dark)` block) is what respects an
+ * explicit in-app light choice even when the OS itself prefers dark.
  */
-@media (prefers-color-scheme: dark) {
-  .markdown-preview-body {
-    color: #e6edf3;
-  }
-  .markdown-preview-body h1,
-  .markdown-preview-body h2 {
-    border-bottom-color: #30363d;
-  }
-  .markdown-preview-body a {
-    color: #4493f8;
-  }
-  .markdown-preview-body code {
-    background: rgba(110, 118, 129, 0.4);
-  }
-  .markdown-preview-body pre {
-    background: #161b22;
-  }
-  .markdown-preview-body blockquote {
-    color: #9198a1;
-    border-left-color: #30363d;
-  }
-  .markdown-preview-body table th,
-  .markdown-preview-body table td {
-    border-color: #30363d;
-  }
-  .markdown-preview-body table tr:nth-child(2n) {
-    background: #161b22;
-  }
-  .markdown-preview-body hr {
-    background: #30363d;
-  }
-}
-
 [data-theme='dark'] .markdown-preview-body {
   color: #e6edf3;
 }

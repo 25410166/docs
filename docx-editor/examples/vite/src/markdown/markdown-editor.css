@@ -9,32 +9,35 @@
 
 /*
  * The markdown/text editor shares the ONE Casual Office design language with
- * the docs (docx) editor: every --md-* token maps onto a @schnsrw/design-system
- * --color-* token (the same tokens the docx editor's --doc-* chrome reads), so
- * the two editors render with the same palette, Inter chrome font, teal-cyan
- * accent, and dark-mode swap. The hex fallbacks ARE the DS light values, so the
- * editors still match if the DS stylesheet isn't on the page.
+ * the docx editor: every --md-* token maps directly onto a --color-* token
+ * from the docx editor's own tokens.css (packages/react/src/styles/tokens.css,
+ * loaded globally via styles.css -> editor.css). --color-* is defined on bare
+ * :root (and [data-theme='dark'] unscoped) — NOT the .ep-root-scoped --doc-*
+ * layer docx's own chrome reads, since this editor has no .ep-root ancestor
+ * and --doc-* would never resolve here. Going straight to --color-* is what
+ * makes the two editors render with the same palette, chrome font, accent,
+ * and dark-mode swap. The hex fallbacks are the tokens' light values, so the
+ * editors still match if tokens.css somehow isn't on the page.
  */
 :root {
   /* Chrome (title bar + toolbar + desk) uses the docx editor's chrome grey;
-     the editing/preview panes use its page-paper white — so both editors read
-     as one product. --doc-* is defined globally by editor.css (imported in
-     styles.css); the hex fallbacks are the DS light values. */
-  --md-chrome: var(--doc-chrome, #eef1f5);
-  /* Editing panes use --doc-SURFACE (theme-swapping panel bg), NOT
-     --doc-page-paper: the page-paper token stays light in dark mode (the
-     printed page is always white), so pairing it with --doc-text — which DOES
-     go light in dark mode — produced white text on a light pane. */
-  --md-paper: var(--doc-surface, #ffffff);
-  --md-surface: var(--doc-surface, #ffffff);
-  --md-surface-2: var(--doc-chrome, #eef1f5);
-  --md-surface-3: var(--doc-bg-hover, #e3e7ee);
-  --md-border: var(--doc-border, #cdd3db);
-  --md-text: var(--doc-text, #201f1e);
-  --md-text-soft: var(--doc-text-muted, #4a4d55);
-  --md-text-muted: var(--doc-text-subtle, #7a7f88);
-  --md-accent: var(--doc-primary, #1a73e8);
-  --md-accent-soft: var(--doc-primary-light, rgba(26, 115, 232, 0.14));
+     the editing/preview panes use its page-surface white — so both editors
+     read as one product. */
+  --md-chrome: var(--color-surface-strip, #eef1f5);
+  /* Editing panes use --color-SURFACE (theme-swapping panel bg), NOT a
+     page-paper token: the printed page stays light in dark mode, so pairing
+     it with a text color that DOES go light in dark mode would produce white
+     text on a light pane. */
+  --md-paper: var(--color-surface, #ffffff);
+  --md-surface: var(--color-surface, #ffffff);
+  --md-surface-2: var(--color-surface-strip, #eef1f5);
+  --md-surface-3: var(--color-hover, #e3e7ee);
+  --md-border: var(--color-border-strong, #cdd3db);
+  --md-text: var(--color-text, #201f1e);
+  --md-text-soft: var(--color-text-secondary, #4a4d55);
+  --md-text-muted: var(--color-text-muted, #7a7f88);
+  --md-accent: var(--color-accent, #1a73e8);
+  --md-accent-soft: var(--color-accent-soft, rgba(26, 115, 232, 0.14));
 
   /* Syntax-highlight token colors (light) — legible on the light pane. */
   --md-hl-keyword: #0550ae;
@@ -62,24 +65,6 @@
   --md-hl-type: #ffa657;
   --md-hl-punct: #a5adba;
   --md-hl-meta: #d7ba7d;
-}
-
-/* Dark: --doc-* already swaps under [data-theme='dark'] set by editor.css;
-   these fallbacks cover a bare page with the OS in dark mode. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --md-chrome: var(--doc-chrome, #2a2e35);
-    --md-paper: var(--doc-surface, #1b1e23);
-    --md-surface: var(--doc-surface, #1b1e23);
-    --md-surface-2: var(--doc-chrome, #2a2e35);
-    --md-surface-3: var(--doc-bg-hover, #14161a);
-    --md-border: var(--doc-border, #424751);
-    --md-text: var(--doc-text, #e6e6e6);
-    --md-text-soft: var(--doc-text-muted, #b8bcc4);
-    --md-text-muted: var(--doc-text-subtle, #8b909a);
-    --md-accent: var(--doc-primary, #22d3ee);
-    --md-accent-soft: var(--doc-primary-light, rgba(34, 211, 238, 0.2));
-  }
 }
 
 /* Toolbar buttons */

@@ -13,7 +13,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslation } from '../../i18n';
-import { FocusTrap } from '../ui/FocusTrap';
+import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 // ============================================================================
 // TYPES
@@ -37,38 +38,7 @@ export interface ImagePropertiesDialogProps {
 // STYLES
 // ============================================================================
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const dialogStyle: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: 8,
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  minWidth: 'min(380px, calc(100vw - 32px))',
-  maxWidth: 440,
-  width: '100%',
-  margin: 'clamp(8px, 2.5vw, 20px)',
-};
-
-const headerStyle: CSSProperties = {
-  padding: '16px 20px 12px',
-  borderBottom: '1px solid var(--doc-border)',
-  fontSize: 16,
-  fontWeight: 600,
-};
-
 const bodyStyle: CSSProperties = {
-  padding: '16px 20px',
   display: 'flex',
   flexDirection: 'column',
   gap: 16,
@@ -119,24 +89,6 @@ const textareaStyle: CSSProperties = {
   fontFamily: 'inherit',
 };
 
-const footerStyle: CSSProperties = {
-  padding: '12px 20px 16px',
-  borderTop: '1px solid var(--doc-border)',
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: 8,
-};
-
-const btnStyle: CSSProperties = {
-  background: 'var(--doc-surface)',
-  color: 'var(--doc-text-on-surface)',
-  padding: '6px 16px',
-  fontSize: 13,
-  border: '1px solid var(--doc-border)',
-  borderRadius: 4,
-  cursor: 'pointer',
-};
-
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -173,7 +125,7 @@ export function ImagePropertiesDialog({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      // Escape dismissal is owned by the <Dialog> shell.
       if (e.key === 'Enter' && !e.shiftKey) {
         // Don't hijack Enter when the user is typing inside a
         // multiline field or focused on a button — textareas need
@@ -186,129 +138,111 @@ export function ImagePropertiesDialog({
         handleApply();
       }
     },
-    [onClose, handleApply]
+    [handleApply]
   );
 
-  if (!isOpen) return null;
-
   return (
-    <div style={overlayStyle} onClick={onClose} onKeyDown={handleKeyDown}>
-      <FocusTrap>
-        <div
-          style={dialogStyle}
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-          aria-modal="true"
-          aria-label={t('dialogs.imageProperties.title')}
-        >
-          <div style={headerStyle}>{t('dialogs.imageProperties.title')}</div>
-
-          <div style={bodyStyle}>
-            {/* Alt Text */}
-            <div style={sectionStyle}>
-              <div style={sectionLabelStyle}>{t('dialogs.imageProperties.altText')}</div>
-              <textarea
-                style={textareaStyle}
-                value={alt}
-                onChange={(e) => setAlt(e.target.value)}
-                placeholder={t('dialogs.imageProperties.altTextPlaceholder')}
-              />
-            </div>
-
-            {/* Border / Outline */}
-            <div style={sectionStyle}>
-              <div style={sectionLabelStyle}>{t('dialogs.imageProperties.border')}</div>
-              <div style={rowStyle}>
-                <label style={labelStyle}>{t('dialogs.imageProperties.width')}</label>
-                <input
-                  type="number"
-                  style={{ ...inputStyle, maxWidth: 80 }}
-                  min={0}
-                  max={20}
-                  step={0.5}
-                  value={borderWidth}
-                  onChange={(e) => setBorderWidth(Number(e.target.value) || 0)}
-                />
-                <span style={{ fontSize: 12, color: 'var(--doc-text-muted)' }}>
-                  {t('common.px')}
-                </span>
-              </div>
-              <div style={rowStyle}>
-                <label style={labelStyle}>{t('dialogs.imageProperties.style')}</label>
-                <select
-                  style={selectStyle}
-                  value={borderStyle}
-                  onChange={(e) => setBorderStyle(e.target.value)}
-                >
-                  <option value="solid">{t('dialogs.imageProperties.borderStyles.solid')}</option>
-                  <option value="dashed">{t('dialogs.imageProperties.borderStyles.dashed')}</option>
-                  <option value="dotted">{t('dialogs.imageProperties.borderStyles.dotted')}</option>
-                  <option value="double">{t('dialogs.imageProperties.borderStyles.double')}</option>
-                  <option value="groove">{t('dialogs.imageProperties.borderStyles.groove')}</option>
-                  <option value="ridge">{t('dialogs.imageProperties.borderStyles.ridge')}</option>
-                  <option value="inset">{t('dialogs.imageProperties.borderStyles.inset')}</option>
-                  <option value="outset">{t('dialogs.imageProperties.borderStyles.outset')}</option>
-                </select>
-              </div>
-              <div style={rowStyle}>
-                <label style={labelStyle}>{t('dialogs.imageProperties.color')}</label>
-                <input
-                  type="color"
-                  value={borderColor}
-                  onChange={(e) => setBorderColor(e.target.value)}
-                  style={{
-                    width: 32,
-                    height: 24,
-                    padding: 0,
-                    border: '1px solid var(--doc-border)',
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                  }}
-                />
-                <input
-                  type="text"
-                  style={{ ...inputStyle, maxWidth: 90 }}
-                  value={borderColor}
-                  onChange={(e) => setBorderColor(e.target.value)}
-                />
-              </div>
-              {borderWidth > 0 && (
-                <div
-                  style={{
-                    marginTop: 4,
-                    padding: 8,
-                    border: `${borderWidth}px ${borderStyle} ${borderColor}`,
-                    borderRadius: 4,
-                    fontSize: 11,
-                    color: 'var(--doc-text-muted)',
-                    textAlign: 'center',
-                  }}
-                >
-                  {t('dialogs.imageProperties.preview')}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div style={footerStyle}>
-            <button type="button" style={btnStyle} onClick={onClose}>
-              {t('common.cancel')}
-            </button>
-            <button
-              type="button"
-              style={{
-                ...btnStyle,
-                backgroundColor: 'var(--doc-primary)',
-                color: 'white',
-                borderColor: 'var(--doc-primary)',
-              }}
-              onClick={handleApply}
-            >
-              {t('common.apply')}
-            </button>
-          </div>
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t('dialogs.imageProperties.title')}
+      width={440}
+      testId="image-properties-dialog"
+      footer={
+        <>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="button" variant="default" size="sm" onClick={handleApply}>
+            {t('common.apply')}
+          </Button>
+        </>
+      }
+    >
+      <div style={bodyStyle} onKeyDown={handleKeyDown}>
+        {/* Alt Text */}
+        <div style={sectionStyle}>
+          <div style={sectionLabelStyle}>{t('dialogs.imageProperties.altText')}</div>
+          <textarea
+            style={textareaStyle}
+            value={alt}
+            onChange={(e) => setAlt(e.target.value)}
+            placeholder={t('dialogs.imageProperties.altTextPlaceholder')}
+          />
         </div>
-      </FocusTrap>
-    </div>
+
+        {/* Border / Outline */}
+        <div style={sectionStyle}>
+          <div style={sectionLabelStyle}>{t('dialogs.imageProperties.border')}</div>
+          <div style={rowStyle}>
+            <label style={labelStyle}>{t('dialogs.imageProperties.width')}</label>
+            <input
+              type="number"
+              style={{ ...inputStyle, maxWidth: 80 }}
+              min={0}
+              max={20}
+              step={0.5}
+              value={borderWidth}
+              onChange={(e) => setBorderWidth(Number(e.target.value) || 0)}
+            />
+            <span style={{ fontSize: 12, color: 'var(--doc-text-muted)' }}>{t('common.px')}</span>
+          </div>
+          <div style={rowStyle}>
+            <label style={labelStyle}>{t('dialogs.imageProperties.style')}</label>
+            <select
+              style={selectStyle}
+              value={borderStyle}
+              onChange={(e) => setBorderStyle(e.target.value)}
+            >
+              <option value="solid">{t('dialogs.imageProperties.borderStyles.solid')}</option>
+              <option value="dashed">{t('dialogs.imageProperties.borderStyles.dashed')}</option>
+              <option value="dotted">{t('dialogs.imageProperties.borderStyles.dotted')}</option>
+              <option value="double">{t('dialogs.imageProperties.borderStyles.double')}</option>
+              <option value="groove">{t('dialogs.imageProperties.borderStyles.groove')}</option>
+              <option value="ridge">{t('dialogs.imageProperties.borderStyles.ridge')}</option>
+              <option value="inset">{t('dialogs.imageProperties.borderStyles.inset')}</option>
+              <option value="outset">{t('dialogs.imageProperties.borderStyles.outset')}</option>
+            </select>
+          </div>
+          <div style={rowStyle}>
+            <label style={labelStyle}>{t('dialogs.imageProperties.color')}</label>
+            <input
+              type="color"
+              value={borderColor}
+              onChange={(e) => setBorderColor(e.target.value)}
+              style={{
+                width: 32,
+                height: 24,
+                padding: 0,
+                border: '1px solid var(--doc-border)',
+                borderRadius: 4,
+                cursor: 'pointer',
+              }}
+            />
+            <input
+              type="text"
+              style={{ ...inputStyle, maxWidth: 90 }}
+              value={borderColor}
+              onChange={(e) => setBorderColor(e.target.value)}
+            />
+          </div>
+          {borderWidth > 0 && (
+            <div
+              style={{
+                marginTop: 4,
+                padding: 8,
+                border: `${borderWidth}px ${borderStyle} ${borderColor}`,
+                borderRadius: 4,
+                fontSize: 11,
+                color: 'var(--doc-text-muted)',
+                textAlign: 'center',
+              }}
+            >
+              {t('dialogs.imageProperties.preview')}
+            </div>
+          )}
+        </div>
+      </div>
+    </Dialog>
   );
 }

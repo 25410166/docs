@@ -8,6 +8,11 @@
  * Modal dialog for inserting a new table into the document.
  * Provides a visual grid selector for choosing rows and columns.
  *
+ * Migrated onto the shared <Dialog> shell — the shell handles the
+ * backdrop / blur / scale-in motion / close X / focus trap / Esc
+ * dismissal. This file only describes the body (grid selector +
+ * manual row/column inputs) and the footer action row.
+ *
  * Features:
  * - Visual grid selector (hover to select dimensions)
  * - Manual row/column input
@@ -15,10 +20,11 @@
  * - Quick insert with default sizes
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import { useTranslation } from '../../i18n';
-import { FocusTrap } from '../ui/FocusTrap';
+import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 // ============================================================================
 // TYPES
@@ -61,58 +67,6 @@ export interface InsertTableDialogProps {
 // ============================================================================
 // STYLES
 // ============================================================================
-
-const DIALOG_OVERLAY_STYLE: CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const DIALOG_CONTENT_STYLE: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: '8px',
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  minWidth: '320px',
-  maxWidth: '400px',
-  width: '100%',
-  margin: 'clamp(8px, 2.5vw, 20px)',
-};
-
-const DIALOG_HEADER_STYLE: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: '16px 20px',
-  borderBottom: '1px solid var(--doc-border)',
-};
-
-const DIALOG_TITLE_STYLE: CSSProperties = {
-  margin: 0,
-  fontSize: '18px',
-  fontWeight: 600,
-  color: 'var(--doc-text)',
-};
-
-const CLOSE_BUTTON_STYLE: CSSProperties = {
-  background: 'none',
-  border: 'none',
-  fontSize: '20px',
-  cursor: 'pointer',
-  color: 'var(--doc-text-muted)',
-  padding: '4px 8px',
-  lineHeight: 1,
-};
-
-const DIALOG_BODY_STYLE: CSSProperties = {
-  padding: '20px',
-};
 
 const GRID_CONTAINER_STYLE: CSSProperties = {
   display: 'flex',
@@ -190,43 +144,6 @@ const INPUT_STYLE: CSSProperties = {
   textAlign: 'center',
 };
 
-const DIALOG_FOOTER_STYLE: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: '12px',
-  padding: '16px 20px',
-  borderTop: '1px solid var(--doc-border)',
-};
-
-const BUTTON_BASE_STYLE: CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: '4px',
-  fontSize: '14px',
-  fontWeight: 500,
-  cursor: 'pointer',
-  border: 'none',
-};
-
-const PRIMARY_BUTTON_STYLE: CSSProperties = {
-  ...BUTTON_BASE_STYLE,
-  backgroundColor: 'var(--doc-primary)',
-  color: 'white',
-};
-
-const SECONDARY_BUTTON_STYLE: CSSProperties = {
-  ...BUTTON_BASE_STYLE,
-  backgroundColor: 'var(--doc-bg-hover)',
-  color: 'var(--doc-text)',
-  border: '1px solid var(--doc-border-input)',
-};
-
-const DISABLED_BUTTON_STYLE: CSSProperties = {
-  ...BUTTON_BASE_STYLE,
-  backgroundColor: 'var(--doc-border-input)',
-  color: 'var(--doc-text-muted)',
-  cursor: 'not-allowed',
-};
-
 // ============================================================================
 // ICONS
 // ============================================================================
@@ -270,8 +187,6 @@ export function InsertTableDialog({
   maxGridColumns = 10,
   maxRows = 100,
   maxColumns = 20,
-  className,
-  style,
 }: InsertTableDialogProps): React.ReactElement | null {
   const { t } = useTranslation();
 
@@ -283,9 +198,6 @@ export function InsertTableDialog({
   const [inputRows, setInputRows] = useState(3);
   const [inputCols, setInputCols] = useState(3);
 
-  // Refs
-  const dialogRef = useRef<HTMLDivElement>(null);
-
   // Reset state when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -293,13 +205,6 @@ export function InsertTableDialog({
       setHoverCols(0);
       setInputRows(3);
       setInputCols(3);
-    }
-  }, [isOpen]);
-
-  // Focus trap
-  useEffect(() => {
-    if (isOpen) {
-      dialogRef.current?.focus();
     }
   }, [isOpen]);
 
@@ -342,18 +247,6 @@ export function InsertTableDialog({
       }
     },
     [onClose, handleManualInsert]
-  );
-
-  /**
-   * Handle overlay click (close dialog)
-   */
-  const handleOverlayClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) {
-        onClose();
-      }
-    },
-    [onClose]
   );
 
   /**
@@ -416,128 +309,103 @@ export function InsertTableDialog({
       : t('dialogs.insertTable.hoverToSelect');
 
   return (
-    <FocusTrap>
-      <div
-        className={`docx-insert-table-dialog-overlay ${className || ''}`}
-        style={{ ...DIALOG_OVERLAY_STYLE, ...style }}
-        onClick={handleOverlayClick}
-        onKeyDown={handleKeyDown}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="insert-table-dialog-title"
-      >
-        <div
-          ref={dialogRef}
-          className="docx-insert-table-dialog"
-          style={DIALOG_CONTENT_STYLE}
-          tabIndex={-1}
-        >
-          {/* Header */}
-          <div className="docx-insert-table-dialog-header" style={DIALOG_HEADER_STYLE}>
-            <h2 id="insert-table-dialog-title" style={DIALOG_TITLE_STYLE}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <TableIcon />
-                {t('dialogs.insertTable.title')}
-              </span>
-            </h2>
-            <button
-              type="button"
-              className="docx-insert-table-dialog-close"
-              style={CLOSE_BUTTON_STYLE}
-              onClick={onClose}
-              aria-label={t('common.closeDialog')}
-            >
-              &times;
-            </button>
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={<span id="insert-table-dialog-title">{t('dialogs.insertTable.title')}</span>}
+      icon={<TableIcon />}
+      width={400}
+      testId="insert-table-dialog"
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="docx-insert-table-dialog-cancel"
+            onClick={onClose}
+          >
+            {t('common.cancel')}
+          </Button>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            className="docx-insert-table-dialog-insert"
+            onClick={handleManualInsert}
+            disabled={!canInsert}
+          >
+            {t('dialogs.insertTable.insertButton')}
+          </Button>
+        </>
+      }
+    >
+      {/* Body — legacy `docx-insert-table-dialog-body` class kept for
+        any pre-migration e2e selectors. Enter-to-insert handled here;
+        Esc dismissal now owned by the shell. */}
+      <div className="docx-insert-table-dialog-body" onKeyDown={handleKeyDown}>
+        {/* Grid selector */}
+        <div className="docx-insert-table-grid-container" style={GRID_CONTAINER_STYLE}>
+          <div
+            className="docx-insert-table-grid"
+            style={{
+              ...GRID_STYLE,
+              gridTemplateColumns: `repeat(${maxGridColumns}, 1fr)`,
+            }}
+            onMouseLeave={() => {
+              setHoverRows(0);
+              setHoverCols(0);
+            }}
+            role="grid"
+            aria-label="Table size selector"
+          >
+            {gridCells}
           </div>
-
-          {/* Body */}
-          <div className="docx-insert-table-dialog-body" style={DIALOG_BODY_STYLE}>
-            {/* Grid selector */}
-            <div className="docx-insert-table-grid-container" style={GRID_CONTAINER_STYLE}>
-              <div
-                className="docx-insert-table-grid"
-                style={{
-                  ...GRID_STYLE,
-                  gridTemplateColumns: `repeat(${maxGridColumns}, 1fr)`,
-                }}
-                onMouseLeave={() => {
-                  setHoverRows(0);
-                  setHoverCols(0);
-                }}
-                role="grid"
-                aria-label="Table size selector"
-              >
-                {gridCells}
-              </div>
-              <div className="docx-insert-table-grid-label" style={GRID_LABEL_STYLE}>
-                {gridLabel}
-              </div>
-            </div>
-
-            {/* Separator */}
-            <div className="docx-insert-table-separator" style={SEPARATOR_STYLE}>
-              <div style={SEPARATOR_LINE_STYLE} />
-              <span>{t('dialogs.insertTable.orSpecifySize')}</span>
-              <div style={SEPARATOR_LINE_STYLE} />
-            </div>
-
-            {/* Manual input */}
-            <div className="docx-insert-table-inputs">
-              <div style={INPUT_ROW_STYLE}>
-                <label htmlFor="insert-table-rows" style={LABEL_STYLE}>
-                  {t('dialogs.insertTable.rowsLabel')}
-                </label>
-                <input
-                  id="insert-table-rows"
-                  type="number"
-                  min={1}
-                  max={maxRows}
-                  value={inputRows}
-                  onChange={handleRowsChange}
-                  style={INPUT_STYLE}
-                />
-              </div>
-              <div style={INPUT_ROW_STYLE}>
-                <label htmlFor="insert-table-cols" style={LABEL_STYLE}>
-                  {t('dialogs.insertTable.columnsLabel')}
-                </label>
-                <input
-                  id="insert-table-cols"
-                  type="number"
-                  min={1}
-                  max={maxColumns}
-                  value={inputCols}
-                  onChange={handleColsChange}
-                  style={INPUT_STYLE}
-                />
-              </div>
-            </div>
+          <div className="docx-insert-table-grid-label" style={GRID_LABEL_STYLE}>
+            {gridLabel}
           </div>
+        </div>
 
-          {/* Footer */}
-          <div className="docx-insert-table-dialog-footer" style={DIALOG_FOOTER_STYLE}>
-            <button
-              type="button"
-              className="docx-insert-table-dialog-cancel"
-              style={SECONDARY_BUTTON_STYLE}
-              onClick={onClose}
-            >
-              {t('common.cancel')}
-            </button>
-            <button
-              type="button"
-              className="docx-insert-table-dialog-insert"
-              style={canInsert ? PRIMARY_BUTTON_STYLE : DISABLED_BUTTON_STYLE}
-              onClick={handleManualInsert}
-              disabled={!canInsert}
-            >
-              {t('dialogs.insertTable.insertButton')}
-            </button>
+        {/* Separator */}
+        <div className="docx-insert-table-separator" style={SEPARATOR_STYLE}>
+          <div style={SEPARATOR_LINE_STYLE} />
+          <span>{t('dialogs.insertTable.orSpecifySize')}</span>
+          <div style={SEPARATOR_LINE_STYLE} />
+        </div>
+
+        {/* Manual input */}
+        <div className="docx-insert-table-inputs">
+          <div style={INPUT_ROW_STYLE}>
+            <label htmlFor="insert-table-rows" style={LABEL_STYLE}>
+              {t('dialogs.insertTable.rowsLabel')}
+            </label>
+            <input
+              id="insert-table-rows"
+              type="number"
+              min={1}
+              max={maxRows}
+              value={inputRows}
+              onChange={handleRowsChange}
+              style={INPUT_STYLE}
+            />
+          </div>
+          <div style={INPUT_ROW_STYLE}>
+            <label htmlFor="insert-table-cols" style={LABEL_STYLE}>
+              {t('dialogs.insertTable.columnsLabel')}
+            </label>
+            <input
+              id="insert-table-cols"
+              type="number"
+              min={1}
+              max={maxColumns}
+              value={inputCols}
+              onChange={handleColsChange}
+              style={INPUT_STYLE}
+            />
           </div>
         </div>
       </div>
-    </FocusTrap>
+    </Dialog>
   );
 }
 

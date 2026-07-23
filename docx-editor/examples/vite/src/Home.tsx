@@ -34,26 +34,47 @@ interface HomeProps {
 
 type CategoryFilter = 'All' | TemplateCategory;
 
+// Theme-aware — these resolve through the editor's design tokens (loaded
+// globally via styles.css -> editor.css -> tokens.css), which flip on
+// [data-theme='dark'] the same way the editor's own dark mode does. The
+// literal hex after each comma is the light-mode fallback (byte-identical
+// to the pre-dark-mode palette) in case the tokens aren't present.
 const COLORS = {
-  ink: '#0f172a',
-  inkMuted: '#475569',
-  inkSubtle: '#94a3b8',
+  ink: 'var(--color-text, #0b0e15)',
+  inkMuted: 'var(--color-text-secondary, #3b4354)',
+  inkSubtle: 'var(--color-text-muted, #8b93a3)',
+  // Fixed near-black — the "Open file" button and the active category pill
+  // are solid dark chips with white text in BOTH themes. They must not
+  // track body-text color, which flips to near-white in dark mode and would
+  // make these chips illegible.
+  inkSolid: '#0b0e15',
+  // Real document previews (template cards, the blank-card icon tile) stay
+  // literal white "paper" in both themes — matching how the editor's own
+  // page canvas stays light even in dark mode.
   paper: '#ffffff',
-  surface: '#f8fafc',
-  surface2: '#f1f5f9',
-  border: '#e2e8f0',
-  borderHover: '#94a3b8',
-  brand: '#2563eb',
-  brandHover: '#1d4ed8',
-  brandSoft: '#eff6ff',
+  // An elevated UI-control surface (search box, filter pills, recent-file
+  // rows, the auto-reopen banner) — white in light mode (unchanged), a
+  // raised dark panel in dark mode.
+  surfaceRaised: 'var(--color-surface-raised, #ffffff)',
+  surface: 'var(--color-surface-strip, #f6f8fc)',
+  surface2: 'var(--color-surface-alt, #eef2f8)',
+  border: 'var(--color-divider, #e3e8f1)',
+  borderHover: 'var(--color-border-strong, #9aa1b0)',
+  brand: 'var(--color-accent, #2f56ff)',
+  brandHover: 'var(--color-accent-hover, #2647d6)',
+  brandSoft: 'var(--color-accent-soft, #e9edff)',
+  // Fixed brand blue — keeps >=4.5:1 contrast with white text in both
+  // themes. Used for the one "Reopen" CTA chip; the theme accent itself
+  // lightens in dark mode and would fail contrast with white text there.
+  ctaSolid: '#1d4ed8',
 };
 
 const styles: Record<string, CSSProperties> = {
   page: {
     minHeight: '100vh',
     background:
-      'radial-gradient(1100px 700px at 8% -10%, #dbeafe 0%, transparent 55%),' +
-      'radial-gradient(900px 500px at 100% 0%, #f3e8ff 0%, transparent 50%),' +
+      'radial-gradient(1100px 700px at 8% -10%, rgba(110,139,255,0.35) 0%, transparent 55%),' +
+      'radial-gradient(900px 500px at 100% 0%, rgba(167,139,250,0.28) 0%, transparent 50%),' +
       `linear-gradient(180deg, ${COLORS.surface} 0%, ${COLORS.surface2} 100%)`,
     boxSizing: 'border-box',
     fontFamily:
@@ -139,7 +160,7 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    background: COLORS.paper,
+    background: COLORS.surfaceRaised,
     border: `1px solid ${COLORS.border}`,
     borderRadius: '10px',
     padding: '8px 12px',
@@ -161,7 +182,7 @@ const styles: Record<string, CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '8px',
-    background: COLORS.ink,
+    background: COLORS.inkSolid,
     color: '#ffffff',
     border: 'none',
     borderRadius: '10px',
@@ -182,7 +203,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '13px',
     fontWeight: 500,
     color: COLORS.inkMuted,
-    background: COLORS.paper,
+    background: COLORS.surfaceRaised,
     border: `1px solid ${COLORS.border}`,
     borderRadius: '999px',
     padding: '6px 14px',
@@ -191,9 +212,9 @@ const styles: Record<string, CSSProperties> = {
     font: 'inherit',
   },
   pillActive: {
-    background: COLORS.ink,
+    background: COLORS.inkSolid,
     color: '#ffffff',
-    borderColor: COLORS.ink,
+    borderColor: COLORS.inkSolid,
   },
 
   section: {
@@ -221,7 +242,10 @@ const styles: Record<string, CSSProperties> = {
 
   featuredRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    // Fixed 4-up on desktop (mobile override drops to 2) so the capped-at-4
+    // Featured set always fills one clean row — an auto-fit track count would
+    // strand a lone card at intermediate widths.
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
     gap: '18px',
   },
   grid: {
@@ -289,7 +313,9 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 16,
     background: COLORS.paper,
     border: `1px dashed ${COLORS.borderHover}`,
-    color: COLORS.inkMuted,
+    // Fixed — this tile is always a light "paper" swatch (see COLORS.paper),
+    // so its icon must stay fixed-dark too, not track the page theme.
+    color: '#3b4354',
   },
   cardIconBadge: {
     position: 'absolute',
@@ -303,7 +329,9 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: COLORS.inkMuted,
+    // Fixed — this badge sits on a near-white translucent chip regardless
+    // of page theme, so its icon must stay fixed-dark too.
+    color: '#3b4354',
     boxShadow: '0 1px 2px rgba(15, 23, 42, 0.06)',
   },
   cardBody: {
@@ -315,7 +343,10 @@ const styles: Record<string, CSSProperties> = {
   cardTitle: {
     fontSize: '13.5px',
     fontWeight: 600,
-    color: COLORS.ink,
+    // Fixed — the card itself is always literal white "paper" (see
+    // COLORS.paper), so the title must stay fixed-dark too, not track the
+    // page theme (which would flip this to near-white-on-white).
+    color: '#0b0e15',
     letterSpacing: '-0.005em',
   },
   cardCategory: {
@@ -386,6 +417,13 @@ const mobile: Record<string, CSSProperties> = {
   },
 };
 
+/** Blank templates ship an SVG placeholder rather than a photographic PNG
+ *  render. They paint as a dashed empty-state card, so we keep them out of
+ *  the Featured strip and sort them after the rich previews in each category. */
+function isBlankEntry(entry: TemplateEntry): boolean {
+  return entry.thumbnail.endsWith('.svg');
+}
+
 function TemplateCard({
   entry,
   onSelect,
@@ -398,7 +436,7 @@ function TemplateCard({
   const [hovered, setHovered] = useState(false);
   // Blank entries ship an SVG placeholder rather than a PNG render; give them
   // a clean empty-state instead of an image that crops to grey.
-  const isBlank = entry.thumbnail.endsWith('.svg');
+  const isBlank = isBlankEntry(entry);
   return (
     <button
       type="button"
@@ -548,7 +586,7 @@ const autoReopenBannerStyle: React.CSSProperties = {
   margin: '12px 24px 0',
   borderRadius: 10,
   border: `1px solid ${COLORS.border}`,
-  background: COLORS.paper,
+  background: COLORS.surfaceRaised,
   boxShadow: '0 1px 1px rgba(15, 23, 42, 0.03)',
 };
 
@@ -556,7 +594,7 @@ const autoReopenBannerOpenStyle: React.CSSProperties = {
   padding: '6px 14px',
   borderRadius: 6,
   border: '1px solid transparent',
-  background: COLORS.brand,
+  background: COLORS.ctaSolid,
   color: '#fff',
   fontSize: 13,
   fontWeight: 600,
@@ -582,7 +620,7 @@ const autoReopenBannerDismissStyle: React.CSSProperties = {
 // not pre-painted to PNG the way bundled templates are). Microsoft
 // Word's Home uses this same shape for its Recent / Pinned list.
 const recentCardStyle: CSSProperties = {
-  background: COLORS.paper,
+  background: COLORS.surfaceRaised,
   border: `1px solid ${COLORS.border}`,
   borderRadius: '10px',
   padding: '10px 12px',
@@ -780,12 +818,23 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
     });
   }, [query, category]);
 
-  const featured = useMemo(() => TEMPLATES.filter((t) => t.featured), []);
+  // Featured showcases the rich photographic templates only — blank cards paint
+  // as sparse dashed tiles and would strand next to the real previews. Cap at 4
+  // so the auto-fit grid fills one clean row instead of a lopsided 4 + 1.
+  const featured = useMemo(
+    () => TEMPLATES.filter((t) => t.featured && !isBlankEntry(t)).slice(0, 4),
+    []
+  );
 
   const byCategory = useMemo(() => {
     const m = new Map<TemplateCategory, TemplateEntry[]>();
     for (const c of CATEGORIES) m.set(c, []);
     for (const t of TEMPLATES) m.get(t.category)?.push(t);
+    // Sort the blank cards to the end of each category so the rich previews
+    // lead and the sparse tiles group together instead of holing the grid.
+    for (const list of m.values()) {
+      list.sort((a, b) => Number(isBlankEntry(a)) - Number(isBlankEntry(b)));
+    }
     return m;
   }, []);
 
@@ -796,7 +845,9 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
       <header style={{ ...styles.topBar, ...(isMobile && mobile.topBar) }}>
         <div style={styles.brandRow}>
           <img src="/logo.svg" alt="" style={styles.brandLogo} aria-hidden="true" />
-          <div style={styles.brandName}>Casual Editor</div>
+          <div style={styles.brandName}>
+            Casual <span style={{ color: COLORS.brand }}>Editor</span>
+          </div>
         </div>
         <div style={styles.topRight}>
           <a
@@ -838,72 +889,6 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
         </p>
       </section>
 
-      <section
-        style={{
-          maxWidth: '1180px',
-          margin: '0 auto',
-          padding: isMobile ? '0 16px 4px' : '0 40px 4px',
-        }}
-        aria-label="AI features pre-release"
-      >
-        <div
-          style={{
-            background: COLORS.brandSoft,
-            border: `1px solid #bfdbfe`,
-            borderRadius: '12px',
-            padding: isMobile ? '14px 16px' : '16px 24px',
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: isMobile ? '10px' : '0',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <span
-              style={{
-                display: 'inline-block',
-                fontSize: '11px',
-                fontWeight: 700,
-                color: COLORS.brand,
-                background: '#dbeafe',
-                border: `1px solid #93c5fd`,
-                padding: '3px 9px',
-                borderRadius: '999px',
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                flexShrink: 0,
-              }}
-            >
-              Pre-release
-            </span>
-            <span style={{ fontSize: '14px', color: COLORS.inkMuted, lineHeight: 1.45 }}>
-              <strong style={{ color: COLORS.ink }}>AI features are on the way</strong> — inline
-              ask ({'⌘'}J / Ctrl+J), rewrite panel, and a DocOps chat panel for
-              document-level operations. Runs fully on-device in the desktop app or against the
-              Anthropic API on the web.
-            </span>
-          </div>
-          <a
-            href="https://github.com/CasualOffice/docs#ai-features-pre-release"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              fontSize: '13px',
-              fontWeight: 600,
-              color: COLORS.brand,
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
-          >
-            Learn more
-          </a>
-        </div>
-      </section>
-
       <section style={{ ...styles.controls, ...(isMobile && mobile.controls) }}>
         <label style={{ ...styles.searchWrap, ...(isMobile && mobile.searchWrap) }}>
           <span
@@ -927,7 +912,7 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
           style={{ ...styles.openFileBtn, ...(isMobile && mobile.openFileBtn) }}
           onClick={() => fileInputRef.current?.click()}
           onMouseEnter={(e) => (e.currentTarget.style.background = COLORS.brandHover)}
-          onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.ink)}
+          onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.inkSolid)}
           data-testid="home-open-from-disk"
         >
           <span className="material-symbols-outlined" style={{ fontSize: 18 }} aria-hidden="true">
@@ -1078,6 +1063,69 @@ export function Home({ onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Ele
         onChange={handleFileChange}
         data-testid="home-file-input"
       />
+
+      <section
+        style={{
+          maxWidth: '1180px',
+          margin: '24px auto 0',
+          padding: isMobile ? '0 16px' : '0 40px',
+        }}
+        aria-label="AI features pre-release"
+      >
+        <div
+          style={{
+            background: '#e9edff',
+            border: `1px solid #bfdbfe`,
+            borderRadius: '10px',
+            padding: isMobile ? '10px 14px' : '10px 16px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '8px 12px',
+            alignItems: 'center',
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-block',
+              fontSize: '10.5px',
+              fontWeight: 700,
+              color: '#1d4ed8',
+              background: '#dbeafe',
+              border: `1px solid #93c5fd`,
+              padding: '2px 8px',
+              borderRadius: '999px',
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              flexShrink: 0,
+            }}
+          >
+            Pre-release
+          </span>
+          <span style={{ fontSize: '13px', color: '#475569', lineHeight: 1.4 }}>
+            <strong style={{ color: '#0f172a' }}>AI features are on the way</strong> — inline ask,
+            rewrite panel, and a DocOps chat panel. On-device in the desktop app, or the Anthropic
+            API on the web.
+          </span>
+          <a
+            href="https://github.com/CasualOffice/docs#ai-features-pre-release"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              marginLeft: 'auto',
+              fontSize: '13px',
+              fontWeight: 600,
+              color: '#1d4ed8',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+          >
+            Learn more
+          </a>
+        </div>
+      </section>
 
       <footer style={{ ...styles.footer, ...(isMobile && mobile.footer) }}>
         <span>MIT fork of eigenpal/docx-editor · Node collab server (Hocuspocus + Yjs)</span>

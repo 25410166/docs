@@ -13,6 +13,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import type { ReactSidebarItem, RenderedDomContext } from '../plugin-api/types';
 import { SIDEBAR_WIDTH, SIDEBAR_PAGE_GAP, SIDEBAR_DOCUMENT_SHIFT } from './sidebar/constants';
 import { resolveItemPositions } from './sidebar/resolveItemPositions';
+import { PanelState } from './ui/PanelState';
 import { useTranslation } from '../i18n';
 
 export { SIDEBAR_WIDTH, SIDEBAR_PAGE_GAP, SIDEBAR_DOCUMENT_SHIFT } from './sidebar/constants';
@@ -27,6 +28,13 @@ export interface UnifiedSidebarProps {
   onExpandedItemChange?: (itemId: string | null) => void;
   /** Controlled: sidebar item to expand based on cursor position. */
   activeItemId?: string | null;
+  /**
+   * Whether the comments panel is explicitly open. When there are no items,
+   * an open panel shows a designed empty state; a closed one stays collapsed
+   * (renders nothing). Defaults to false so a document with zero comments
+   * never pops the rail open unbidden.
+   */
+  open?: boolean;
 }
 
 export function UnifiedSidebar({
@@ -38,6 +46,7 @@ export function UnifiedSidebar({
   editorContainerRef,
   onExpandedItemChange,
   activeItemId,
+  open = false,
 }: UnifiedSidebarProps) {
   const { t } = useTranslation();
   // Fully controlled: parent owns expansion state via activeItemId
@@ -185,7 +194,40 @@ export function UnifiedSidebar({
     [onExpandedItemChange]
   );
 
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    // Parent keeps the sidebar mounted with zero items only when the user has
+    // explicitly opened the comments panel. In that case render a designed
+    // empty state instead of a blank rail. When the panel is closed we still
+    // return null so a doc with no comments never pops the rail open unbidden.
+    if (!open) return null;
+
+    return (
+      <aside
+        ref={sidebarRef}
+        className="docx-unified-sidebar"
+        role="complementary"
+        aria-label={t('sidebar.ariaLabel')}
+        data-testid="comments-empty-state"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: `calc(50% - ${SIDEBAR_DOCUMENT_SHIFT}px + ${(pageWidth * zoom) / 2 + SIDEBAR_PAGE_GAP}px)`,
+          width: SIDEBAR_WIDTH,
+          fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
+          zIndex: 40,
+          backgroundColor: 'transparent',
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <PanelState
+          kind="empty"
+          icon="chat_bubble_outline"
+          message={t('sidebar.commentsEmptyTitle')}
+          hint={t('sidebar.commentsEmptyHint')}
+        />
+      </aside>
+    );
+  }
 
   return (
     <aside

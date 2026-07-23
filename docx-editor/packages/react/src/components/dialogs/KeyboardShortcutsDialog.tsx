@@ -16,7 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TranslationKey } from '../../i18n';
-import { FocusTrap } from '../ui/FocusTrap';
+import { Dialog } from '../ui/Dialog';
 
 // ============================================================================
 // TYPES
@@ -722,10 +722,8 @@ export const KeyboardShortcutsDialog: React.FC<KeyboardShortcutsDialogProps> = (
   onClose,
   customShortcuts = [],
   showSearch = true,
-  className = '',
 }) => {
   const { t } = useTranslation();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -796,227 +794,110 @@ export const KeyboardShortcutsDialog: React.FC<KeyboardShortcutsDialogProps> = (
     }
   }, [isOpen]);
 
-  // Handle click outside
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, onClose]);
-
-  // Handle Escape key
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
+  const escHint = (() => {
+    const text = t('dialogs.keyboardShortcuts.pressEscToClose', { key: 'Esc' });
+    const parts = text.split('Esc');
+    return (
+      <>
+        {parts[0]}
+        <kbd
+          style={{
+            padding: '2px 6px',
+            backgroundColor: 'var(--doc-surface, white)',
+            borderRadius: '4px',
+            border: '1px solid var(--doc-border-light)',
+          }}
+        >
+          Esc
+        </kbd>
+        {parts[1]}
+      </>
+    );
+  })();
 
   return (
-    <FocusTrap>
-      <div
-        className="docx-shortcuts-overlay"
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 10001,
-        }}
-      >
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t('dialogs.keyboardShortcuts.ariaLabel')}
+      width={600}
+      testId="keyboard-shortcuts-dialog"
+      helper={escHint}
+    >
+      {/* Search — sticky so it stays visible while the list scrolls. */}
+      {showSearch && (
         <div
-          ref={dialogRef}
-          className={`docx-shortcuts-dialog ${className}`}
           style={{
-            width: '600px',
-            maxWidth: '90vw',
-            maxHeight: '80vh',
-            backgroundColor: 'var(--doc-surface, white)',
-            borderRadius: '12px',
-            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.2)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
+            position: 'sticky',
+            top: -18,
+            zIndex: 1,
+            margin: '-18px -20px 16px',
+            padding: '12px 20px',
+            borderBottom: '1px solid var(--doc-border)',
+            background: 'var(--doc-surface, white)',
           }}
-          role="dialog"
-          aria-modal="true"
-          aria-label={t('dialogs.keyboardShortcuts.ariaLabel')}
         >
-          {/* Header */}
-          <div
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('dialogs.keyboardShortcuts.searchPlaceholder')}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '16px 20px',
-              borderBottom: '1px solid var(--doc-border)',
+              width: '100%',
+              padding: '10px 12px',
+              fontSize: '14px',
+              border: '1px solid var(--doc-border-light)',
+              borderRadius: '6px',
+              outline: 'none',
+              boxSizing: 'border-box',
             }}
-          >
-            <h2
-              style={{
-                margin: 0,
-                fontSize: '18px',
-                fontWeight: 600,
-                color: 'var(--doc-text)',
-              }}
-            >
-              {t('dialogs.keyboardShortcuts.ariaLabel')}
-            </h2>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={t('common.closeDialog')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '32px',
-                height: '32px',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                borderRadius: '50%',
-                color: 'var(--doc-text-muted)',
-              }}
-            >
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path
-                  d="M5 5l10 10M15 5L5 15"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
-
-          {/* Search */}
-          {showSearch && (
-            <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--doc-border)' }}>
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('dialogs.keyboardShortcuts.searchPlaceholder')}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  fontSize: '14px',
-                  border: '1px solid var(--doc-border-light)',
-                  borderRadius: '6px',
-                  outline: 'none',
-                }}
-              />
-            </div>
-          )}
-
-          {/* Content */}
-          <div
-            style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '16px 20px',
-            }}
-          >
-            {groupedShortcuts.length === 0 ? (
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: '32px',
-                  color: 'var(--doc-text-muted)',
-                }}
-              >
-                {t('dialogs.keyboardShortcuts.noResults', { query: searchQuery })}
-              </div>
-            ) : (
-              groupedShortcuts.map(({ category, shortcuts }) => (
-                <div key={category} style={{ marginBottom: '24px' }}>
-                  <h3
-                    style={{
-                      margin: '0 0 12px 0',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: 'var(--doc-primary)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                    }}
-                  >
-                    {t(CATEGORY_LABEL_KEYS[category])}
-                  </h3>
-                  <div>
-                    {shortcuts.map((shortcut) => (
-                      <ShortcutItem
-                        key={shortcut.id}
-                        shortcut={shortcut}
-                        translatedName={shortcut.nameKey ? t(shortcut.nameKey) : shortcut.name}
-                        translatedDescription={
-                          shortcut.descriptionKey
-                            ? t(shortcut.descriptionKey)
-                            : shortcut.description
-                        }
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* Footer */}
-          <div
-            style={{
-              padding: '12px 20px',
-              borderTop: '1px solid var(--doc-border)',
-              backgroundColor: 'var(--doc-surface-sunken)',
-              fontSize: '12px',
-              color: 'var(--doc-text-muted)',
-              textAlign: 'center',
-            }}
-          >
-            {(() => {
-              const text = t('dialogs.keyboardShortcuts.pressEscToClose', { key: 'Esc' });
-              const parts = text.split('Esc');
-              return (
-                <>
-                  {parts[0]}
-                  <kbd
-                    style={{
-                      padding: '2px 6px',
-                      backgroundColor: 'var(--doc-surface, white)',
-                      borderRadius: '4px',
-                      border: '1px solid var(--doc-border-light)',
-                    }}
-                  >
-                    Esc
-                  </kbd>
-                  {parts[1]}
-                </>
-              );
-            })()}
-          </div>
+          />
         </div>
-      </div>
-    </FocusTrap>
+      )}
+
+      {/* Content */}
+      {groupedShortcuts.length === 0 ? (
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '32px',
+            color: 'var(--doc-text-muted)',
+          }}
+        >
+          {t('dialogs.keyboardShortcuts.noResults', { query: searchQuery })}
+        </div>
+      ) : (
+        groupedShortcuts.map(({ category, shortcuts }) => (
+          <div key={category} style={{ marginBottom: '24px' }}>
+            <h3
+              style={{
+                margin: '0 0 12px 0',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: 'var(--doc-primary)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+              }}
+            >
+              {t(CATEGORY_LABEL_KEYS[category])}
+            </h3>
+            <div>
+              {shortcuts.map((shortcut) => (
+                <ShortcutItem
+                  key={shortcut.id}
+                  shortcut={shortcut}
+                  translatedName={shortcut.nameKey ? t(shortcut.nameKey) : shortcut.name}
+                  translatedDescription={
+                    shortcut.descriptionKey ? t(shortcut.descriptionKey) : shortcut.description
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+    </Dialog>
   );
 };
 

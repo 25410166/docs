@@ -351,6 +351,7 @@ function NotificationToast({ notification, onDismiss }: NotificationToastProps) 
   return (
     <div
       className={`docx-notification-toast docx-notification-${notification.severity}`}
+      role={notification.severity === 'error' ? 'alert' : 'status'}
       style={toastStyle}
     >
       <style>
@@ -553,7 +554,7 @@ function DefaultErrorFallback({
   };
 
   return (
-    <div className="docx-error-fallback" style={containerStyle}>
+    <div className="docx-error-fallback" role="alert" style={containerStyle}>
       <div style={iconStyle}>
         <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
           <circle cx="24" cy="24" r="20" stroke="currentColor" strokeWidth="2" />
@@ -658,7 +659,7 @@ export function ParseErrorDisplay({
   };
 
   return (
-    <div className={`docx-parse-error ${className}`} style={containerStyle}>
+    <div className={`docx-parse-error ${className}`} role="alert" style={containerStyle}>
       <div style={iconStyle}>
         <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
           <path d="M10 10h20v20H10z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />

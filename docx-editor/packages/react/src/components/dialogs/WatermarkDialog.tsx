@@ -13,11 +13,15 @@
  * Painter side: every field is already plumbed through `renderPage` →
  * the layout-painter overlay; the dialog just stops hardcoding them.
  *
- * Visual language mirrors AboutDialog / PreferencesDialog (overlay + shell
- * with header/body/footer split + primary button) for consistency.
+ * Migrated onto the shared <Dialog> shell — the shell owns the backdrop /
+ * blur / scale-in motion / header + close-X / footer / focus trap / Esc +
+ * backdrop dismissal. This file only describes the body knobs + footer
+ * action row.
  */
 
 import { useEffect, useState, type CSSProperties } from 'react';
+import { Dialog } from '../ui/Dialog';
+import { Button } from '../ui/Button';
 
 export interface WatermarkValue {
   text: string;
@@ -43,36 +47,7 @@ const DEFAULT_OPACITY = 0.5;
 const DEFAULT_FONT_SIZE = 96;
 const DEFAULT_ROTATION = -45;
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const dialogStyle: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: 8,
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  minWidth: 460,
-  maxWidth: 520,
-  width: '100%',
-  margin: 20,
-};
-
-const headerStyle: CSSProperties = {
-  padding: '16px 20px 12px',
-  borderBottom: '1px solid var(--doc-border, #ddd)',
-  fontSize: 16,
-  fontWeight: 600,
-  color: 'var(--doc-text-on-surface, #1f2937)',
-};
-
 const bodyStyle: CSSProperties = {
-  padding: '16px 20px',
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
@@ -119,44 +94,6 @@ const hintStyle: CSSProperties = {
   color: 'var(--doc-text-muted, #6b7280)',
 };
 
-const footerStyle: CSSProperties = {
-  padding: '12px 20px 16px',
-  borderTop: '1px solid var(--doc-border, #ddd)',
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: 8,
-};
-
-const btnBase: CSSProperties = {
-  padding: '6px 16px',
-  fontSize: 13,
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontWeight: 500,
-};
-
-const primaryBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-primary, #1a73e8)',
-  background: 'var(--doc-primary, #1a73e8)',
-  color: 'white',
-};
-
-const secondaryBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-border, #d1d5db)',
-  background: 'transparent',
-  color: 'var(--doc-text-on-surface, #1f2937)',
-};
-
-const dangerBtnStyle: CSSProperties = {
-  ...btnBase,
-  border: '1px solid var(--doc-border, #d1d5db)',
-  background: 'transparent',
-  color: 'var(--doc-error, #d93025)',
-  marginRight: 'auto',
-};
-
 const colorInputStyle: CSSProperties = {
   width: 36,
   height: 28,
@@ -199,17 +136,6 @@ export function WatermarkDialog({ isOpen, onClose, current, onApply }: Watermark
     current?.rotation,
   ]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   const trimmed = text.trim();
   const apply = () => {
     const value: WatermarkValue = { text: trimmed };
@@ -225,115 +151,20 @@ export function WatermarkDialog({ isOpen, onClose, current, onApply }: Watermark
   };
 
   return (
-    <div
-      className="ep-dialog-overlay"
-      style={overlayStyle}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="ep-dialog-shell"
-        style={dialogStyle}
-        role="dialog"
-        aria-label="Watermark"
-        data-testid="watermark-dialog"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div style={headerStyle}>Watermark</div>
-        <div style={bodyStyle}>
-          <div style={knobsRowStyle}>
-            <label style={labelStyle} htmlFor="watermark-text">
-              Text
-            </label>
-            <input
-              id="watermark-text"
-              type="text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="e.g. DRAFT, CONFIDENTIAL"
-              data-testid="watermark-text-input"
-              style={inputStyle}
-              autoFocus
-            />
-          </div>
-
-          <div style={knobsRowStyle}>
-            <label style={labelStyle} htmlFor="watermark-color">
-              Color
-            </label>
-            <input
-              id="watermark-color"
-              type="color"
-              value={toHash(color)}
-              onChange={(e) => setColor(stripHash(e.target.value))}
-              data-testid="watermark-color-input"
-              style={colorInputStyle}
-              aria-label="Watermark color"
-            />
-          </div>
-
-          <div style={sliderRowStyle}>
-            <label style={labelStyle} htmlFor="watermark-opacity">
-              Opacity
-            </label>
-            <input
-              id="watermark-opacity"
-              type="range"
-              min={10}
-              max={100}
-              step={5}
-              value={Math.round(opacity * 100)}
-              onChange={(e) => setOpacity(Number(e.target.value) / 100)}
-              data-testid="watermark-opacity-input"
-            />
-            <span style={valueStyle}>{Math.round(opacity * 100)}%</span>
-          </div>
-
-          <div style={sliderRowStyle}>
-            <label style={labelStyle} htmlFor="watermark-size">
-              Font size
-            </label>
-            <input
-              id="watermark-size"
-              type="range"
-              min={48}
-              max={144}
-              step={4}
-              value={fontSize}
-              onChange={(e) => setFontSize(Number(e.target.value))}
-              data-testid="watermark-size-input"
-            />
-            <span style={valueStyle}>{fontSize}px</span>
-          </div>
-
-          <div style={sliderRowStyle}>
-            <label style={labelStyle} htmlFor="watermark-rotation">
-              Rotation
-            </label>
-            <input
-              id="watermark-rotation"
-              type="range"
-              min={-90}
-              max={90}
-              step={5}
-              value={rotation}
-              onChange={(e) => setRotation(Number(e.target.value))}
-              data-testid="watermark-rotation-input"
-            />
-            <span style={valueStyle}>{rotation}°</span>
-          </div>
-
-          <div style={hintStyle}>
-            The watermark sits behind page content, not clickable or selectable, and shows on every
-            page.
-          </div>
-        </div>
-        <div style={footerStyle}>
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Watermark"
+      width={480}
+      testId="watermark-dialog"
+      footer={
+        <>
           {current && (
-            <button
+            <Button
               type="button"
-              style={dangerBtnStyle}
+              variant="outline"
+              size="sm"
+              className="mr-auto text-[color:var(--doc-error,#d93025)]"
               data-testid="watermark-remove"
               onClick={() => {
                 onApply(undefined);
@@ -341,23 +172,113 @@ export function WatermarkDialog({ isOpen, onClose, current, onApply }: Watermark
               }}
             >
               Remove
-            </button>
+            </Button>
           )}
-          <button type="button" style={secondaryBtnStyle} onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            style={primaryBtnStyle}
+            variant="default"
+            size="sm"
             data-testid="watermark-apply"
             disabled={trimmed.length === 0}
             onClick={apply}
           >
             Apply
-          </button>
+          </Button>
+        </>
+      }
+    >
+      <div style={bodyStyle}>
+        <div style={knobsRowStyle}>
+          <label style={labelStyle} htmlFor="watermark-text">
+            Text
+          </label>
+          <input
+            id="watermark-text"
+            type="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="e.g. DRAFT, CONFIDENTIAL"
+            data-testid="watermark-text-input"
+            style={inputStyle}
+            autoFocus
+          />
+        </div>
+
+        <div style={knobsRowStyle}>
+          <label style={labelStyle} htmlFor="watermark-color">
+            Color
+          </label>
+          <input
+            id="watermark-color"
+            type="color"
+            value={toHash(color)}
+            onChange={(e) => setColor(stripHash(e.target.value))}
+            data-testid="watermark-color-input"
+            style={colorInputStyle}
+            aria-label="Watermark color"
+          />
+        </div>
+
+        <div style={sliderRowStyle}>
+          <label style={labelStyle} htmlFor="watermark-opacity">
+            Opacity
+          </label>
+          <input
+            id="watermark-opacity"
+            type="range"
+            min={10}
+            max={100}
+            step={5}
+            value={Math.round(opacity * 100)}
+            onChange={(e) => setOpacity(Number(e.target.value) / 100)}
+            data-testid="watermark-opacity-input"
+          />
+          <span style={valueStyle}>{Math.round(opacity * 100)}%</span>
+        </div>
+
+        <div style={sliderRowStyle}>
+          <label style={labelStyle} htmlFor="watermark-size">
+            Font size
+          </label>
+          <input
+            id="watermark-size"
+            type="range"
+            min={48}
+            max={144}
+            step={4}
+            value={fontSize}
+            onChange={(e) => setFontSize(Number(e.target.value))}
+            data-testid="watermark-size-input"
+          />
+          <span style={valueStyle}>{fontSize}px</span>
+        </div>
+
+        <div style={sliderRowStyle}>
+          <label style={labelStyle} htmlFor="watermark-rotation">
+            Rotation
+          </label>
+          <input
+            id="watermark-rotation"
+            type="range"
+            min={-90}
+            max={90}
+            step={5}
+            value={rotation}
+            onChange={(e) => setRotation(Number(e.target.value))}
+            data-testid="watermark-rotation-input"
+          />
+          <span style={valueStyle}>{rotation}°</span>
+        </div>
+
+        <div style={hintStyle}>
+          The watermark sits behind page content, not clickable or selectable, and shows on every
+          page.
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
