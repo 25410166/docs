@@ -43,6 +43,17 @@
 
 /* Scoped to .ep-root to avoid clashing with host application CSS variables */
 .ep-root {
+  /* Native form controls (selects, scrollbars, unstyled inputs) inside the
+   * editor follow this. Without an explicit light value here, an unstyled
+   * native control falls back through to the page's
+   * <meta name="color-scheme" content="light dark"> — which means the
+   * BROWSER's own OS-level dark preference decides, not this app's chosen
+   * theme. A user with a dark OS but the app explicitly set to light would
+   * see native-rendered inputs (e.g. dialog search boxes with no explicit
+   * background) go dark while everything else stayed light. The
+   * [data-theme='dark'] rule below overrides this back to dark when the
+   * app itself is dark, exactly like every other token in this block. */
+  color-scheme: light;
   --background: 0 0% 100%;
   --foreground: 222.2 84% 4.9%;
   --card: 0 0% 100%;

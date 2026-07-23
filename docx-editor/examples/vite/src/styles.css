@@ -6,6 +6,19 @@
    In standalone usage: @import '@casualoffice/docs/styles.css'; */
 @import '../../../packages/react/src/styles/editor.css';
 
+/* editor.css sets color-scheme (light/dark) scoped to .ep-root, so the
+ * DocxEditor + dialogs are covered. Home and the markdown/text editor render
+ * directly under <html data-theme="...">, outside .ep-root, so they need the
+ * same pairing here — otherwise an unstyled native input/select on those
+ * pages falls back to the page's <meta name="color-scheme" content="light
+ * dark">, i.e. the OS's raw preference instead of the app's chosen theme. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
