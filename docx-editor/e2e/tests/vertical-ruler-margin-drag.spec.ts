@@ -24,6 +24,12 @@ test('dragging the top-margin marker moves the marker with the pointer', async (
   await editor.loadDocxFile('fixtures/demo.docx');
   await page.waitForTimeout(1200);
 
+  // The vertical ruler (and its margin marker) is off by default — enable it
+  // via View > Vertical ruler.
+  await page.getByTestId('title-bar').getByRole('button', { name: 'View', exact: true }).click();
+  await page.getByRole('menuitem', { name: /vertical ruler/i }).first().click();
+  await page.waitForTimeout(200);
+
   const marker = page.locator('.docx-ruler-marker-topMargin');
   await expect(marker).toBeVisible();
   const before = await marker.boundingBox();

@@ -2069,14 +2069,11 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const commentsCountRef = useRef(0);
   const handleToggleComments = useCallback(() => {
     // Comments use the anchored-cards approach: each thread renders as a
-    // card floating next to its commented text (UnifiedSidebar), not a
-    // solid docked panel. On an empty doc there are no anchors to show, so
-    // surface a toast hint instead of an empty panel.
+    // card floating next to its commented text (UnifiedSidebar). On an empty
+    // doc there are no anchors, so the sidebar renders a designed empty state
+    // ("No comments yet") — no transient toast needed.
     setShowCommentsSidebar((v) => {
       const next = !v;
-      if (next && commentsCountRef.current === 0) {
-        toast.info('No comments yet. Select text and click "Add comment" to start a thread.');
-      }
       // One right-side surface at a time: opening comments closes the rest.
       if (next) {
         setShowVersionHistory(false);

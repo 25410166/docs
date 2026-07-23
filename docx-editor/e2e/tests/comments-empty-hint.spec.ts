@@ -6,9 +6,10 @@ import { test, expect } from '@playwright/test';
 import { EditorPage } from '../helpers/editor-page';
 
 // Clicking the rail's Comments toggle on an empty doc used to flip
-// `aria-pressed` with nothing else visible — looks broken. Now it
-// surfaces a toast hint pointing the user at "Add comment".
-test('Comments rail toggle on an empty doc surfaces a toast hint', async ({ page }) => {
+// `aria-pressed` with nothing else visible — looks broken. It now renders a
+// designed empty state ("No comments yet") in the comments sidebar instead of
+// a transient toast.
+test('Comments rail toggle on an empty doc shows a designed empty state', async ({ page }) => {
   const editor = new EditorPage(page);
   await editor.goto();
   await editor.waitForReady();
@@ -16,8 +17,7 @@ test('Comments rail toggle on an empty doc surfaces a toast hint', async ({ page
 
   await page.getByTestId('rail-comments').click();
 
-  // Sonner renders toasts in a [data-sonner-toast] / [data-sonner-toaster]
-  // container; matching the message text is enough.
-  const toast = page.getByText('No comments yet', { exact: false });
-  await expect(toast).toBeVisible();
+  const empty = page.getByTestId('comments-empty-state');
+  await expect(empty).toBeVisible();
+  await expect(empty.getByText('No comments yet')).toBeVisible();
 });

@@ -11,8 +11,16 @@
  * and its margin markers meaningless. It now hangs off the page's left edge
  * (Google Docs style) and stays a draggable margin control.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { EditorPage } from '../helpers/editor-page';
+
+// The vertical ruler is off by default (see vertical-ruler-default.spec.ts) —
+// enable it via View > Vertical ruler before asserting on it.
+async function enableVerticalRuler(page: Page): Promise<void> {
+  await page.getByTestId('title-bar').getByRole('button', { name: 'View', exact: true }).click();
+  await page.getByRole('menuitem', { name: /vertical ruler/i }).first().click();
+  await page.waitForTimeout(200);
+}
 
 test.describe('Vertical ruler — sits beside the page and stays draggable', () => {
   test('ruler hugs the page left edge and its margin marker drags content', async ({ page }) => {
@@ -20,6 +28,7 @@ test.describe('Vertical ruler — sits beside the page and stays draggable', () 
     await editor.goto();
     await editor.loadDocxFile('fixtures/example-with-image.docx');
     await page.waitForSelector('.layout-page', { timeout: 30000 });
+    await enableVerticalRuler(page);
 
     const ruler = page.locator('.docx-vertical-ruler').first();
     await expect(ruler).toBeVisible();
@@ -58,6 +67,7 @@ test.describe('Vertical ruler — sits beside the page and stays draggable', () 
     await editor.goto();
     await editor.loadDocxFile('fixtures/example-with-image.docx');
     await page.waitForSelector('.layout-page', { timeout: 30000 });
+    await enableVerticalRuler(page);
 
     const scrollTop = () =>
       page.evaluate(() => {
@@ -93,6 +103,7 @@ test.describe('Vertical ruler — sits beside the page and stays draggable', () 
     await editor.goto();
     await editor.loadDocxFile('fixtures/example-with-image.docx');
     await page.waitForSelector('.layout-page', { timeout: 30000 });
+    await enableVerticalRuler(page);
 
     const measure = async () => {
       const rb = await page.locator('.docx-vertical-ruler').first().boundingBox();
