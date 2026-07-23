@@ -24,6 +24,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { Slice, Fragment as PMFragment } from 'prosemirror-model';
 import type { EditorView } from 'prosemirror-view';
 import { PanelState } from '../ui/PanelState';
+import { Dialog } from '../ui/Dialog';
 import { translateFragment, TRANSLATE_LANGUAGES as LANGUAGES } from '../../lib/translate';
 import { translateDocViaMarkdown, type ChunkTranslationState } from '../../lib/translateMarkdown';
 import { isLlmReady } from '../../lib/writer/controller';
@@ -54,46 +55,26 @@ export interface TranslateDocumentDialogProps {
   onExport?: (blob: Blob, suggestedName: string) => boolean | Promise<boolean>;
 }
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const dialogStyle: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: 8,
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  width: 'min(1280px, 96vw)',
-  height: 'min(820px, 92vh)',
-  display: 'flex',
-  flexDirection: 'column',
-  margin: 16,
-};
-
-const headerStyle: CSSProperties = {
-  padding: '14px 20px',
-  borderBottom: '1px solid var(--doc-border, #ddd)',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 14,
-  flexShrink: 0,
-};
-
-const titleStyle: CSSProperties = {
-  fontSize: 16,
-  fontWeight: 600,
-  marginRight: 'auto',
-};
-
+// Language-picker toolbar rendered at the top of the dialog body. The
+// controls previously lived inline in the bespoke header bar; the shared
+// <Dialog> header only carries the title + close X, so they move here.
 const langRowStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 8,
+  flexShrink: 0,
+};
+
+// Fixed-height wrapper for the two preview panes. The shell sizes itself
+// to content (capped at 78vh); giving the panes a definite height keeps
+// the flex:1 editor previews from collapsing to zero.
+const paneAreaStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  height: 'min(640px, 60vh)',
+  border: '1px solid var(--doc-border, #e0e0e0)',
+  borderRadius: 6,
+  overflow: 'hidden',
 };
 
 const selectStyle: CSSProperties = {
@@ -105,7 +86,7 @@ const selectStyle: CSSProperties = {
   color: 'var(--doc-text-on-surface, #1f2937)',
 };
 
-const bodyStyle: CSSProperties = {
+const twoPaneRowStyle: CSSProperties = {
   display: 'flex',
   flex: 1,
   minHeight: 0,
@@ -150,21 +131,6 @@ const stateOverlayStyle: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   padding: 24,
-};
-
-const footerStyle: CSSProperties = {
-  padding: '10px 20px',
-  borderTop: '1px solid var(--doc-border, #ddd)',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  flexShrink: 0,
-};
-
-const hintStyle: CSSProperties = {
-  fontSize: 12,
-  color: 'var(--doc-text-muted)',
-  marginRight: 'auto',
 };
 
 const btnBase: CSSProperties = {
@@ -393,17 +359,6 @@ export function TranslateDocumentDialog({
     abortRef.current?.abort();
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !exporting) onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose, exporting]);
-
-  if (!isOpen) return null;
-
   const swap = () => {
     setSource(target);
     setTarget(source);
@@ -435,66 +390,109 @@ export function TranslateDocumentDialog({
   const targetLangLabel = LANGUAGES.find((l) => l.code === target)?.label ?? target.toUpperCase();
 
   return (
-    <div
-      className="ep-dialog-overlay"
-      style={overlayStyle}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !exporting) onClose();
-      }}
-    >
-      <div
-        className="ep-dialog-shell"
-        style={dialogStyle}
-        role="dialog"
-        aria-label="Translate document"
-        data-testid="translate-document-dialog"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div style={headerStyle}>
-          <span style={titleStyle}>Translate document</span>
-          <div style={langRowStyle}>
-            <select
-              style={selectStyle}
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              data-testid="translate-doc-source"
-              aria-label="Source language"
-            >
-              {LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Translate document"
+      width={1200}
+      testId="translate-document-dialog"
+      dismissOnBackdrop={!exporting}
+      dismissOnEscape={!exporting}
+      helper="Your open document is unchanged — only the downloaded copy is translated."
+      footer={
+        <>
+          <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={exporting}>
+            Close
+          </button>
+          {!hasStarted && previewStatus !== 'ready' && (
             <button
               type="button"
-              onClick={swap}
               style={{
-                ...secondaryBtnStyle,
-                padding: '4px 8px',
-                fontSize: 14,
+                ...primaryBtnStyle,
+                opacity: originalBuffer && source !== target ? 1 : 0.6,
+                cursor: originalBuffer && source !== target ? 'pointer' : 'not-allowed',
               }}
-              aria-label="Swap source and target languages"
+              disabled={!originalBuffer || source === target}
+              onClick={() => setHasStarted(true)}
+              data-testid="translate-doc-start"
             >
-              ⇄
+              {source === target ? 'Pick a different language' : `Translate to ${targetLangLabel}`}
             </button>
-            <select
-              style={selectStyle}
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              data-testid="translate-doc-target"
-              aria-label="Target language"
+          )}
+          {hasStarted && previewStatus === 'loading' && (
+            <button
+              type="button"
+              style={secondaryBtnStyle}
+              onClick={() => {
+                abortRef.current?.abort();
+                setHasStarted(false);
+                setPreviewStatus('idle');
+                setProgress(null);
+                setChunkInfo(null);
+                setLiveChunkState(null);
+              }}
+              data-testid="translate-doc-stop"
             >
-              {LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+              Stop
+            </button>
+          )}
+          {previewStatus === 'ready' && (
+            <button
+              type="button"
+              style={primaryBtnStyle}
+              disabled={exporting || !translatedBuffer}
+              onClick={handleDownload}
+              data-testid="translate-doc-export"
+            >
+              {exporting ? 'Downloading…' : 'Download .docx'}
+            </button>
+          )}
+        </>
+      }
+    >
+      <div style={langRowStyle}>
+        <select
+          style={selectStyle}
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          data-testid="translate-doc-source"
+          aria-label="Source language"
+        >
+          {LANGUAGES.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={swap}
+          style={{
+            ...secondaryBtnStyle,
+            padding: '4px 8px',
+            fontSize: 14,
+          }}
+          aria-label="Swap source and target languages"
+        >
+          ⇄
+        </button>
+        <select
+          style={selectStyle}
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          data-testid="translate-doc-target"
+          aria-label="Target language"
+        >
+          {LANGUAGES.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
-        <div style={bodyStyle}>
+      <div style={{ ...paneAreaStyle, marginTop: 12 }}>
+        <div style={twoPaneRowStyle}>
           <div style={paneStyle}>
             <div style={paneLabelStyle}>Original · {sourceLangLabel}</div>
             <div style={paneEditorWrapStyle} data-testid="translate-doc-preview-source">
@@ -579,60 +577,8 @@ export function TranslateDocumentDialog({
             </div>
           </div>
         </div>
-
-        <div style={footerStyle}>
-          <span style={hintStyle}>
-            Your open document is unchanged — only the downloaded copy is translated.
-          </span>
-          <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={exporting}>
-            Close
-          </button>
-          {!hasStarted && previewStatus !== 'ready' && (
-            <button
-              type="button"
-              style={{
-                ...primaryBtnStyle,
-                opacity: originalBuffer && source !== target ? 1 : 0.6,
-                cursor: originalBuffer && source !== target ? 'pointer' : 'not-allowed',
-              }}
-              disabled={!originalBuffer || source === target}
-              onClick={() => setHasStarted(true)}
-              data-testid="translate-doc-start"
-            >
-              {source === target ? 'Pick a different language' : `Translate to ${targetLangLabel}`}
-            </button>
-          )}
-          {hasStarted && previewStatus === 'loading' && (
-            <button
-              type="button"
-              style={secondaryBtnStyle}
-              onClick={() => {
-                abortRef.current?.abort();
-                setHasStarted(false);
-                setPreviewStatus('idle');
-                setProgress(null);
-                setChunkInfo(null);
-                setLiveChunkState(null);
-              }}
-              data-testid="translate-doc-stop"
-            >
-              Stop
-            </button>
-          )}
-          {previewStatus === 'ready' && (
-            <button
-              type="button"
-              style={primaryBtnStyle}
-              disabled={exporting || !translatedBuffer}
-              onClick={handleDownload}
-              data-testid="translate-doc-export"
-            >
-              {exporting ? 'Downloading…' : 'Download .docx'}
-            </button>
-          )}
-        </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 

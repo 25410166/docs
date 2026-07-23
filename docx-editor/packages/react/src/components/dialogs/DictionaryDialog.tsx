@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useState, type CSSProperties } from 'react';
+import { Dialog } from '../ui/Dialog';
 import { PanelState } from '../ui/PanelState';
 
 export interface DictionaryDialogProps {
@@ -33,41 +34,10 @@ interface DictionaryResult {
   meanings: DictionaryMeaning[];
 }
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const dialogStyle: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: 8,
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  minWidth: 460,
-  maxWidth: 560,
-  width: '100%',
-  margin: 20,
-};
-
-const headerStyle: CSSProperties = {
-  padding: '16px 20px 12px',
-  borderBottom: '1px solid var(--doc-border, #ddd)',
-  fontSize: 16,
-  fontWeight: 600,
-  color: 'var(--doc-text-on-surface, #1f2937)',
-};
-
-const bodyStyle: CSSProperties = {
-  padding: '16px 20px',
+const contentStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
-  maxHeight: '60vh',
-  overflowY: 'auto',
 };
 
 const lookupRowStyle: CSSProperties = {
@@ -131,14 +101,6 @@ const wordHeadingStyle: CSSProperties = {
   fontWeight: 600,
   color: 'var(--doc-text-on-surface, #1f2937)',
   margin: 0,
-};
-
-const footerStyle: CSSProperties = {
-  padding: '12px 20px 16px',
-  borderTop: '1px solid var(--doc-border, #ddd)',
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: 8,
 };
 
 interface ApiResponseMeaning {
@@ -208,17 +170,6 @@ export function DictionaryDialog({ isOpen, onClose, initialWord }: DictionaryDia
     return () => controller.abort();
   }, [isOpen, activeQuery]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   const submit = () => {
     const trimmed = input.trim();
     if (!trimmed) return;
@@ -226,86 +177,76 @@ export function DictionaryDialog({ isOpen, onClose, initialWord }: DictionaryDia
   };
 
   return (
-    <div
-      className="ep-dialog-overlay"
-      style={overlayStyle}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Dictionary"
+      width={520}
+      testId="dictionary-dialog"
+      footer={
+        <button type="button" style={secondaryBtnStyle} onClick={onClose}>
+          Close
+        </button>
+      }
     >
-      <div
-        className="ep-dialog-shell"
-        style={dialogStyle}
-        role="dialog"
-        aria-label="Dictionary"
-        data-testid="dictionary-dialog"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div style={headerStyle}>Dictionary</div>
-        <div style={bodyStyle}>
-          <div style={lookupRowStyle}>
-            <input
-              type="text"
-              placeholder="Look up a word"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submit();
-              }}
-              data-testid="dictionary-input"
-              style={inputStyle}
-              autoFocus
-            />
-            <button
-              type="button"
-              style={primaryBtnStyle}
-              data-testid="dictionary-lookup"
-              disabled={input.trim().length === 0}
-              onClick={submit}
-            >
-              Look up
-            </button>
-          </div>
-
-          {status === 'loading' && (
-            <PanelState kind="loading" message={`Looking up “${activeQuery ?? ''}”…`} />
-          )}
-          {status === 'not-found' && (
-            <PanelState
-              kind="error"
-              message={`No definition found for “${activeQuery ?? ''}”.`}
-              hint="Try a different spelling or root word."
-            />
-          )}
-          {status === 'error' && (
-            <PanelState
-              kind="error"
-              message="Couldn't reach the dictionary service."
-              hint="Check your connection and try again."
-              onRetry={() => setActiveQuery((q) => (q ? `${q}` : q))}
-            />
-          )}
-          {status === 'success' && result && (
-            <>
-              <h3 style={wordHeadingStyle} data-testid="dictionary-word">
-                {result.word}
-              </h3>
-              {result.meanings.map((m, i) => (
-                <div key={`${m.partOfSpeech}-${i}`} style={meaningStyle}>
-                  <span style={posStyle}>{m.partOfSpeech}</span>
-                  <span style={definitionStyle}>{m.definition}</span>
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-        <div style={footerStyle}>
-          <button type="button" style={secondaryBtnStyle} onClick={onClose}>
-            Close
+      <div style={contentStyle}>
+        <div style={lookupRowStyle}>
+          <input
+            type="text"
+            placeholder="Look up a word"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submit();
+            }}
+            data-testid="dictionary-input"
+            style={inputStyle}
+            autoFocus
+          />
+          <button
+            type="button"
+            style={primaryBtnStyle}
+            data-testid="dictionary-lookup"
+            disabled={input.trim().length === 0}
+            onClick={submit}
+          >
+            Look up
           </button>
         </div>
+
+        {status === 'loading' && (
+          <PanelState kind="loading" message={`Looking up “${activeQuery ?? ''}”…`} />
+        )}
+        {status === 'not-found' && (
+          <PanelState
+            kind="error"
+            message={`No definition found for “${activeQuery ?? ''}”.`}
+            hint="Try a different spelling or root word."
+          />
+        )}
+        {status === 'error' && (
+          <PanelState
+            kind="error"
+            message="Couldn't reach the dictionary service."
+            hint="Check your connection and try again."
+            onRetry={() => setActiveQuery((q) => (q ? `${q}` : q))}
+          />
+        )}
+        {status === 'success' && result && (
+          <>
+            <h3 style={wordHeadingStyle} data-testid="dictionary-word">
+              {result.word}
+            </h3>
+            {result.meanings.map((m, i) => (
+              <div key={`${m.partOfSpeech}-${i}`} style={meaningStyle}>
+                <span style={posStyle}>{m.partOfSpeech}</span>
+                <span style={definitionStyle}>{m.definition}</span>
+              </div>
+            ))}
+          </>
+        )}
       </div>
-    </div>
+    </Dialog>
   );
 }
 

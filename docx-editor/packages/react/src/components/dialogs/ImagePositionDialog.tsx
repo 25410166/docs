@@ -14,7 +14,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslation } from '../../i18n';
-import { FocusTrap } from '../ui/FocusTrap';
+import { Dialog } from '../ui/Dialog';
 
 // ============================================================================
 // TYPES
@@ -48,38 +48,7 @@ export interface ImagePositionDialogProps {
 // STYLES
 // ============================================================================
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 10000,
-};
-
-const dialogStyle: CSSProperties = {
-  backgroundColor: 'var(--doc-surface, white)',
-  borderRadius: 8,
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
-  minWidth: 'min(400px, calc(100vw - 32px))',
-  maxWidth: 480,
-  width: '100%',
-  margin: 20,
-};
-
-const headerStyle: CSSProperties = {
-  padding: '16px 20px 12px',
-  borderBottom: '1px solid var(--doc-border)',
-  fontSize: 16,
-  fontWeight: 600,
-};
-
 const bodyStyle: CSSProperties = {
-  padding: '16px 20px',
   display: 'flex',
   flexDirection: 'column',
   gap: 16,
@@ -121,14 +90,6 @@ const inputStyle: CSSProperties = {
 
 const selectStyle: CSSProperties = {
   ...inputStyle,
-};
-
-const footerStyle: CSSProperties = {
-  padding: '12px 20px 16px',
-  borderTop: '1px solid var(--doc-border)',
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: 8,
 };
 
 const btnStyle: CSSProperties = {
@@ -236,212 +197,199 @@ export function ImagePositionDialog({
     [onClose, handleApply]
   );
 
-  if (!isOpen) return null;
-
   return (
-    <div style={overlayStyle} onClick={onClose} onKeyDown={handleKeyDown}>
-      <FocusTrap>
-        <div
-          style={dialogStyle}
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-          aria-modal="true"
-          aria-label={t('dialogs.imagePosition.title')}
-        >
-          <div style={headerStyle}>{t('dialogs.imagePosition.title')}</div>
-
-          <div style={bodyStyle}>
-            {/* Horizontal positioning */}
-            <div style={sectionStyle}>
-              <div style={sectionLabelStyle}>{t('dialogs.imagePosition.horizontal')}</div>
-              <div style={rowStyle}>
-                <label style={labelStyle}>{t('dialogs.imagePosition.position')}</label>
-                <select
-                  style={selectStyle}
-                  value={hMode}
-                  onChange={(e) => setHMode(e.target.value as 'align' | 'offset')}
-                >
-                  <option value="align">{t('dialogs.imagePosition.alignment')}</option>
-                  <option value="offset">{t('dialogs.imagePosition.offset')}</option>
-                </select>
-              </div>
-              {hMode === 'align' ? (
-                <div style={rowStyle}>
-                  <label style={labelStyle}>{t('dialogs.imagePosition.align')}</label>
-                  <select
-                    style={selectStyle}
-                    value={hAlign}
-                    onChange={(e) => setHAlign(e.target.value)}
-                  >
-                    <option value="left">{t('dialogs.imagePosition.alignOptions.left')}</option>
-                    <option value="center">{t('dialogs.imagePosition.alignOptions.center')}</option>
-                    <option value="right">{t('dialogs.imagePosition.alignOptions.right')}</option>
-                  </select>
-                </div>
-              ) : (
-                <div style={rowStyle}>
-                  <label style={labelStyle}>{t('dialogs.imagePosition.offsetPx')}</label>
-                  <input
-                    type="number"
-                    style={inputStyle}
-                    value={hOffset}
-                    onChange={(e) => setHOffset(Number(e.target.value) || 0)}
-                  />
-                </div>
-              )}
-              <div style={rowStyle}>
-                <label style={labelStyle}>{t('dialogs.imagePosition.relativeTo')}</label>
-                <select
-                  style={selectStyle}
-                  value={hRelativeTo}
-                  onChange={(e) => setHRelativeTo(e.target.value)}
-                >
-                  <option value="page">{t('dialogs.imagePosition.relativeOptions.page')}</option>
-                  <option value="column">
-                    {t('dialogs.imagePosition.relativeOptions.column')}
-                  </option>
-                  <option value="margin">
-                    {t('dialogs.imagePosition.relativeOptions.margin')}
-                  </option>
-                  <option value="character">
-                    {t('dialogs.imagePosition.relativeOptions.character')}
-                  </option>
-                </select>
-              </div>
-            </div>
-
-            {/* Vertical positioning */}
-            <div style={sectionStyle}>
-              <div style={sectionLabelStyle}>{t('dialogs.imagePosition.vertical')}</div>
-              <div style={rowStyle}>
-                <label style={labelStyle}>{t('dialogs.imagePosition.position')}</label>
-                <select
-                  style={selectStyle}
-                  value={vMode}
-                  onChange={(e) => setVMode(e.target.value as 'align' | 'offset')}
-                >
-                  <option value="align">{t('dialogs.imagePosition.alignment')}</option>
-                  <option value="offset">{t('dialogs.imagePosition.offset')}</option>
-                </select>
-              </div>
-              {vMode === 'align' ? (
-                <div style={rowStyle}>
-                  <label style={labelStyle}>{t('dialogs.imagePosition.align')}</label>
-                  <select
-                    style={selectStyle}
-                    value={vAlign}
-                    onChange={(e) => setVAlign(e.target.value)}
-                  >
-                    <option value="top">{t('dialogs.imagePosition.alignOptions.top')}</option>
-                    <option value="center">{t('dialogs.imagePosition.alignOptions.center')}</option>
-                    <option value="bottom">{t('dialogs.imagePosition.alignOptions.bottom')}</option>
-                  </select>
-                </div>
-              ) : (
-                <div style={rowStyle}>
-                  <label style={labelStyle}>{t('dialogs.imagePosition.offsetPx')}</label>
-                  <input
-                    type="number"
-                    style={inputStyle}
-                    value={vOffset}
-                    onChange={(e) => setVOffset(Number(e.target.value) || 0)}
-                  />
-                </div>
-              )}
-              <div style={rowStyle}>
-                <label style={labelStyle}>{t('dialogs.imagePosition.relativeTo')}</label>
-                <select
-                  style={selectStyle}
-                  value={vRelativeTo}
-                  onChange={(e) => setVRelativeTo(e.target.value)}
-                >
-                  <option value="page">{t('dialogs.imagePosition.relativeOptions.page')}</option>
-                  <option value="margin">
-                    {t('dialogs.imagePosition.relativeOptions.margin')}
-                  </option>
-                  <option value="paragraph">
-                    {t('dialogs.imagePosition.relativeOptions.paragraph')}
-                  </option>
-                  <option value="line">{t('dialogs.imagePosition.relativeOptions.line')}</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Distance from text */}
-            <div style={sectionStyle}>
-              <div style={sectionLabelStyle}>Distance from text (px)</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div style={rowStyle}>
-                  <label style={{ ...labelStyle, width: 45 }}>
-                    {t('dialogs.imagePosition.alignOptions.top')}
-                  </label>
-                  <input
-                    type="number"
-                    style={inputStyle}
-                    min={0}
-                    value={distTop}
-                    onChange={(e) => setDistTop(Number(e.target.value) || 0)}
-                  />
-                </div>
-                <div style={rowStyle}>
-                  <label style={{ ...labelStyle, width: 45 }}>
-                    {t('dialogs.imagePosition.alignOptions.bottom')}
-                  </label>
-                  <input
-                    type="number"
-                    style={inputStyle}
-                    min={0}
-                    value={distBottom}
-                    onChange={(e) => setDistBottom(Number(e.target.value) || 0)}
-                  />
-                </div>
-                <div style={rowStyle}>
-                  <label style={{ ...labelStyle, width: 45 }}>
-                    {t('dialogs.imagePosition.alignOptions.left')}
-                  </label>
-                  <input
-                    type="number"
-                    style={inputStyle}
-                    min={0}
-                    value={distLeft}
-                    onChange={(e) => setDistLeft(Number(e.target.value) || 0)}
-                  />
-                </div>
-                <div style={rowStyle}>
-                  <label style={{ ...labelStyle, width: 45 }}>
-                    {t('dialogs.imagePosition.alignOptions.right')}
-                  </label>
-                  <input
-                    type="number"
-                    style={inputStyle}
-                    min={0}
-                    value={distRight}
-                    onChange={(e) => setDistRight(Number(e.target.value) || 0)}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div style={footerStyle}>
-            <button type="button" style={btnStyle} onClick={onClose}>
-              {t('common.cancel')}
-            </button>
-            <button
-              type="button"
-              style={{
-                ...btnStyle,
-                backgroundColor: 'var(--doc-primary)',
-                color: 'white',
-                borderColor: 'var(--doc-primary)',
-              }}
-              onClick={handleApply}
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t('dialogs.imagePosition.title')}
+      width={480}
+      testId="image-position-dialog"
+      footer={
+        <>
+          <button type="button" style={btnStyle} onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            style={{
+              ...btnStyle,
+              backgroundColor: 'var(--doc-primary)',
+              color: 'white',
+              borderColor: 'var(--doc-primary)',
+            }}
+            onClick={handleApply}
+          >
+            {t('common.apply')}
+          </button>
+        </>
+      }
+    >
+      <div style={bodyStyle} onKeyDown={handleKeyDown}>
+        {/* Horizontal positioning */}
+        <div style={sectionStyle}>
+          <div style={sectionLabelStyle}>{t('dialogs.imagePosition.horizontal')}</div>
+          <div style={rowStyle}>
+            <label style={labelStyle}>{t('dialogs.imagePosition.position')}</label>
+            <select
+              style={selectStyle}
+              value={hMode}
+              onChange={(e) => setHMode(e.target.value as 'align' | 'offset')}
             >
-              {t('common.apply')}
-            </button>
+              <option value="align">{t('dialogs.imagePosition.alignment')}</option>
+              <option value="offset">{t('dialogs.imagePosition.offset')}</option>
+            </select>
+          </div>
+          {hMode === 'align' ? (
+            <div style={rowStyle}>
+              <label style={labelStyle}>{t('dialogs.imagePosition.align')}</label>
+              <select
+                style={selectStyle}
+                value={hAlign}
+                onChange={(e) => setHAlign(e.target.value)}
+              >
+                <option value="left">{t('dialogs.imagePosition.alignOptions.left')}</option>
+                <option value="center">{t('dialogs.imagePosition.alignOptions.center')}</option>
+                <option value="right">{t('dialogs.imagePosition.alignOptions.right')}</option>
+              </select>
+            </div>
+          ) : (
+            <div style={rowStyle}>
+              <label style={labelStyle}>{t('dialogs.imagePosition.offsetPx')}</label>
+              <input
+                type="number"
+                style={inputStyle}
+                value={hOffset}
+                onChange={(e) => setHOffset(Number(e.target.value) || 0)}
+              />
+            </div>
+          )}
+          <div style={rowStyle}>
+            <label style={labelStyle}>{t('dialogs.imagePosition.relativeTo')}</label>
+            <select
+              style={selectStyle}
+              value={hRelativeTo}
+              onChange={(e) => setHRelativeTo(e.target.value)}
+            >
+              <option value="page">{t('dialogs.imagePosition.relativeOptions.page')}</option>
+              <option value="column">{t('dialogs.imagePosition.relativeOptions.column')}</option>
+              <option value="margin">{t('dialogs.imagePosition.relativeOptions.margin')}</option>
+              <option value="character">
+                {t('dialogs.imagePosition.relativeOptions.character')}
+              </option>
+            </select>
           </div>
         </div>
-      </FocusTrap>
-    </div>
+
+        {/* Vertical positioning */}
+        <div style={sectionStyle}>
+          <div style={sectionLabelStyle}>{t('dialogs.imagePosition.vertical')}</div>
+          <div style={rowStyle}>
+            <label style={labelStyle}>{t('dialogs.imagePosition.position')}</label>
+            <select
+              style={selectStyle}
+              value={vMode}
+              onChange={(e) => setVMode(e.target.value as 'align' | 'offset')}
+            >
+              <option value="align">{t('dialogs.imagePosition.alignment')}</option>
+              <option value="offset">{t('dialogs.imagePosition.offset')}</option>
+            </select>
+          </div>
+          {vMode === 'align' ? (
+            <div style={rowStyle}>
+              <label style={labelStyle}>{t('dialogs.imagePosition.align')}</label>
+              <select
+                style={selectStyle}
+                value={vAlign}
+                onChange={(e) => setVAlign(e.target.value)}
+              >
+                <option value="top">{t('dialogs.imagePosition.alignOptions.top')}</option>
+                <option value="center">{t('dialogs.imagePosition.alignOptions.center')}</option>
+                <option value="bottom">{t('dialogs.imagePosition.alignOptions.bottom')}</option>
+              </select>
+            </div>
+          ) : (
+            <div style={rowStyle}>
+              <label style={labelStyle}>{t('dialogs.imagePosition.offsetPx')}</label>
+              <input
+                type="number"
+                style={inputStyle}
+                value={vOffset}
+                onChange={(e) => setVOffset(Number(e.target.value) || 0)}
+              />
+            </div>
+          )}
+          <div style={rowStyle}>
+            <label style={labelStyle}>{t('dialogs.imagePosition.relativeTo')}</label>
+            <select
+              style={selectStyle}
+              value={vRelativeTo}
+              onChange={(e) => setVRelativeTo(e.target.value)}
+            >
+              <option value="page">{t('dialogs.imagePosition.relativeOptions.page')}</option>
+              <option value="margin">{t('dialogs.imagePosition.relativeOptions.margin')}</option>
+              <option value="paragraph">
+                {t('dialogs.imagePosition.relativeOptions.paragraph')}
+              </option>
+              <option value="line">{t('dialogs.imagePosition.relativeOptions.line')}</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Distance from text */}
+        <div style={sectionStyle}>
+          <div style={sectionLabelStyle}>Distance from text (px)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={rowStyle}>
+              <label style={{ ...labelStyle, width: 45 }}>
+                {t('dialogs.imagePosition.alignOptions.top')}
+              </label>
+              <input
+                type="number"
+                style={inputStyle}
+                min={0}
+                value={distTop}
+                onChange={(e) => setDistTop(Number(e.target.value) || 0)}
+              />
+            </div>
+            <div style={rowStyle}>
+              <label style={{ ...labelStyle, width: 45 }}>
+                {t('dialogs.imagePosition.alignOptions.bottom')}
+              </label>
+              <input
+                type="number"
+                style={inputStyle}
+                min={0}
+                value={distBottom}
+                onChange={(e) => setDistBottom(Number(e.target.value) || 0)}
+              />
+            </div>
+            <div style={rowStyle}>
+              <label style={{ ...labelStyle, width: 45 }}>
+                {t('dialogs.imagePosition.alignOptions.left')}
+              </label>
+              <input
+                type="number"
+                style={inputStyle}
+                min={0}
+                value={distLeft}
+                onChange={(e) => setDistLeft(Number(e.target.value) || 0)}
+              />
+            </div>
+            <div style={rowStyle}>
+              <label style={{ ...labelStyle, width: 45 }}>
+                {t('dialogs.imagePosition.alignOptions.right')}
+              </label>
+              <input
+                type="number"
+                style={inputStyle}
+                min={0}
+                value={distRight}
+                onChange={(e) => setDistRight(Number(e.target.value) || 0)}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </Dialog>
   );
 }
