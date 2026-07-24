@@ -258,8 +258,16 @@ function calculateTypographyMetrics(
     const defaultHeight = singleLineBase * DEFAULT_LINE_HEIGHT_MULTIPLIER;
     lineHeight = Math.max(spacing.line, defaultHeight);
   } else if (spacing?.line !== undefined && spacing?.lineUnit === 'multiplier') {
-    // Multiplier applied to font's single-line height
-    lineHeight = singleLineBase * spacing.line;
+    // Multiplier applied to font's single-line height. Floor at the natural
+    // single-line height (multiplier 1.0) — a multiplier below that (e.g.
+    // w:line="170" lineRule="auto" = 0.7083x) genuinely reserves less
+    // vertical space than the glyphs need, so consecutive lines visually
+    // overlap instead of just sitting close together. Real documents don't
+    // intend illegible overlapping text; matches the same floor already
+    // applied to empty paragraphs below (calculateEmptyParagraphMetrics),
+    // now applied to every paragraph so it also catches non-empty ones
+    // (e.g. a Chinese SDS document's safety-phrase list, #17).
+    lineHeight = Math.max(singleLineBase * spacing.line, singleLineBase);
   } else if (spacing?.line !== undefined && spacing?.lineUnit === 'px') {
     // Pixel value
     lineHeight = spacing.line;
@@ -282,28 +290,12 @@ function calculateEmptyParagraphMetrics(
   spacing?: ParagraphSpacing,
   fontFamily?: string
 ): LineTypography {
+  // Both the 'auto' (multiplier) and 'atLeast' branches of
+  // calculateTypographyMetrics already floor at the font's natural
+  // single-line height, so an empty paragraph and a one-line paragraph in
+  // the same font measure identically — no separate floor needed here.
   const metrics = getFontMetrics({ fontSize, fontFamily: fontFamily ?? DEFAULT_FONT_FAMILY });
-  const result = calculateTypographyMetrics(fontSize, spacing, metrics);
-
-  // Empty paragraphs render at the font's natural single-line height even when
-  // the doc writes a smaller `line` value (e.g. an exact/atLeast value below the
-  // single line). The floor is the SAME single-line ratio used for non-empty
-  // lines (font-specific OS/2 metric, not a hardcoded constant) so an empty
-  // paragraph and a one-line paragraph in the same font measure identically and
-  // both match LibreOffice. A flat 1.15 floor over-inflated empty paragraphs in
-  // narrow-ratio serif fonts (Times New Roman / Liberation Serif ≈ 1.107),
-  // which dense form documents stack dozens of — accumulating visible downward
-  // drift vs the reference renderer.
-  const lineRule = spacing?.lineRule ?? 'auto';
-  if (lineRule === 'auto' || lineRule === 'atLeast') {
-    const fontSizePx = ptToPx(fontSize);
-    const ratio = metrics?.singleLineRatio ?? DEFAULT_SINGLE_LINE_RATIO;
-    const floored = Math.max(result.lineHeight, fontSizePx * ratio);
-    if (floored !== result.lineHeight) {
-      return { ...result, lineHeight: floored };
-    }
-  }
-  return result;
+  return calculateTypographyMetrics(fontSize, spacing, metrics);
 }
 
 /**
