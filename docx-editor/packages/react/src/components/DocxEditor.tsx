@@ -298,7 +298,11 @@ import {
   getEndnoteText,
   setEndnotePlainText,
 } from '@eigenpal/docx-core/docx';
-import { findBodyPmAnchors } from '@eigenpal/docx-core/layout-bridge';
+import {
+  findBodyPmAnchors,
+  headerFooterRefsFromSectionProps,
+} from '@eigenpal/docx-core/layout-bridge';
+import type { HeaderFooterRefs } from '@eigenpal/docx-core/layout-engine';
 import { type DocxInput } from '@eigenpal/docx-core/utils';
 import { onFontsLoaded, loadDocumentFonts } from '@eigenpal/docx-core/utils';
 import { resolveColorToHex } from '@eigenpal/docx-core/utils';
@@ -1928,6 +1932,15 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // Header/footer editing state
   const [hfEditPosition, setHfEditPosition] = useState<'header' | 'footer' | null>(null);
   const [hfEditIsFirstPage, setHfEditIsFirstPage] = useState(false);
+  // The CLICKED page's own section refs, captured at double-click time so
+  // handleHeaderFooterSave writes back to the same rId it read from — a
+  // multi-section document can have a different header/footer per section
+  // (see #14 in the header/footer multi-section fix). `undefined` means the
+  // click didn't resolve a section (falls back to the document's last
+  // section, matching pre-fix single-section behavior).
+  const [hfEditSectionRefs, setHfEditSectionRefs] = useState<HeaderFooterRefs | undefined>(
+    undefined
+  );
   // Document outline sidebar state
   const [showOutline, setShowOutline] = useState(showOutlineProp);
   const showOutlineRef = useRef(false);
@@ -8883,30 +8896,63 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   // Handle header/footer double-click — open editing overlay
   // If no header/footer exists, create an empty one so the user can add content
   const handleHeaderFooterDoubleClick = useCallback(
-    (position: 'header' | 'footer', pageNumber?: number) => {
-      const sectProps = history.state?.package?.document?.finalSectionProperties;
-      const isFirstPage = sectProps?.titlePg === true && (pageNumber ?? 1) === 1;
-      const hf = isFirstPage
-        ? position === 'header'
-          ? firstPageHeaderContent
-          : firstPageFooterContent
-        : position === 'header'
-          ? headerContent
-          : footerContent;
+    (
+      position: 'header' | 'footer',
+      pageNumber?: number,
+      sectionInfo?: {
+        headerFooterRefs?: HeaderFooterRefs;
+        titlePg?: boolean;
+        firstPageOfSection?: boolean;
+        sectionIndex?: number;
+      }
+    ) => {
+      const pkg = history.state?.package;
+      const fallbackSectProps = pkg?.document?.finalSectionProperties;
+      // Prefer the CLICKED PAGE's own section — a multi-section document can
+      // have a DIFFERENT header/footer per section, so editing what's shown
+      // on this page must read/write that section's rId, not always the
+      // document's last section (pre-fix, editing a non-final section's
+      // header silently wrote to the final section's file instead — #14).
+      // Falls back to the document's last section only when the click
+      // didn't resolve one (e.g. layout not ready yet).
+      const refs =
+        sectionInfo?.headerFooterRefs ?? headerFooterRefsFromSectionProps(fallbackSectProps);
+      const titlePg = sectionInfo?.titlePg ?? fallbackSectProps?.titlePg;
+      const isFirstPage =
+        titlePg === true && (sectionInfo?.firstPageOfSection ?? (pageNumber ?? 1) === 1);
+
+      const rId =
+        position === 'header'
+          ? (isFirstPage && refs?.headerFirst) || refs?.headerDefault
+          : (isFirstPage && refs?.footerFirst) || refs?.footerDefault;
+      const map = position === 'header' ? pkg?.headers : pkg?.footers;
+      const hf = rId ? (map?.get(rId) ?? null) : null;
+
       setHfEditIsFirstPage(isFirstPage);
+      setHfEditSectionRefs(refs);
       if (hf) {
         setHfEditPosition(position);
         return;
       }
 
-      // Create empty header/footer for docs that don't have one yet
-      if (!history.state?.package) return;
-      const pkg = history.state.package;
-      const sectionProps = pkg.document?.finalSectionProperties;
+      // Create empty header/footer for docs that don't have one yet. Scope:
+      // only the document's LAST section supports creating a brand-new
+      // reference today — safely adding one to a MID-document section means
+      // locating and mutating the specific paragraph carrying that section's
+      // own w:sectPr (sections[] is a derived view, not the round-trip
+      // source of truth), which isn't wired up yet. Conservative no-op here
+      // is strictly better than writing the new ref to the wrong section.
+      if (!pkg) return;
+      const totalSections = pkg.document?.sections?.length ?? 1;
+      const isFinalSection =
+        sectionInfo?.sectionIndex === undefined || sectionInfo.sectionIndex >= totalSections - 1;
+      if (!isFinalSection) return;
+
+      const sectionProps = fallbackSectProps;
       if (!sectionProps) return;
 
       const hdrFtrType = isFirstPage ? 'first' : 'default';
-      const rId = `rId_new_${position}_${hdrFtrType}`;
+      const rIdNew = `rId_new_${position}_${hdrFtrType}`;
       const emptyHf: HeaderFooter = {
         type: position === 'header' ? 'header' : 'footer',
         hdrFtrType,
@@ -8915,11 +8961,11 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
 
       const mapKey = position === 'header' ? 'headers' : 'footers';
       const newMap = new Map(pkg[mapKey] ?? []);
-      newMap.set(rId, emptyHf);
+      newMap.set(rIdNew, emptyHf);
 
       const refKey = position === 'header' ? 'headerReferences' : 'footerReferences';
       const existingRefs = sectionProps[refKey] ?? [];
-      const newRef = { type: hdrFtrType as 'default' | 'first', rId };
+      const newRef = { type: hdrFtrType as 'default' | 'first', rId: rIdNew };
 
       // Register the rel so the serializer wires up content types + doc rels (#274).
       const existingRels = pkg.relationships;
@@ -8934,14 +8980,14 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
           ? 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header'
           : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer';
       const newRelationships = new Map(existingRels);
-      newRelationships.set(rId, {
-        id: rId,
+      newRelationships.set(rIdNew, {
+        id: rIdNew,
         type: relType,
         target: `${position}${targetNum}.xml`,
       });
 
       const newDoc: Document = {
-        ...history.state,
+        ...history.state!,
         package: {
           ...pkg,
           [mapKey]: newMap,
@@ -8958,16 +9004,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
         },
       };
       pushDocument(newDoc);
+      setHfEditSectionRefs(
+        headerFooterRefsFromSectionProps(newDoc.package.document?.finalSectionProperties)
+      );
       setHfEditPosition(position);
     },
-    [
-      headerContent,
-      footerContent,
-      firstPageHeaderContent,
-      firstPageFooterContent,
-      history,
-      pushDocument,
-    ]
+    [history, pushDocument]
   );
 
   // Handle header/footer save — update document package with edited content
@@ -8984,30 +9026,36 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       }
 
       const pkg = history.state.package;
-      const sectionProps = pkg.document?.finalSectionProperties;
-      const refs =
-        hfEditPosition === 'header'
-          ? sectionProps?.headerReferences
-          : sectionProps?.footerReferences;
+      // Use the section captured when the user double-clicked into this
+      // edit (the clicked page's own section — see handleHeaderFooterDoubleClick)
+      // instead of always re-deriving from the document's last section, so
+      // save writes back to the SAME rId the editor was populated from.
+      const fallbackSectProps = pkg.document?.finalSectionProperties;
+      const refs = hfEditSectionRefs ?? headerFooterRefsFromSectionProps(fallbackSectProps);
       const targetType = hfEditIsFirstPage ? 'first' : 'default';
-      const activeRef =
-        refs?.find((r) => r.type === targetType) ??
-        refs?.find((r) => r.type === 'default') ??
-        refs?.find((r) => r.type === 'first') ??
-        refs?.[0];
+      const rId =
+        hfEditPosition === 'header'
+          ? (targetType === 'first' && refs?.headerFirst) ||
+            refs?.headerDefault ||
+            refs?.headerFirst
+          : (targetType === 'first' && refs?.footerFirst) ||
+            refs?.footerDefault ||
+            refs?.footerFirst;
+      const hdrFtrType: 'default' | 'first' =
+        refs?.headerFirst === rId || refs?.footerFirst === rId ? 'first' : 'default';
       const mapKey = hfEditPosition === 'header' ? 'headers' : 'footers';
       const map = pkg[mapKey];
 
-      if (activeRef?.rId && map) {
-        const existing = map.get(activeRef.rId);
+      if (rId && map) {
+        const existing = map.get(rId);
         const updated: HeaderFooter = {
           type: hfEditPosition,
-          hdrFtrType: activeRef.type as 'default' | 'first' | 'even',
+          hdrFtrType,
           ...existing,
           content,
         };
         const newMap = new Map(map);
-        newMap.set(activeRef.rId, updated);
+        newMap.set(rId, updated);
 
         const newDoc: Document = {
           ...history.state,
@@ -9021,7 +9069,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
 
       setHfEditPosition(null);
     },
-    [hfEditPosition, history, pushDocument]
+    [hfEditPosition, hfEditIsFirstPage, hfEditSectionRefs, history, pushDocument]
   );
 
   // Handle body click while in HF editing mode — save + close
@@ -10411,13 +10459,29 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
                             {/* Inline Header/Footer Editor — positioned over the target area */}
                             {hfEditPosition &&
                               (() => {
-                                const activeHf = hfEditIsFirstPage
-                                  ? hfEditPosition === 'header'
-                                    ? firstPageHeaderContent
-                                    : firstPageFooterContent
-                                  : hfEditPosition === 'header'
-                                    ? headerContent
-                                    : footerContent;
+                                // Resolve from the SAME section (hfEditSectionRefs) that
+                                // handleHeaderFooterDoubleClick captured at click time —
+                                // not the document-wide headerContent/footerContent
+                                // memos below, which only ever reflect the last section
+                                // (see #14: a mid-document section's header editor was
+                                // populated with the FINAL section's content instead).
+                                const pkg = history.state?.package;
+                                const refs =
+                                  hfEditSectionRefs ??
+                                  headerFooterRefsFromSectionProps(
+                                    pkg?.document?.finalSectionProperties
+                                  );
+                                const rId =
+                                  hfEditPosition === 'header'
+                                    ? (hfEditIsFirstPage && refs?.headerFirst) ||
+                                      refs?.headerDefault ||
+                                      refs?.headerFirst
+                                    : (hfEditIsFirstPage && refs?.footerFirst) ||
+                                      refs?.footerDefault ||
+                                      refs?.footerFirst;
+                                const map =
+                                  hfEditPosition === 'header' ? pkg?.headers : pkg?.footers;
+                                const activeHf = rId ? (map?.get(rId) ?? null) : null;
                                 if (!activeHf) return null;
                                 const targetEl = getHfTargetElement(hfEditPosition);
                                 const parentEl = editorContentRef.current;

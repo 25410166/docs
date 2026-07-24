@@ -307,8 +307,26 @@ export interface PagedEditorProps {
   onRenderedDomContextReady?: (context: RenderedDomContext) => void;
   /** Plugin overlays to render inside the viewport. */
   pluginOverlays?: React.ReactNode;
-  /** Callback when header or footer is double-clicked for editing. */
-  onHeaderFooterDoubleClick?: (position: 'header' | 'footer', pageNumber?: number) => void;
+  /**
+   * Callback when header or footer is double-clicked for editing. `sectionInfo`
+   * is the CLICKED PAGE's own section data (headerFooterRefs/titlePg/
+   * firstPageOfSection, from that page's `Layout` entry) — a multi-section
+   * document can have a different header/footer per section, so the host
+   * must resolve which rId to edit/save from the clicked page's section, not
+   * always the document's last section (see #14 in the header/footer
+   * multi-section fix — editing used to silently write to the wrong file).
+   */
+  onHeaderFooterDoubleClick?: (
+    position: 'header' | 'footer',
+    pageNumber?: number,
+    sectionInfo?: {
+      headerFooterRefs?: HeaderFooterRefs;
+      titlePg?: boolean;
+      firstPageOfSection?: boolean;
+      /** Index into `document.package.document.sections` for this page's section. */
+      sectionIndex?: number;
+    }
+  ) => void;
   /** Active header/footer editing mode (dims body, intercepts body clicks). */
   hfEditMode?: 'header' | 'footer' | null;
   /** Called when user clicks the body area while in HF editing mode. */
@@ -4407,16 +4425,25 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
           if (headerEl || footerEl) {
             const pageEl = target.closest('[data-page-number]') as HTMLElement | null;
             const pageNum = pageEl ? Number(pageEl.dataset.pageNumber) : 1;
+            const clickedPage = layout?.pages[pageNum - 1];
+            const sectionInfo = clickedPage
+              ? {
+                  headerFooterRefs: clickedPage.headerFooterRefs,
+                  titlePg: clickedPage.titlePg,
+                  firstPageOfSection: clickedPage.firstPageOfSection,
+                  sectionIndex: clickedPage.sectionIndex,
+                }
+              : undefined;
             if (headerEl) {
               e.preventDefault();
               e.stopPropagation();
-              onHeaderFooterDoubleClick('header', pageNum);
+              onHeaderFooterDoubleClick('header', pageNum, sectionInfo);
               return;
             }
             if (footerEl) {
               e.preventDefault();
               e.stopPropagation();
-              onHeaderFooterDoubleClick('footer', pageNum);
+              onHeaderFooterDoubleClick('footer', pageNum, sectionInfo);
               return;
             }
           }
@@ -4468,7 +4495,7 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
           }
         }
       },
-      [getPositionFromMouse, onHeaderFooterDoubleClick, onHyperlinkClick]
+      [getPositionFromMouse, onHeaderFooterDoubleClick, onHyperlinkClick, layout]
     );
 
     /**
