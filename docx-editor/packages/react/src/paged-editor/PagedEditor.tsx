@@ -5635,6 +5635,7 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
             zoom={zoom}
             transactionVersion={transactionVersion}
             syncCoordinator={syncCoordinator}
+            reanchorTick={overlayReanchorTick}
           />
         </div>
 

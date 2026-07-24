@@ -51,6 +51,16 @@ interface DecorationLayerProps {
    * sync that's blocked by the gate retriggers when layout completes.
    */
   syncCoordinator: LayoutSelectionGate;
+  /**
+   * Bumped when the pages viewport reflows WITHOUT a PM transaction — e.g.
+   * the comments sidebar or Format panel opens and shifts/shrinks the page
+   * column (see PagedEditor's ResizeObserver, same tick `ImageSelectionOverlay`
+   * uses). Without this, decorations positioned by `getContainerOffset()`
+   * stayed anchored to the pre-shift offset — a spellcheck/grammar squiggle
+   * (or any other decoration-driven overlay) visibly detached from its word
+   * and floated in place while the canvas moved under it.
+   */
+  reanchorTick?: number;
 }
 
 const overlayStyle: React.CSSProperties = {
@@ -68,6 +78,7 @@ export function DecorationLayer({
   zoom,
   transactionVersion,
   syncCoordinator,
+  reanchorTick,
 }: DecorationLayerProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
@@ -101,7 +112,7 @@ export function DecorationLayer({
     // getView/getPagesContainer are stable closures over refs; syncCoordinator
     // is a useMemo([]) singleton from PagedEditor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoom, transactionVersion, renderEpoch]);
+  }, [zoom, transactionVersion, renderEpoch, reanchorTick]);
 
   return (
     <div
