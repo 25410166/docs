@@ -226,6 +226,16 @@ export interface RenderPageOptions {
   firstPageFooterContent?: HeaderFooterContent;
   /** Whether different first page headers/footers are enabled (w:titlePg). */
   titlePg?: boolean;
+  /**
+   * Resolved header/footer content keyed by relationship id, covering every
+   * header/footer any section in the document references — not just the
+   * first/last section. When present (and a page carries `headerFooterRefs`),
+   * per-page selection reads from here via that page's own section instead
+   * of the single document-wide `headerContent`/`footerContent` above, which
+   * is otherwise wrong for any document with more than one distinct section
+   * header/footer (see `buildPageRenderArgs`).
+   */
+  headerFooterContentByRId?: Map<string, HeaderFooterContent>;
   /** Distance from page top to header content. */
   headerDistance?: number;
   /** Distance from page bottom to footer content. */
@@ -1835,8 +1845,28 @@ function buildPageRenderArgs(
     wordCompat: options.wordCompat,
   };
   const pageOptions: RenderPageOptions = { ...options };
-  // Per-page header/footer selection when titlePg is enabled
-  if (options.titlePg && page.number === 1) {
+  if (options.headerFooterContentByRId) {
+    // Per-page, per-section selection (multi-section documents): each
+    // section can reference its own header/footer, and w:titlePg is
+    // section-scoped too — a mid-document section's title page must not
+    // fall back to the DOCUMENT's first page or its header/footer. The
+    // caller passing this map at all means it resolved refs per-section,
+    // so a page with NO refs (e.g. a section that omits header/footer
+    // reference entirely) must render none — NOT fall through to the
+    // legacy document-wide `options.headerContent`/`footerContent` below,
+    // which would leak a different section's header onto this page.
+    const useFirst = page.titlePg && page.firstPageOfSection;
+    const refs = page.headerFooterRefs;
+    const headerRId = (useFirst && refs?.headerFirst) || refs?.headerDefault;
+    const footerRId = (useFirst && refs?.footerFirst) || refs?.footerDefault;
+    pageOptions.headerContent = headerRId
+      ? options.headerFooterContentByRId.get(headerRId)
+      : undefined;
+    pageOptions.footerContent = footerRId
+      ? options.headerFooterContentByRId.get(footerRId)
+      : undefined;
+  } else if (options.titlePg && page.number === 1) {
+    // Legacy single-section path (no per-page refs available).
     pageOptions.headerContent = options.firstPageHeaderContent;
     pageOptions.footerContent = options.firstPageFooterContent;
   }
@@ -1902,6 +1932,12 @@ function computePageFingerprint(page: Page): string {
   );
   parts.push(`n:${page.number}`);
   if (page.footnoteReservedHeight) parts.push(`fn:${page.footnoteReservedHeight}`);
+  if (page.headerFooterRefs) {
+    const r = page.headerFooterRefs;
+    parts.push(
+      `hf:${r.headerDefault ?? ''},${r.headerFirst ?? ''},${r.footerDefault ?? ''},${r.footerFirst ?? ''},${page.titlePg ? 1 : 0},${page.firstPageOfSection ? 1 : 0}`
+    );
+  }
 
   // Each fragment's stable properties
   for (const frag of page.fragments) {
@@ -1957,6 +1993,11 @@ export function computeOptionsHash(options: RenderPageOptions): string {
     );
   }
   if (options.titlePg) parts.push('titlePg');
+  if (options.headerFooterContentByRId) {
+    for (const [rId, content] of options.headerFooterContentByRId) {
+      parts.push(`hfc:${rId}:${content.blocks.length},${content.height}`);
+    }
+  }
 
   // Theme changes
   if (options.theme) {

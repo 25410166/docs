@@ -24,6 +24,7 @@ import type {
   ColumnBreakBlock,
   SectionBreakBlock,
   ColumnLayout,
+  HeaderFooterRefs,
   Run,
   TextRun,
   TabRun,
@@ -46,6 +47,33 @@ import { resolveColor, resolveColorToHex, resolveHighlightToCss } from '../utils
 import { pointsToPixels, halfPointsToPixels, halfPointsToPoints } from '../utils/units';
 import { convertBulletToUnicode } from '../docx/documentParser';
 import { ommlToMathml } from '../docx/ommlToMathml';
+
+/**
+ * Flatten a section's `headerReferences`/`footerReferences` (ECMA-376
+ * §17.10.4, keyed by `type`) into the layout engine's per-slot shape.
+ * Exported so callers resolving the document's initial/final section
+ * (outside the mid-document `sectionBreak` blocks this feeds below) can
+ * build the same shape without duplicating the type-matching logic.
+ */
+export function headerFooterRefsFromSectionProps(
+  secProps: Pick<SectionProperties, 'headerReferences' | 'footerReferences'> | undefined
+): HeaderFooterRefs | undefined {
+  if (!secProps) return undefined;
+  const { headerReferences, footerReferences } = secProps;
+  if (!headerReferences?.length && !footerReferences?.length) return undefined;
+  const refs: HeaderFooterRefs = {};
+  for (const ref of headerReferences ?? []) {
+    if (ref.type === 'default') refs.headerDefault = ref.rId;
+    else if (ref.type === 'first') refs.headerFirst = ref.rId;
+    else if (ref.type === 'even') refs.headerEven = ref.rId;
+  }
+  for (const ref of footerReferences ?? []) {
+    if (ref.type === 'default') refs.footerDefault = ref.rId;
+    else if (ref.type === 'first') refs.footerFirst = ref.rId;
+    else if (ref.type === 'even') refs.footerEven = ref.rId;
+  }
+  return refs;
+}
 
 /**
  * Options for the conversion.
@@ -1651,6 +1679,12 @@ export function toFlowBlocks(doc: PMNode, options: ToFlowBlocksOptions = {}): Fl
             };
 
             if (secProps) {
+              // §17.6.21: header/footer refs and titlePg are section-scoped —
+              // omitted here means "inherit from the previous section" (the
+              // layout engine walks that inheritance), not "no header/footer".
+              const hfRefs = headerFooterRefsFromSectionProps(secProps);
+              if (hfRefs) sectionBreak.headerFooterRefs = hfRefs;
+              if (secProps.titlePg !== undefined) sectionBreak.titlePg = secProps.titlePg;
               // Populate page size when at least one dimension is overridden.
               if (secProps.pageWidth !== undefined || secProps.pageHeight !== undefined) {
                 sectionBreak.pageSize = {

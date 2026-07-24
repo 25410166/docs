@@ -32,6 +32,7 @@ import type {
   TextBoxMeasure,
   TextBoxFragment,
   SectionBreakBlock,
+  HeaderFooterRefs,
 } from './types';
 
 import { createPaginator } from './paginator';
@@ -66,6 +67,10 @@ export type SectionLayoutConfig = {
   margins: PageMargins;
   /** Optional. Sections without explicit columns inherit `{ count: 1 }`. */
   columns?: ColumnLayout;
+  /** This section's header/footer refs — inherited from the previous section per ECMA-376 §17.6.21 if omitted. */
+  headerFooterRefs?: HeaderFooterRefs;
+  /** Different first-page header/footer for this section (w:titlePg) — also inherited if omitted. */
+  titlePg?: boolean;
 };
 
 const DEFAULT_COLUMNS: ColumnLayout = { count: 1, gap: 0 };
@@ -97,6 +102,8 @@ export function collectSectionConfigs(
       pageSize: sb.pageSize ?? previousConfig.pageSize,
       margins: sb.margins ?? previousConfig.margins,
       columns: sb.columns,
+      headerFooterRefs: sb.headerFooterRefs ?? previousConfig.headerFooterRefs,
+      titlePg: sb.titlePg ?? previousConfig.titlePg,
     };
     configs.push(config);
     breakIndices.push(i);
@@ -269,7 +276,6 @@ export function layoutDocument(
   // Note: headerContentHeights are still available for future use (e.g., warnings)
   void options.headerContentHeights;
   void options.footerContentHeights;
-  void options.titlePage;
   void options.evenAndOddHeaders;
 
   const margins = { ...baseMargins };
@@ -285,11 +291,19 @@ export function layoutDocument(
   // ECMA-376 §17.6.22: each section break carries the CURRENT section's
   // properties; `w:type` describes how that section starts relative to the
   // previous one.
-  const bodyConfig: SectionLayoutConfig = { pageSize, margins, columns: options.columns };
+  const bodyConfig: SectionLayoutConfig = {
+    pageSize,
+    margins,
+    columns: options.columns,
+    headerFooterRefs: options.headerFooterRefs,
+    titlePg: options.titlePage,
+  };
   const finalConfig: SectionLayoutConfig = {
     pageSize: finalPageSize,
     margins: finalMargins,
     columns: options.columns,
+    headerFooterRefs: options.finalHeaderFooterRefs ?? options.headerFooterRefs,
+    titlePg: options.finalTitlePage ?? options.titlePage,
   };
   const { configs: sectionConfigs, breakIndices } = collectSectionConfigs(
     blocks,
@@ -309,6 +323,9 @@ export function layoutDocument(
     margins: initialConfig.margins,
     columns: initialConfig.columns ?? DEFAULT_COLUMNS,
     footnoteReservedHeights: options.footnoteReservedHeights,
+    sectionIndex: 0,
+    headerFooterRefs: initialConfig.headerFooterRefs,
+    titlePg: initialConfig.titlePg,
   });
 
   // Apply contextual spacing: suppress spaceBefore/spaceAfter between
@@ -448,7 +465,13 @@ export function layoutDocument(
         // type but fall back to current break's type (preserves explicit 'continuous')
         const nextType = sectionBreakTypes[sectionIdx + 1] ?? sectionBreakTypes[sectionIdx];
         const nextConfig = sectionConfigs[sectionIdx + 1] ?? initialConfig;
-        handleSectionBreak(block as SectionBreakBlock, paginator, nextConfig, nextType);
+        handleSectionBreak(
+          block as SectionBreakBlock,
+          paginator,
+          nextConfig,
+          nextType,
+          sectionIdx + 1
+        );
         // A continuous break that enters a multi-column region: keep the whole
         // short region together rather than letting one column's overflow
         // spill as a stray narrow strip onto the next page (the SDS
@@ -1087,20 +1110,36 @@ function handleSectionBreak(
   _block: SectionBreakBlock,
   paginator: ReturnType<typeof createPaginator>,
   nextSectionConfig: SectionLayoutConfig,
-  nextSectionType?: SectionBreakBlock['type']
+  nextSectionType?: SectionBreakBlock['type'],
+  nextSectionIndex?: number
 ): void {
   // ECMA-376 §17.6.22: w:type specifies how the NEXT section starts relative to this one.
   // Default is 'nextPage' when w:type is absent.
   const breakType = nextSectionType ?? 'nextPage';
+  const sectionMeta = {
+    sectionIndex: nextSectionIndex ?? 0,
+    headerFooterRefs: nextSectionConfig.headerFooterRefs,
+    titlePg: nextSectionConfig.titlePg,
+  };
 
   switch (breakType) {
     case 'nextPage':
-      paginator.updatePageLayout(nextSectionConfig.pageSize, nextSectionConfig.margins);
+      paginator.updatePageLayout(
+        nextSectionConfig.pageSize,
+        nextSectionConfig.margins,
+        true,
+        sectionMeta
+      );
       paginator.forcePageBreak();
       break;
 
     case 'evenPage': {
-      paginator.updatePageLayout(nextSectionConfig.pageSize, nextSectionConfig.margins);
+      paginator.updatePageLayout(
+        nextSectionConfig.pageSize,
+        nextSectionConfig.margins,
+        true,
+        sectionMeta
+      );
       const state = paginator.forcePageBreak();
       // If landed on odd page, add another page
       if (state.page.number % 2 !== 0) {
@@ -1110,7 +1149,12 @@ function handleSectionBreak(
     }
 
     case 'oddPage': {
-      paginator.updatePageLayout(nextSectionConfig.pageSize, nextSectionConfig.margins);
+      paginator.updatePageLayout(
+        nextSectionConfig.pageSize,
+        nextSectionConfig.margins,
+        true,
+        sectionMeta
+      );
       const state = paginator.forcePageBreak();
       // If landed on even page, add another page
       if (state.page.number % 2 === 0) {
@@ -1125,7 +1169,8 @@ function handleSectionBreak(
       paginator.updatePageLayout(
         nextSectionConfig.pageSize,
         nextSectionConfig.margins,
-        /* applyImmediately */ false
+        /* applyImmediately */ false,
+        sectionMeta
       );
       break;
   }

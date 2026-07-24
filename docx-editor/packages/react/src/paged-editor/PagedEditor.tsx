@@ -58,7 +58,11 @@ import {
   findPageIndexContainingPmPos,
   collectSectionConfigs,
 } from '@eigenpal/docx-core/layout-engine';
-import type { ColumnLayout, SectionLayoutConfig } from '@eigenpal/docx-core/layout-engine';
+import type {
+  ColumnLayout,
+  SectionLayoutConfig,
+  HeaderFooterRefs,
+} from '@eigenpal/docx-core/layout-engine';
 import type {
   Layout,
   FlowBlock,
@@ -159,6 +163,7 @@ import {
   convertHeaderFooterToContent,
   detectTableInsertHover,
   TABLE_INSERT_HIDE_DELAY_MS as TABLE_INSERT_HIDE_DELAY,
+  headerFooterRefsFromSectionProps,
 } from '@eigenpal/docx-core/layout-bridge';
 import type { RenderedDomContext } from '../plugin-api/types';
 import { createRenderedDomContext } from '../plugin-api/RenderedDomContext';
@@ -2042,9 +2047,75 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
               )
             : undefined;
 
+          // A document with more than one section can reference a DIFFERENT
+          // header/footer per section (plus per-section w:titlePg) — the
+          // single headerContent/footerContent/firstPage* pair above only
+          // covers the initial and final sections (kept for callers that
+          // don't supply a full `document.package`). When the real headers/
+          // footers map is available, resolve every rId any section in the
+          // document references — mid-document `sectionBreak` blocks carry
+          // their own `headerFooterRefs` (see toFlowBlocks.ts) — ONCE into a
+          // lookup renderPages can key per-page off `page.headerFooterRefs`
+          // (see paginator.ts's per-section tracking + buildPageRenderArgs).
+          const headersMap = document?.package?.headers;
+          const footersMap = document?.package?.footers;
+          const initialHfRefs = headerFooterRefsFromSectionProps(sectionProperties ?? undefined);
+          const finalHfRefs =
+            headerFooterRefsFromSectionProps(finalSectionProperties ?? undefined) ?? initialHfRefs;
+          const finalTitlePg = finalSectionProperties?.titlePg ?? sectionProperties?.titlePg;
+
+          const headerFooterContentByRId = new Map<string, HeaderFooterContent>();
+          const resolvedHeaderContents: HeaderFooterContent[] = [];
+          const resolvedFooterContents: HeaderFooterContent[] = [];
+          if (headersMap || footersMap) {
+            const headerRIds = new Set<string>();
+            const footerRIds = new Set<string>();
+            const collect = (refs: HeaderFooterRefs | undefined) => {
+              if (!refs) return;
+              if (refs.headerDefault) headerRIds.add(refs.headerDefault);
+              if (refs.headerFirst) headerRIds.add(refs.headerFirst);
+              if (refs.headerEven) headerRIds.add(refs.headerEven);
+              if (refs.footerDefault) footerRIds.add(refs.footerDefault);
+              if (refs.footerFirst) footerRIds.add(refs.footerFirst);
+              if (refs.footerEven) footerRIds.add(refs.footerEven);
+            };
+            collect(initialHfRefs);
+            collect(finalHfRefs);
+            for (const block of newBlocks) {
+              if (block.kind === 'sectionBreak') collect(block.headerFooterRefs);
+            }
+            for (const rId of headerRIds) {
+              const content = convertHeaderFooterToContent(
+                headersMap?.get(rId),
+                contentWidth,
+                hfMetricsHeader,
+                hfOptions
+              );
+              if (content) {
+                headerFooterContentByRId.set(rId, content);
+                resolvedHeaderContents.push(content);
+              }
+            }
+            for (const rId of footerRIds) {
+              const content = convertHeaderFooterToContent(
+                footersMap?.get(rId),
+                contentWidth,
+                hfMetricsFooter,
+                hfOptions
+              );
+              if (content) {
+                headerFooterContentByRId.set(rId, content);
+                resolvedFooterContents.push(content);
+              }
+            }
+          }
+
           // Adjust margins if header/footer content exceeds available space
           // (Word and Google Docs push body content down when header grows)
-          // Use the tallest header/footer across all variants for margin computation
+          // Use the tallest header/footer across every section's variants —
+          // an under-extension would clip a tall header on the ONE section
+          // that has one; over-extending a section with a short/no header
+          // is the safer failure mode.
           const headerDistance = margins.header ?? 48;
           const footerDistance = margins.footer ?? 48;
           const availableHeaderSpace = margins.top - headerDistance;
@@ -2055,11 +2126,13 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
             hf ? Math.max((hf.visualBottom ?? hf.height) - (hf.visualTop ?? 0), hf.height) : 0;
           const headerContentHeight = Math.max(
             hfHeight(headerContentForRender),
-            hfHeight(firstPageHeaderForRender)
+            hfHeight(firstPageHeaderForRender),
+            ...resolvedHeaderContents.map(hfHeight)
           );
           const footerContentHeight = Math.max(
             hfFooterHeight(footerContentForRender),
-            hfFooterHeight(firstPageFooterForRender)
+            hfFooterHeight(firstPageFooterForRender),
+            ...resolvedFooterContents.map(hfFooterHeight)
           );
 
           // When header/footer content exceeds the authored margin space,
@@ -2120,6 +2193,10 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
             columns: finalColumns,
             bodyBreakType,
             pageGap,
+            headerFooterRefs: initialHfRefs,
+            finalHeaderFooterRefs: finalHfRefs,
+            titlePage: hasTitlePg,
+            finalTitlePage: finalTitlePg,
           };
 
           if (hasFootnotes) {
@@ -2266,6 +2343,8 @@ const PagedEditorComponent = forwardRef<PagedEditorRef, PagedEditorProps>(
               firstPageHeaderContent: firstPageHeaderForRender,
               firstPageFooterContent: firstPageFooterForRender,
               titlePg: hasTitlePg,
+              headerFooterContentByRId:
+                headerFooterContentByRId.size > 0 ? headerFooterContentByRId : undefined,
               headerDistance: sectionProperties?.headerDistance
                 ? twipsToPixels(sectionProperties.headerDistance)
                 : undefined,

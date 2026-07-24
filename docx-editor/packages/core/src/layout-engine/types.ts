@@ -465,6 +465,22 @@ export type ImageBlock = {
 };
 
 /**
+ * Header/footer relationship IDs for one section, by ECMA-376 §17.10.4
+ * type (`default` / `first` / `even`). Omitted per OOXML §17.6.21 means
+ * "inherit from the most recent preceding section that defined one" —
+ * callers walking sections must carry a value forward, not treat a miss
+ * as "no header/footer".
+ */
+export type HeaderFooterRefs = {
+  headerDefault?: string;
+  headerFirst?: string;
+  headerEven?: string;
+  footerDefault?: string;
+  footerFirst?: string;
+  footerEven?: string;
+};
+
+/**
  * Section break block defining page layout changes.
  */
 export type SectionBreakBlock = {
@@ -475,6 +491,10 @@ export type SectionBreakBlock = {
   orientation?: 'portrait' | 'landscape';
   margins?: PageMargins;
   columns?: ColumnLayout;
+  /** This section's header/footer relationship IDs (w:headerReference / w:footerReference). */
+  headerFooterRefs?: HeaderFooterRefs;
+  /** Different first-page header/footer for this section (w:titlePg). */
+  titlePg?: boolean;
 };
 
 /**
@@ -831,15 +851,12 @@ export type Page = {
   orientation?: 'portrait' | 'landscape';
   /** Section index this page belongs to. */
   sectionIndex?: number;
-  /** Header/footer references for this page. */
-  headerFooterRefs?: {
-    headerDefault?: string;
-    headerFirst?: string;
-    headerEven?: string;
-    footerDefault?: string;
-    footerFirst?: string;
-    footerEven?: string;
-  };
+  /** Header/footer references for this page's section. */
+  headerFooterRefs?: HeaderFooterRefs;
+  /** This page's section has a different first-page header/footer (w:titlePg). */
+  titlePg?: boolean;
+  /** Whether this is the first page of `sectionIndex` — combine with `titlePg` to pick the "first" header/footer variant over "default". */
+  firstPageOfSection?: boolean;
   /** Footnote IDs that appear on this page (for rendering). */
   footnoteIds?: number[];
   /** Height reserved for the footnote area at page bottom (pixels). */
@@ -943,10 +960,16 @@ export type LayoutOptions = {
   headerContentHeights?: HeaderFooterContentHeights;
   /** Footer content heights by variant. */
   footerContentHeights?: HeaderFooterContentHeights;
-  /** Whether section has different first page header/footer. */
+  /** Whether the initial (body) section has a different first page header/footer. */
   titlePage?: boolean;
   /** Whether section has different even/odd headers/footers. */
   evenAndOddHeaders?: boolean;
+  /** Initial (body) section's header/footer refs. */
+  headerFooterRefs?: HeaderFooterRefs;
+  /** Final section's header/footer refs, used after the last explicit section break. */
+  finalHeaderFooterRefs?: HeaderFooterRefs;
+  /** Whether the final section has a different first page header/footer. */
+  finalTitlePage?: boolean;
   /** Per-page footnote reserved heights (pageNumber → height in pixels). */
   footnoteReservedHeights?: Map<number, number>;
   /** Section break type for the body-level (final) section (for section transition logic). */

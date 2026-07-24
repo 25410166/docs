@@ -17,6 +17,7 @@ export {
   resolveListTemplate,
   resetBlockIdCounter,
   convertBorderSpecToLayout,
+  headerFooterRefsFromSectionProps,
 } from './toFlowBlocks';
 export type { ToFlowBlocksOptions } from './toFlowBlocks';
 

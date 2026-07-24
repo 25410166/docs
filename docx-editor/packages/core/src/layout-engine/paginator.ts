@@ -9,7 +9,7 @@
  * Creates new pages when content doesn't fit.
  */
 
-import type { Page, PageMargins, Fragment, ColumnLayout } from './types';
+import type { Page, PageMargins, Fragment, ColumnLayout, HeaderFooterRefs } from './types';
 
 /**
  * Current state of a page being laid out.
@@ -41,6 +41,12 @@ export type PaginatorOptions = {
   columns?: ColumnLayout;
   /** Per-page footnote reserved heights (pageNumber → height in pixels). */
   footnoteReservedHeights?: Map<number, number>;
+  /** Section index (0-based) of the first section pages are created in. */
+  sectionIndex?: number;
+  /** Header/footer refs of the first section. */
+  headerFooterRefs?: HeaderFooterRefs;
+  /** Different first-page header/footer for the first section. */
+  titlePg?: boolean;
   /** Callback when a new page is created. */
   onNewPage?: (state: PageState) => void;
 };
@@ -73,6 +79,24 @@ export function createPaginator(options: PaginatorOptions) {
   // size and margins per ECMA-376 §17.6.22.
   let pendingPageSize: { w: number; h: number } | undefined;
   let pendingMargins: PageMargins | undefined;
+
+  // Section identity for the page currently being built — which section
+  // index it belongs to, that section's header/footer refs, and whether
+  // it has a distinct first-page header/footer (w:titlePg). Travels on
+  // the same immediate/deferred schedule as pageSize/margins above, so a
+  // `continuous` break's new section only "claims" the header/footer of
+  // the next NATURALLY created page, matching where its content starts.
+  let sectionIndex = options.sectionIndex ?? 0;
+  let headerFooterRefs = options.headerFooterRefs;
+  let titlePg = options.titlePg;
+  let pendingSectionIndex: number | undefined;
+  let pendingHeaderFooterRefs: HeaderFooterRefs | undefined;
+  let pendingTitlePg: boolean | undefined;
+  // Section index stamped on the most recently created page — lets
+  // createNewPage() tell whether the page it's about to build is the
+  // FIRST page of `sectionIndex` (needed to pick a w:titlePg "first"
+  // header/footer over the section's "default" one).
+  let lastStampedSectionIndex: number | undefined;
 
   const pages: Page[] = [];
   const states: PageState[] = [];
@@ -152,6 +176,18 @@ export function createPaginator(options: PaginatorOptions) {
       pendingMargins = undefined;
       columnWidth = calculateColumnWidth(pageSize.w, margins.left, margins.right, columns);
     }
+    if (
+      pendingSectionIndex !== undefined ||
+      pendingHeaderFooterRefs !== undefined ||
+      pendingTitlePg !== undefined
+    ) {
+      if (pendingSectionIndex !== undefined) sectionIndex = pendingSectionIndex;
+      headerFooterRefs = pendingHeaderFooterRefs;
+      titlePg = pendingTitlePg;
+      pendingSectionIndex = undefined;
+      pendingHeaderFooterRefs = undefined;
+      pendingTitlePg = undefined;
+    }
     const pageNumber = pages.length + 1;
     const topMargin = margins.top;
     const contentBottom = getContentBottom();
@@ -168,7 +204,12 @@ export function createPaginator(options: PaginatorOptions) {
       footnoteReservedHeight: footnoteHeight > 0 ? footnoteHeight : undefined,
       // Set initial columns; may be overwritten by updateColumns() for continuous section breaks
       columns: columns.count > 1 ? { ...columns } : undefined,
+      sectionIndex,
+      headerFooterRefs,
+      titlePg,
+      firstPageOfSection: sectionIndex !== lastStampedSectionIndex,
     };
+    lastStampedSectionIndex = sectionIndex;
 
     const state: PageState = {
       page,
@@ -441,11 +482,21 @@ export function createPaginator(options: PaginatorOptions) {
   function updatePageLayout(
     newPageSize?: { w: number; h: number },
     newMargins?: PageMargins,
-    applyImmediately = true
+    applyImmediately = true,
+    newSectionMeta?: {
+      sectionIndex: number;
+      headerFooterRefs?: HeaderFooterRefs;
+      titlePg?: boolean;
+    }
   ): void {
     if (!applyImmediately) {
       pendingPageSize = newPageSize ? { ...newPageSize } : pendingPageSize;
       pendingMargins = newMargins ? { ...newMargins } : pendingMargins;
+      if (newSectionMeta) {
+        pendingSectionIndex = newSectionMeta.sectionIndex;
+        pendingHeaderFooterRefs = newSectionMeta.headerFooterRefs;
+        pendingTitlePg = newSectionMeta.titlePg;
+      }
       return;
     }
     if (newPageSize) {
@@ -454,6 +505,11 @@ export function createPaginator(options: PaginatorOptions) {
     if (newMargins) {
       margins = { ...newMargins };
     }
+    if (newSectionMeta) {
+      sectionIndex = newSectionMeta.sectionIndex;
+      headerFooterRefs = newSectionMeta.headerFooterRefs;
+      titlePg = newSectionMeta.titlePg;
+    }
     if (getContentHeight() <= 0) {
       throw new Error('Paginator: section page size and margins yield no content area');
     }
@@ -461,6 +517,9 @@ export function createPaginator(options: PaginatorOptions) {
     // A pending swap is now superseded by this immediate swap.
     pendingPageSize = undefined;
     pendingMargins = undefined;
+    pendingSectionIndex = undefined;
+    pendingHeaderFooterRefs = undefined;
+    pendingTitlePg = undefined;
   }
 
   return {
