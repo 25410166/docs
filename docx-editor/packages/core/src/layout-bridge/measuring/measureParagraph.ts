@@ -33,6 +33,7 @@ import {
 } from './measureContainer';
 
 import { DEFAULT_SINGLE_LINE_RATIO } from '../../utils/fontResolver';
+import { adjustKinsokuBreak, isLineStartForbidden } from './kinsoku';
 
 // Default values - match OOXML spec defaults
 const DEFAULT_FONT_SIZE = 11; // 11pt (Word 2007+ default)
@@ -847,6 +848,7 @@ export function measureParagraph(
             let bestEnd = findMaxFittingLength(remaining, style, spaceLeft);
 
             // Nothing fits → start a new line and retry (or force 1 char on empty line)
+            let forcedMinimum = false;
             if (bestEnd === 0) {
               if (currentLine.width > 0) {
                 startNewLine(runIndex, charIndex + chunkStart);
@@ -854,9 +856,21 @@ export function measureParagraph(
                 continue;
               }
               bestEnd = 1;
+              forcedMinimum = true;
             }
 
-            const chunkEnd = chunkStart + bestEnd;
+            // Kinsoku shori (§17.3.1.16): this is the ONLY break path CJK text
+            // takes (no spaces → findWordBreaks finds nothing → the whole run
+            // hard-breaks by character width alone). May extend the chunk by
+            // one or more characters past `spaceLeft` to avoid orphaning a
+            // forbidden line-start character (closing punctuation/brackets) —
+            // matches Word/LibreOffice, which also let the line run slightly
+            // past its fitted width rather than start with e.g. "。". Skipped
+            // in the forced-minimum case (an empty line can't shrink further
+            // without going negative).
+            const chunkEnd = forcedMinimum
+              ? chunkStart + bestEnd
+              : adjustKinsokuBreak(word, chunkStart, chunkStart + bestEnd);
             const chunk = word.slice(chunkStart, chunkEnd);
             const chunkWidth = measureTextWidth(chunk, style);
 
@@ -880,10 +894,36 @@ export function measureParagraph(
           currentLine.width > 0 &&
           currentLine.width + wordWidth > currentLine.availableWidth + WIDTH_TOLERANCE
         ) {
-          // Word doesn't fit, start new line
-          startNewLine(runIndex, charIndex);
-          // Re-apply font metrics to the new line (startNewLine resets maxFontSize)
-          updateMaxFont(style);
+          // Kinsoku shori (§17.3.1.16): the word about to move to a new line
+          // may itself start with a forbidden character — e.g. mixed
+          // Latin/CJK text like "L50 (Daphnia magna" wrapping right before
+          // the "(" (findWordBreaks only splits on space/hyphen/tab, so
+          // "(Daphnia" is one word here). Peel any leading forbidden
+          // character(s) onto the CURRENT line first (oidashi, same
+          // over-width allowance as the hard-break path above) so they
+          // don't dangle alone at the start of the new line.
+          let peelEnd = 0;
+          while (peelEnd < word.length && isLineStartForbidden(word[peelEnd])) {
+            peelEnd++;
+          }
+          if (peelEnd > 0) {
+            const peeled = word.slice(0, peelEnd);
+            currentLine.width += measureTextWidth(peeled, style);
+            currentLine.toRun = runIndex;
+            currentLine.toChar = charIndex + peelEnd;
+          }
+          const remainderStart = charIndex + peelEnd;
+          if (remainderStart < nextBreak) {
+            startNewLine(runIndex, remainderStart);
+            // Re-apply font metrics to the new line (startNewLine resets maxFontSize)
+            updateMaxFont(style);
+            const remainder = text.slice(remainderStart, nextBreak);
+            currentLine.width += measureTextWidth(remainder, style);
+            currentLine.toRun = runIndex;
+            currentLine.toChar = nextBreak;
+          }
+          charIndex = nextBreak;
+          continue;
         }
 
         // Add word to current line

@@ -60,7 +60,15 @@ beforeAll(() => {
   };
   fullWidthFloat = measureParagraph(para(), MAX_WIDTH, { floatingZones: [zone] });
 });
-afterAll(() => GlobalRegistrator.unregister());
+afterAll(() => {
+  // The canvas context (and its fake measureText mock installed above) is
+  // cached at module scope in measureContainer.ts — unregistering happy-dom
+  // alone doesn't clear that cache, so it leaks into whichever test file
+  // runs next in the same process (bun runs all files in one process by
+  // default). Reset it so later files get a fresh, real canvas context.
+  resetCanvasContext();
+  GlobalRegistrator.unregister();
+});
 
 describe('full-width floating exclusion does not collapse the text column', () => {
   test('does not degenerate to ~1 character per line', () => {

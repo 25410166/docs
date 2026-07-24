@@ -30,7 +30,15 @@ beforeAll(() => {
   HTMLCanvasElement.prototype.getContext = () => fakeCtx;
   resetCanvasContext();
 });
-afterAll(() => GlobalRegistrator.unregister());
+afterAll(() => {
+  // The canvas context (and its fake measureText mock installed above) is
+  // cached at module scope in measureContainer.ts — unregistering happy-dom
+  // alone doesn't clear that cache, so it leaks into whichever test file
+  // runs next in the same process (bun runs all files in one process by
+  // default). Reset it so later files get a fresh, real canvas context.
+  resetCanvasContext();
+  GlobalRegistrator.unregister();
+});
 
 const blockImage = { kind: 'image', wrapType: 'topAndBottom', width: 200, height: 120 };
 const textRun = { kind: 'text', text: 'after the image' };

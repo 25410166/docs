@@ -46,7 +46,15 @@ beforeAll(() => {
   negative = measureWithLeftIndent(-100);
   positive = measureWithLeftIndent(100);
 });
-afterAll(() => GlobalRegistrator.unregister());
+afterAll(() => {
+  // The canvas context (and its fake measureText mock installed above) is
+  // cached at module scope in measureContainer.ts — unregistering happy-dom
+  // alone doesn't clear that cache, so it leaks into whichever test file
+  // runs next in the same process (bun runs all files in one process by
+  // default). Reset it so later files get a fresh, real canvas context.
+  resetCanvasContext();
+  GlobalRegistrator.unregister();
+});
 
 // Long enough to wrap several times inside a narrow content box.
 const TEXT = Array.from({ length: 40 }, (_, i) => `word${i}`).join(' ');
