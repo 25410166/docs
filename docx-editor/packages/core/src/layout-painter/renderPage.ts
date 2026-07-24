@@ -1149,12 +1149,17 @@ function renderHeaderFooterContent(
       let tbLeft = 0;
       let tbTop = cursorY;
       if (anchored) {
-        // offsetH/offsetV are in EMUs (like every other anchor offset); the
-        // margin/flow values below are already pixels, so convert first. Prior
-        // to this the raw EMU (e.g. 457200 for 0.5") was used as pixels, hurling
-        // the text box (and its text/tags) ~9525× too far, right off the page.
-        const offH = emuToPixels(a!.offsetH ?? 0);
-        const offV = emuToPixels(a!.offsetV ?? 0);
+        // `TextBoxBlock.anchor.offsetH/V` are already pixels — converted once
+        // from EMU in toProseDoc.ts (see `posOffsetH`/`posOffsetV` there) so
+        // every downstream consumer shares one canonical unit. Converting
+        // again here with emuToPixels() shrinks any real offset (e.g. 93px)
+        // toward 0 (emuToPixels treats it as if it were 93 EMU — a fraction
+        // of a pixel), collapsing every anchored header/footer textbox to
+        // the same spot regardless of its declared position (#chinese-sds
+        // header repro: title/subtitle and product-code/version boxes both
+        // landed at the same Y and visually overlapped).
+        const offH = a!.offsetH ?? 0;
+        const offV = a!.offsetV ?? 0;
         tbLeft = a!.relFromH === 'page' ? offH - layout.margins.left : offH;
         if (a!.relFromV === 'page') tbTop = offV - layout.flowTop;
         else if (a!.relFromV === 'margin') tbTop = layout.margins.top + offV - layout.flowTop;

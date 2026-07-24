@@ -20,7 +20,6 @@ import {
 } from '../layout-engine/types';
 import type { RenderContext } from './renderPage';
 import { renderParagraphFragment } from './renderParagraph';
-import { emuToPixels } from '../utils/units';
 
 /**
  * CSS class names for text box elements
@@ -126,14 +125,14 @@ export function renderTextBoxFragment(
   if (block.anchor && !fragment.isAnchored) {
     const isParagraphH = !block.anchor.relFromH || block.anchor.relFromH === 'paragraph';
     const isParagraphV = !block.anchor.relFromV || block.anchor.relFromV === 'paragraph';
+    // offsetH/offsetV are already pixels (converted once from EMU in
+    // toProseDoc.ts) — do NOT run them through emuToPixels() again, which
+    // would shrink a real offset (e.g. 20px) toward 0 (treated as if it
+    // were 20 EMU, a fraction of a pixel).
     const dxPx =
-      isParagraphH && typeof block.anchor.offsetH === 'number'
-        ? emuToPixels(block.anchor.offsetH)
-        : 0;
+      isParagraphH && typeof block.anchor.offsetH === 'number' ? block.anchor.offsetH : 0;
     const dyPx =
-      isParagraphV && typeof block.anchor.offsetV === 'number'
-        ? emuToPixels(block.anchor.offsetV)
-        : 0;
+      isParagraphV && typeof block.anchor.offsetV === 'number' ? block.anchor.offsetV : 0;
     if (dxPx !== 0 || dyPx !== 0) {
       containerEl.style.transform = `translate(${dxPx}px, ${dyPx}px)`;
     }

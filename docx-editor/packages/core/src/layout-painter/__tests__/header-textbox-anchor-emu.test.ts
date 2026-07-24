@@ -3,11 +3,16 @@
  */
 
 /*
- * An anchored text box in a header/footer positions from `anchor.offsetH/offsetV`,
- * which are in EMUs (914400/inch). The header painter used them RAW as pixels,
- * so a 0.5" offset (457200) placed the box ~9525× too far — hurling the text box
- * and its text/tags right off the page. It must convert via emuToPixels like the
- * body text-box and header-image paths do.
+ * An anchored text box in a header/footer positions from `anchor.offsetH/offsetV`.
+ * `toProseDoc.ts` converts these from EMU to pixels ONCE, at parse time, when it
+ * builds the PM node's `posOffsetH`/`posOffsetV` attrs — every downstream reader
+ * (`toFlowBlocks.ts`'s `TextBoxBlock.anchor`, and this renderer) receives pixels,
+ * not EMU. The header painter used to run them through `emuToPixels()` a SECOND
+ * time, treating an already-converted pixel value (e.g. 93px) as if it were EMU —
+ * shrinking it to a fraction of a pixel (93 EMU ≈ 0.01px) and collapsing every
+ * anchored header/footer text box toward the same spot regardless of its real
+ * declared offset (visible as overlapping garbled text in real multi-shape
+ * headers, e.g. a Chinese SDS document's title/product-code boxes).
  */
 
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -33,8 +38,9 @@ function makePage(): Page {
   };
 }
 
-// Header holding one page-anchored text box offset by `offsetEmu` on both axes.
-function headerWithAnchoredTextBox(offsetEmu: number): HeaderFooterContent {
+// Header holding one page-anchored text box offset by `offsetPx` (pixels — the
+// unit `TextBoxBlock.anchor.offsetH/V` actually carries) on both axes.
+function headerWithAnchoredTextBox(offsetPx: number): HeaderFooterContent {
   const innerPara: ParagraphBlock = {
     kind: 'paragraph',
     id: 'tb-para',
@@ -63,7 +69,7 @@ function headerWithAnchoredTextBox(offsetEmu: number): HeaderFooterContent {
     width: 200,
     height: 100,
     content: [innerPara],
-    anchor: { offsetH: offsetEmu, offsetV: offsetEmu, relFromH: 'page', relFromV: 'page' },
+    anchor: { offsetH: offsetPx, offsetV: offsetPx, relFromH: 'page', relFromV: 'page' },
   };
   const measure: TextBoxMeasure = {
     kind: 'textBox',
@@ -75,13 +81,13 @@ function headerWithAnchoredTextBox(offsetEmu: number): HeaderFooterContent {
 }
 
 describe('renderPage header anchored text box positioning', () => {
-  test('offsetH/offsetV are converted EMU→px so the box stays on the page', () => {
+  test('offsetH/offsetV (already pixels) are used as-is, not re-converted from EMU', () => {
     const page = makePage();
-    // 1 inch = 914400 EMU = 96px. Page-relative → left = 96 - margins.left(96) = 0.
+    // 1 inch = 96px. Page-relative → left = 96 - margins.left(96) = 0.
     const el = renderPage(
       page,
       { pageNumber: 1, totalPages: 1, section: 'body' },
-      { document, headerContent: headerWithAnchoredTextBox(914400) }
+      { document, headerContent: headerWithAnchoredTextBox(96) }
     );
 
     const headerEl = el.querySelector(`.${PAGE_CLASS_NAMES.header}`);
@@ -91,10 +97,29 @@ describe('renderPage header anchored text box positioning', () => {
     const left = parseFloat(tb!.style.left);
     const top = parseFloat(tb!.style.top);
 
-    // Before the fix these were ~914304 (raw EMU), far outside the 816×1056 page.
-    expect(Math.abs(left)).toBeLessThanOrEqual(page.size.w);
-    expect(Math.abs(top)).toBeLessThanOrEqual(page.size.h);
-    // Concretely: 1" page-anchored, 1" left margin → left is exactly 0.
+    // Before the fix, re-running 96 through emuToPixels() collapsed this to ~0
+    // regardless of the real offset — asserting the exact value (not just "in
+    // bounds") is what catches that collapse.
     expect(left).toBe(0);
+    // top = offV - flowTop, and flowTop = headerDistance = margins.header (48).
+    expect(top).toBe(96 - 48);
+  });
+
+  test('a larger offset is NOT collapsed toward 0 (the double-EMU-conversion regression)', () => {
+    const page = makePage();
+    const el = renderPage(
+      page,
+      { pageNumber: 1, totalPages: 1, section: 'body' },
+      { document, headerContent: headerWithAnchoredTextBox(300) }
+    );
+
+    const headerEl = el.querySelector(`.${PAGE_CLASS_NAMES.header}`);
+    const tb = headerEl?.querySelector('.layout-textbox') as HTMLElement | null;
+    expect(tb).toBeTruthy();
+
+    const left = parseFloat(tb!.style.left);
+    // Before the fix: emuToPixels(300) ≈ 0, so left ≈ -margins.left ≈ -96.
+    // After the fix: left = 300 - margins.left(96) = 204.
+    expect(left).toBe(300 - 96);
   });
 });
