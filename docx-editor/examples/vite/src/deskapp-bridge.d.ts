@@ -112,6 +112,9 @@ declare global {
         email: string | null;
         avatar_path: string | null;
       } | null>;
+      /** Secure desktop storage bridge for OS credential store / Stronghold tokens */
+      tokenGet?(key: string): Promise<string | null>;
+      tokenSet?(key: string, value: string): Promise<void>;
     };
   }
 }

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "CWord",
+  "version": "1.0.0",
+  "identifier": "net.cookapps.cword",
+  "build": {
+    "beforeDevCommand": "pnpm --filter docx-editor-monorepo dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm --filter docx-editor-monorepo build",
+    "frontendDist": "../docx-editor/examples/vite/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "CWord",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "cookapps-cword"
+        ]
+      }
+    },
+    "single-instance": {
+      "enable": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
