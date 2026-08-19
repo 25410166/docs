@@ -80,7 +80,7 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: ${{ github.ref_type == 'tag' && format('CWord {0}', github.ref_name) || '' }}
-          releaseDraft: true
+          releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           uploadUpdaterJson: false
           uploadUpdaterSignatures: false
