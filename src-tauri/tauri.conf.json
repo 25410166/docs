@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "CWord",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "identifier": "net.cookapps.cword",
   "build": {
     "beforeDevCommand": "npm --prefix ../docx-editor run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "bun run --cwd ../docx-editor build:demo",
+    "beforeBuildCommand": "",
     "frontendDist": "../docx-editor/examples/vite/dist"
   },
   "app": {

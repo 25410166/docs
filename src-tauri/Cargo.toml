@@ -1,6 +1,6 @@
 [package]
 name = "cword"
-version = "1.0.0"
+version = "1.0.2"
 description = "CWord — CookApps Word desktop application"
 authors = ["CookApps Team"]
 edition = "2021"
