@@ -7714,8 +7714,12 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     // Host override (desktop shell): native dialog + open-where prompt. The
     // host opens the file itself, so don't also trigger the browser picker.
     if (onRequestOpen) {
-      onRequestOpen();
-      return;
+      try {
+        onRequestOpen();
+        return;
+      } catch (err) {
+        console.warn('[DocxEditor] onRequestOpen failed, using file picker fallback', err);
+      }
     }
     docxInputRef.current?.click();
   }, [onRequestOpen]);

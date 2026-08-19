@@ -3,9 +3,11 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::{Read, Seek, SeekFrom, Write as IoWrite};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -158,6 +160,177 @@ async fn desktop_auth_request(request: DesktopAuthRequest) -> Result<DesktopAuth
     Ok(DesktopAuthResponse { status, body })
 }
 
+#[tauri::command]
+fn pick_open_document() -> Option<String> {
+    FileDialog::new()
+        .add_filter("Document", &["docx", "odt", "md", "txt"])
+        .pick_file()
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn pick_save_path(suggestedName: Option<String>) -> Option<String> {
+    let mut dialog = FileDialog::new()
+        .add_filter("Word Document (.docx)", &["docx"])
+        .add_filter("PDF Document (.pdf)", &["pdf"])
+        .add_filter("Markdown (.md)", &["md"])
+        .add_filter("Text (.txt)", &["txt"]);
+    if let Some(name) = suggestedName {
+        dialog = dialog.set_file_name(&name);
+    }
+    dialog.save_file().map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn export_pdf(suggestedName: Option<String>) -> Option<String> {
+    let mut dialog = FileDialog::new().add_filter("PDF Document (.pdf)", &["pdf"]);
+    if let Some(name) = suggestedName {
+        dialog = dialog.set_file_name(&name);
+    }
+    dialog.save_file().map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn begin_save_document(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if let Some(parent) = p.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn write_save_chunk(path: String, offset: usize, bytes: Vec<u8>) -> Result<(), String> {
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    file.seek(SeekFrom::Start(offset as u64)).map_err(|e| e.to_string())?;
+    file.write_all(&bytes).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn commit_save_document(_path: String) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+fn document_size(path: String) -> Result<u64, String> {
+    let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+    Ok(meta.len())
+}
+
+#[tauri::command]
+fn read_document_chunk(path: String, offset: u64, length: u64) -> Result<Vec<u8>, String> {
+    let mut file = fs::File::open(&path).map_err(|e| e.to_string())?;
+    file.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+    let mut buffer = vec![0u8; length as usize];
+    let n = file.read(&mut buffer).map_err(|e| e.to_string())?;
+    buffer.truncate(n);
+    Ok(buffer)
+}
+
+#[tauri::command]
+fn set_window_dirty(app: AppHandle, dirty: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(title) = window.title() {
+            let clean = title.trim_end_matches(" *");
+            let new_title = if dirty { format!("{clean} *") } else { clean.to_string() };
+            let _ = window.set_title(&new_title);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn rename_document(path: String, newName: String) -> Result<String, String> {
+    let old_path = PathBuf::from(&path);
+    let parent = old_path.parent().unwrap_or(&old_path);
+    let mut new_filename = newName;
+    if !new_filename.to_lowercase().ends_with(".docx") {
+        new_filename.push_str(".docx");
+    }
+    let new_path = parent.join(new_filename);
+    fs::rename(&old_path, &new_path).map_err(|e| e.to_string())?;
+    Ok(new_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn add_recent_file(_path: String) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+fn get_settings(app: AppHandle) -> Result<Value, String> {
+    let path = token_store_path(&app)?.with_file_name("settings.json");
+    if let Ok(content) = fs::read_to_string(path) {
+        return serde_json::from_str(&content).map_err(|e| e.to_string());
+    }
+    Ok(serde_json::json!({}))
+}
+
+#[tauri::command]
+fn save_settings(app: AppHandle, settings: Value) -> Result<(), String> {
+    let path = token_store_path(&app)?.with_file_name("settings.json");
+    let bytes = serde_json::to_vec(&settings).map_err(|e| e.to_string())?;
+    fs::write(path, bytes).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_profile() -> Result<Option<Value>, String> {
+    Ok(None)
+}
+
+#[tauri::command]
+fn open_document_window(_kind: String, _filePath: String) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+fn write_recovery(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    let recovery_path = format!("{path}.recovery");
+    fs::write(recovery_path, bytes).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn read_recovery(path: String) -> Result<Option<Vec<u8>>, String> {
+    let recovery_path = format!("{path}.recovery");
+    if let Ok(bytes) = fs::read(recovery_path) {
+        return Ok(Some(bytes));
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+fn clear_recovery(path: String) -> Result<(), String> {
+    let recovery_path = format!("{path}.recovery");
+    let _ = fs::remove_file(recovery_path);
+    Ok(())
+}
+
+#[tauri::command]
+fn casual_store_get(app: AppHandle, key: String) -> Result<Option<String>, String> {
+    let store_dir = token_store_path(&app)?.with_file_name("store");
+    let key_file = store_dir.join(format!("{key}.txt"));
+    if let Ok(val) = fs::read_to_string(key_file) {
+        return Ok(Some(val));
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+fn casual_store_set(app: AppHandle, key: String, value: String) -> Result<(), String> {
+    let store_dir = token_store_path(&app)?.with_file_name("store");
+    let _ = fs::create_dir_all(&store_dir);
+    let key_file = store_dir.join(format!("{key}.txt"));
+    fs::write(key_file, value).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -165,7 +338,27 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             desktop_auth_request,
             desktop_token_get,
-            desktop_token_set
+            desktop_token_set,
+            pick_open_document,
+            pick_save_path,
+            export_pdf,
+            begin_save_document,
+            write_save_chunk,
+            commit_save_document,
+            document_size,
+            read_document_chunk,
+            set_window_dirty,
+            rename_document,
+            add_recent_file,
+            get_settings,
+            save_settings,
+            get_profile,
+            open_document_window,
+            write_recovery,
+            read_recovery,
+            clear_recovery,
+            casual_store_get,
+            casual_store_set
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {

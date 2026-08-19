@@ -1,6 +1,6 @@
 [package]
 name = "cword"
-version = "1.0.2"
+version = "1.0.3"
 description = "CWord — CookApps Word desktop application"
 authors = ["CookApps Team"]
 edition = "2021"
@@ -19,5 +19,6 @@ tauri-plugin-single-instance = "2.0"
 tauri-plugin-opener = "2.0"
 tauri-plugin-shell = "2.0"
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
+rfd = "0.15"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

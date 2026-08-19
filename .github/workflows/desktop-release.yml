@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag name (e.g. v1.0.1)'
+        description: 'Tag name (e.g. v1.0.3)'
         required: false
-        default: 'v1.0.1'
+        default: 'v1.0.3'
         type: string
   push:
     branches:
@@ -84,7 +84,7 @@ jobs:
           projectPath: src-tauri
           tauriScript: cargo tauri
           args: ${{ matrix.args }}
-          tagName: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || 'v1.0.2' }}
+          tagName: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || 'v1.0.3' }}
           releaseName: ${{ format('CWord {0}', inputs.tag || github.ref_name) }}
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

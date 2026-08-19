@@ -1204,3 +1204,56 @@
 .ep-root::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* ============================================================================
+ * PRINT STYLING
+ *
+ * When window.print() is invoked on the editor page, hide surrounding chrome
+ * (toolbar, titlebar, sidebars, rulers, buttons) and print ONLY document content.
+ * Suppress browser-added headers/footers (e.g. tauri.localhost URL).
+ * ============================================================================ */
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide app chrome, toolbars, navigation, rulers, sidebars, buttons */
+  [data-testid="editor-toolbar"],
+  [data-testid="toolbar"],
+  .editor-toolbar,
+  [role="toolbar"],
+  header,
+  nav,
+  button,
+  .share-button,
+  .sidebar,
+  .ruler,
+  .print-hide,
+  .docx-selection-overlay-container,
+  div[role="menu"],
+  div[role="dialog"] {
+    display: none !important;
+  }
+
+  /* Keep document pages clean and centered */
+  .paged-editor__pages,
+  .layout-page {
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    break-after: page;
+  }
+
+  .layout-page:last-child {
+    break-after: auto;
+  }
+}
