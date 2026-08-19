@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm --prefix ../docx-editor run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm --prefix ../docx-editor run build:demo",
+    "beforeBuildCommand": "bun run --cwd ../docx-editor build:demo",
     "frontendDist": "../docx-editor/examples/vite/dist"
   },
   "app": {
