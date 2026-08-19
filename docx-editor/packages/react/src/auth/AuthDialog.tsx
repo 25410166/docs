@@ -3,11 +3,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AuthService } from './service.ts';
-import type {
-  DeviceInfo,
-  EntitlementInfo,
-  UserPlanInfo,
-} from './types.ts';
+import type { DeviceInfo, EntitlementInfo, UserPlanInfo } from './types.ts';
 
 type AuthWindow = Window & {
   __deskApp__?: {
@@ -147,7 +143,10 @@ export function AuthDialog({
       }
     };
 
-    window.addEventListener('cword:deeplink' as keyof WindowEventMap, tauriListener as EventListener);
+    window.addEventListener(
+      'cword:deeplink' as keyof WindowEventMap,
+      tauriListener as EventListener
+    );
 
     // Initial check for deep link in window location or desktop window
     if (window.location.href.includes('cookapps-cword://auth')) {
@@ -155,7 +154,10 @@ export function AuthDialog({
     }
 
     return () => {
-      window.removeEventListener('cword:deeplink' as keyof WindowEventMap, tauriListener as EventListener);
+      window.removeEventListener(
+        'cword:deeplink' as keyof WindowEventMap,
+        tauriListener as EventListener
+      );
     };
   }, [authService, onAuthenticated]);
 
@@ -222,10 +224,7 @@ export function AuthDialog({
                 Complete login in your browser window. This window will update automatically.
               </p>
               {loginUrl && (
-                <button
-                  onClick={() => void openExternalUrl(loginUrl)}
-                  style={secondaryButtonStyle}
-                >
+                <button onClick={() => void openExternalUrl(loginUrl)} style={secondaryButtonStyle}>
                   Re-open Login Page
                 </button>
               )}
@@ -242,8 +241,16 @@ export function AuthDialog({
           {state === 'signed_in' && (
             <div style={{ textAlign: 'center', padding: '1rem' }}>
               <h3 style={{ color: '#16a34a', margin: '0 0 0.5rem 0' }}>Signed in</h3>
-              {user && <p style={{ margin: '0.25rem 0' }}>User: {user.name} ({user.email})</p>}
-              {entitlement && <p style={{ margin: '0.25rem 0', fontSize: '0.875rem', color: '#4b5563' }}>Plan: {user?.planCode || 'Active'}</p>}
+              {user && (
+                <p style={{ margin: '0.25rem 0' }}>
+                  User: {user.name} ({user.email})
+                </p>
+              )}
+              {entitlement && (
+                <p style={{ margin: '0.25rem 0', fontSize: '0.875rem', color: '#4b5563' }}>
+                  Plan: {user?.planCode || 'Active'}
+                </p>
+              )}
               <button onClick={onClose} style={{ ...primaryButtonStyle, marginTop: '1rem' }}>
                 Continue to CWord
               </button>
@@ -252,7 +259,9 @@ export function AuthDialog({
 
           {state === 'rate_limited' && (
             <div style={{ textAlign: 'center' }}>
-              <p style={{ color: '#dc2626' }}>Rate limited. Please wait a moment before retrying.</p>
+              <p style={{ color: '#dc2626' }}>
+                Rate limited. Please wait a moment before retrying.
+              </p>
               <button onClick={() => handleStartLogin()} style={primaryButtonStyle}>
                 Retry Login
               </button>
@@ -329,7 +338,8 @@ export function AuthDialog({
             <div>
               <p style={{ color: '#d97706', fontWeight: 600 }}>IP Change Detected</p>
               <p style={{ color: '#4b5563' }}>
-                Your public IP address changed. Please re-authenticate online to verify your device session.
+                Your public IP address changed. Please re-authenticate online to verify your device
+                session.
               </p>
               <button onClick={() => handleStartLogin()} style={primaryButtonStyle}>
                 Re-authenticate Now

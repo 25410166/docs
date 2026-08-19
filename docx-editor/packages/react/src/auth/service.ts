@@ -1,11 +1,7 @@
 // Copyright (c) 2026 Casual Office
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  CWORD_AUTH_CONFIG,
-  resolveCookAppsBaseUrl,
-  type AuthConfigOptions,
-} from './config.ts';
+import { CWORD_AUTH_CONFIG, resolveCookAppsBaseUrl, type AuthConfigOptions } from './config.ts';
 import {
   createDeviceProofSignature,
   createPkceChallenge,
@@ -50,7 +46,8 @@ export class AuthService {
         ? (window as unknown as { __DESKTOP_LEASE_PUBLIC_KEY_BASE64__?: string })
             .__DESKTOP_LEASE_PUBLIC_KEY_BASE64__
         : undefined;
-    this.leasePublicKeyBase64 = opts.leasePublicKeyBase64 || envLeasePublicKey || windowLeasePublicKey;
+    this.leasePublicKeyBase64 =
+      opts.leasePublicKeyBase64 || envLeasePublicKey || windowLeasePublicKey;
   }
 
   private getApiPrefix(): string {
@@ -220,14 +217,21 @@ export class AuthService {
   /**
    * Step 2: Handle deep-link callback (cookapps-cword://auth?code=...&state=...)
    */
-  public async handleCallbackUrl(
-    urlStr: string
-  ): Promise<{ success: boolean; data?: DesktopAuthExchangeResponse; error?: string; errorCode?: string }> {
+  public async handleCallbackUrl(urlStr: string): Promise<{
+    success: boolean;
+    data?: DesktopAuthExchangeResponse;
+    error?: string;
+    errorCode?: string;
+  }> {
     try {
       const url = new URL(urlStr);
 
       if (url.protocol !== `${AuthService.CALLBACK_SCHEME}:`) {
-        return { success: false, error: `Invalid callback scheme: ${url.protocol}`, errorCode: 'INVALID_STATE' };
+        return {
+          success: false,
+          error: `Invalid callback scheme: ${url.protocol}`,
+          errorCode: 'INVALID_STATE',
+        };
       }
 
       // Check host or pathname for 'auth'
@@ -241,19 +245,31 @@ export class AuthService {
 
       if (!code || !state) {
         await SecureAuthStore.clearPendingFlow();
-        return { success: false, error: 'Callback URL missing code or state parameter', errorCode: 'INVALID_STATE' };
+        return {
+          success: false,
+          error: 'Callback URL missing code or state parameter',
+          errorCode: 'INVALID_STATE',
+        };
       }
 
       const storedState = await SecureAuthStore.getPendingState();
       if (!storedState || !this.constantTimeCompare(state, storedState)) {
         await SecureAuthStore.clearPendingFlow();
-        return { success: false, error: 'State mismatch - possible CSRF attack', errorCode: 'INVALID_STATE' };
+        return {
+          success: false,
+          error: 'State mismatch - possible CSRF attack',
+          errorCode: 'INVALID_STATE',
+        };
       }
 
       const codeVerifier = await SecureAuthStore.getPendingCodeVerifier();
       if (!codeVerifier) {
         await SecureAuthStore.clearPendingFlow();
-        return { success: false, error: 'Missing pending PKCE code verifier', errorCode: 'PKCE_VERIFICATION_FAILED' };
+        return {
+          success: false,
+          error: 'Missing pending PKCE code verifier',
+          errorCode: 'PKCE_VERIFICATION_FAILED',
+        };
       }
 
       const deviceKey = await SecureAuthStore.getOrCreateDeviceKey();
@@ -264,7 +280,11 @@ export class AuthService {
     } catch (err: unknown) {
       await SecureAuthStore.clearPendingFlow();
       const message = err instanceof Error ? err.message : String(err);
-      return { success: false, error: `Callback processing error: ${message}`, errorCode: 'INVALID_STATE' };
+      return {
+        success: false,
+        error: `Callback processing error: ${message}`,
+        errorCode: 'INVALID_STATE',
+      };
     }
   }
 
@@ -290,7 +310,12 @@ export class AuthService {
 
       const data = response.data as DesktopAuthExchangeResponse;
 
-      if (response.status < 200 || response.status >= 300 || !data.authenticated || !data.accessToken) {
+      if (
+        response.status < 200 ||
+        response.status >= 300 ||
+        !data.authenticated ||
+        !data.accessToken
+      ) {
         return {
           success: false,
           authenticated: false,
@@ -303,7 +328,10 @@ export class AuthService {
 
       // Verify lease if returned & lease key configured
       if (data.leaseToken && this.leasePublicKeyBase64) {
-        const leaseCheck = await verifyLeaseTokenOffline(data.leaseToken, this.leasePublicKeyBase64);
+        const leaseCheck = await verifyLeaseTokenOffline(
+          data.leaseToken,
+          this.leasePublicKeyBase64
+        );
         if (!leaseCheck.valid) {
           return {
             success: false,
@@ -347,20 +375,25 @@ export class AuthService {
     const timestamp = Math.floor(Date.now() / 1000);
     const nonce = generateRandomUrlSafeString(24);
 
-    const signature = await createDeviceProofSignature(privateKey, timestamp, nonce, AuthService.APP_SLUG);
+    const signature = await createDeviceProofSignature(
+      privateKey,
+      timestamp,
+      nonce,
+      AuthService.APP_SLUG
+    );
 
     try {
       const response = await this.requestJson(
         `${this.getApiPrefix()}/api/desktop/session?appSlug=${AuthService.APP_SLUG}`,
         {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'X-CookApps-Device-Key': deviceKey,
-          'X-CookApps-Timestamp': String(timestamp),
-          'X-CookApps-Nonce': nonce,
-          'X-CookApps-Signature': signature,
-        },
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-CookApps-Device-Key': deviceKey,
+            'X-CookApps-Timestamp': String(timestamp),
+            'X-CookApps-Nonce': nonce,
+            'X-CookApps-Signature': signature,
+          },
         }
       );
 
@@ -434,7 +467,10 @@ export class AuthService {
         return { allowed: false, reason: 'INVALID_SIGNATURE' };
       }
 
-      if (!verifyRes.payload.app_entitlements.includes(AuthService.APP_SLUG) || !verifyRes.payload.entitlement_allowed) {
+      if (
+        !verifyRes.payload.app_entitlements.includes(AuthService.APP_SLUG) ||
+        !verifyRes.payload.entitlement_allowed
+      ) {
         return { allowed: false, reason: 'EXPIRED', payload: verifyRes.payload };
       }
 

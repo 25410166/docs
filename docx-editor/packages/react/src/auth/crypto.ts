@@ -30,10 +30,7 @@ export function base64ToBytes(b64: string): Uint8Array {
 }
 
 export function bytesToBase64Url(bytes: Uint8Array): string {
-  return bytesToBase64(bytes)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+  return bytesToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 export function base64UrlToBytes(b64url: string): Uint8Array {
@@ -113,13 +110,7 @@ export async function exportPrivateKeyJwk(privateKey: CryptoKey): Promise<JsonWe
  * Imports private key from JWK format.
  */
 export async function importPrivateKeyJwk(jwk: JsonWebKey): Promise<CryptoKey> {
-  return await crypto.subtle.importKey(
-    'jwk',
-    jwk,
-    { name: 'Ed25519' },
-    true,
-    ['sign']
-  );
+  return await crypto.subtle.importKey('jwk', jwk, { name: 'Ed25519' }, true, ['sign']);
 }
 
 /**

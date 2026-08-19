@@ -27,7 +27,7 @@ export const CWORD_AUTH_CONFIG = {
  */
 export function resolveCookAppsBaseUrl(overrideUrl?: string): string {
   if (overrideUrl) return overrideUrl.replace(/\/$/, '');
-  
+
   if (typeof process !== 'undefined' && process.env?.VITE_COOKAPPS_BASE_URL) {
     return process.env.VITE_COOKAPPS_BASE_URL.replace(/\/$/, '');
   }

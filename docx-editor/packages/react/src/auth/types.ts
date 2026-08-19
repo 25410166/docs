@@ -105,5 +105,5 @@ export interface LeasePayload {
 
 export interface DeviceKeyPair {
   publicKeySpkiBase64: string; // Base64 of DER SPKI Ed25519 public key
-  privateKeyJwk: JsonWebKey;  // Exported JWK for persistent storage
+  privateKeyJwk: JsonWebKey; // Exported JWK for persistent storage
 }

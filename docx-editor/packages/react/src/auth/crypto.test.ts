@@ -82,7 +82,10 @@ describe('CWord Auth Crypto Utilities', () => {
 
   it('rejects lease tokens that do not have exactly 2 parts', async () => {
     const keyPair = await generateDeviceKeyPair();
-    const res3Parts = await verifyLeaseTokenOffline('part1.part2.part3', keyPair.publicKeySpkiBase64);
+    const res3Parts = await verifyLeaseTokenOffline(
+      'part1.part2.part3',
+      keyPair.publicKeySpkiBase64
+    );
     expect(res3Parts.valid).toBe(false);
     expect(res3Parts.error).toContain('exactly 2 parts');
 

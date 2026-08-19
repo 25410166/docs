@@ -88,10 +88,14 @@ describe('CWord AuthService Integration', () => {
     await SecureAuthStore.setPendingState('expected-state');
     await SecureAuthStore.setPendingCodeVerifier('expected-verifier');
 
-    const wrongSchemeResult = await authService.handleCallbackUrl('wrong-scheme://auth?code=123&state=expected-state');
+    const wrongSchemeResult = await authService.handleCallbackUrl(
+      'wrong-scheme://auth?code=123&state=expected-state'
+    );
     expect(wrongSchemeResult.success).toBe(false);
 
-    const wrongStateResult = await authService.handleCallbackUrl('cookapps-cword://auth?code=123&state=wrong-state');
+    const wrongStateResult = await authService.handleCallbackUrl(
+      'cookapps-cword://auth?code=123&state=wrong-state'
+    );
     expect(wrongStateResult.success).toBe(false);
     expect(wrongStateResult.errorCode).toBe('INVALID_STATE');
 

@@ -88,9 +88,10 @@ export class SecureAuthStore {
   public static async getOrCreateDeviceKey(): Promise<string> {
     let key = await SecureAuthStore.getRaw('deviceKey');
     if (!key) {
-      const uuid = typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : generateRandomUrlSafeString(32);
+      const uuid =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : generateRandomUrlSafeString(32);
       key = `cword-${uuid}`;
       await SecureAuthStore.setRaw('deviceKey', key);
     }
@@ -157,7 +158,10 @@ export class SecureAuthStore {
   }
 
   public static async setLeaseExpiresAt(timestampSec: number | null): Promise<void> {
-    await SecureAuthStore.setRaw('leaseExpiresAt', timestampSec !== null ? String(timestampSec) : null);
+    await SecureAuthStore.setRaw(
+      'leaseExpiresAt',
+      timestampSec !== null ? String(timestampSec) : null
+    );
   }
 
   public static async getLeaseGraceUntil(): Promise<number | null> {
@@ -166,7 +170,10 @@ export class SecureAuthStore {
   }
 
   public static async setLeaseGraceUntil(timestampSec: number | null): Promise<void> {
-    await SecureAuthStore.setRaw('leaseGraceUntil', timestampSec !== null ? String(timestampSec) : null);
+    await SecureAuthStore.setRaw(
+      'leaseGraceUntil',
+      timestampSec !== null ? String(timestampSec) : null
+    );
   }
 
   public static async clearSessionTokens(): Promise<void> {
