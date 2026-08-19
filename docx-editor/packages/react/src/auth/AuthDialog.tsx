@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Casual Office
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AuthService } from './service.ts';
 import type {
   DeviceInfo,
@@ -10,6 +10,9 @@ import type {
 } from './types.ts';
 
 type AuthWindow = Window & {
+  __deskApp__?: {
+    openExternalUrl?: (url: string) => Promise<void>;
+  };
   __TAURI__?: {
     opener?: {
       openUrl: (url: string) => Promise<void>;
@@ -20,6 +23,8 @@ type AuthWindow = Window & {
 export interface AuthDialogProps {
   isOpen: boolean;
   onClose?: () => void;
+  canClose?: boolean;
+  autoStart?: boolean;
   onAuthenticated?: (user: UserPlanInfo, entitlement: EntitlementInfo) => void;
   authService: AuthService;
 }
@@ -41,6 +46,8 @@ export type LoginState =
 export function AuthDialog({
   isOpen,
   onClose,
+  canClose = true,
+  autoStart = true,
   onAuthenticated,
   authService,
 }: AuthDialogProps) {
@@ -51,6 +58,54 @@ export function AuthDialog({
   const [activeDevices, setActiveDevices] = useState<DeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [loginUrl, setLoginUrl] = useState<string | null>(null);
+
+  const openExternalUrl = useCallback(async (targetUrl: string) => {
+    const desktopBridge =
+      typeof window !== 'undefined' ? (window as AuthWindow).__deskApp__ : undefined;
+    if (desktopBridge?.openExternalUrl) {
+      await desktopBridge.openExternalUrl(targetUrl);
+      return;
+    }
+
+    const opener =
+      typeof window !== 'undefined' ? (window as AuthWindow).__TAURI__?.opener : undefined;
+    if (opener?.openUrl) {
+      await opener.openUrl(targetUrl);
+      return;
+    }
+
+    const openedWindow = window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    if (!openedWindow) throw new Error('Could not open system browser');
+  }, []);
+
+  const handleStartLogin = useCallback(
+    async (replaceDeviceId?: string) => {
+      setState('starting');
+      setErrorMessage(null);
+      const startRes = await authService.startLogin({ replaceDeviceId });
+
+      if (!startRes.success || !startRes.loginUrl) {
+        if (startRes.errorCode === 'RATE_LIMITED') {
+          setState('rate_limited');
+        } else {
+          setState('error');
+          setErrorMessage(startRes.error || 'Failed to start authentication session');
+        }
+        return;
+      }
+
+      setLoginUrl(startRes.loginUrl);
+      setState('opening_browser');
+      try {
+        await openExternalUrl(startRes.loginUrl);
+        setState('waiting_confirmation');
+      } catch (error) {
+        setState('error');
+        setErrorMessage(error instanceof Error ? error.message : 'Could not open system browser');
+      }
+    },
+    [authService, openExternalUrl]
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -104,43 +159,12 @@ export function AuthDialog({
     };
   }, [authService, onAuthenticated]);
 
+  useEffect(() => {
+    if (!isOpen || !autoStart || state !== 'idle') return;
+    void handleStartLogin();
+  }, [autoStart, handleStartLogin, isOpen, state]);
+
   if (!isOpen) return null;
-
-  const handleStartLogin = async (replaceDeviceId?: string) => {
-    setState('starting');
-    setErrorMessage(null);
-    const startRes = await authService.startLogin({ replaceDeviceId });
-
-    if (!startRes.success || !startRes.loginUrl) {
-      if (startRes.errorCode === 'RATE_LIMITED') {
-        setState('rate_limited');
-      } else {
-        setState('error');
-        setErrorMessage(startRes.error || 'Failed to start authentication session');
-      }
-      return;
-    }
-
-    setLoginUrl(startRes.loginUrl);
-    setState('opening_browser');
-
-    // Open browser via desktop opener or window.open
-    const opener =
-      typeof window !== 'undefined'
-        ? (window as AuthWindow).__TAURI__?.opener
-        : undefined;
-    if (opener?.openUrl) {
-      try {
-        await opener.openUrl(startRes.loginUrl);
-      } catch {
-        window.open(startRes.loginUrl, '_blank');
-      }
-    } else {
-      window.open(startRes.loginUrl, '_blank');
-    }
-
-    setState('waiting_confirmation');
-  };
 
   const handleReplaceDeviceConfirm = () => {
     if (!selectedDeviceId) return;
@@ -154,7 +178,7 @@ export function AuthDialog({
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
             CookApps Authentication — CWord
           </h2>
-          {onClose && (
+          {onClose && canClose && (
             <button onClick={onClose} style={closeButtonStyle}>
               ×
             </button>
@@ -165,11 +189,15 @@ export function AuthDialog({
           {state === 'idle' && (
             <div>
               <p style={{ marginBottom: '1.25rem', color: '#4b5563' }}>
-                Sign in with your CookApps account to activate CWord and sync entitlements.
+                {autoStart
+                  ? 'Sign in with your CookApps account to activate CWord and sync entitlements.'
+                  : 'Checking CookApps session...'}
               </p>
-              <button onClick={() => handleStartLogin()} style={primaryButtonStyle}>
-                Login by CookApps Account
-              </button>
+              {autoStart && (
+                <button onClick={() => handleStartLogin()} style={primaryButtonStyle}>
+                  Login by CookApps Account
+                </button>
+              )}
             </div>
           )}
 
@@ -195,7 +223,7 @@ export function AuthDialog({
               </p>
               {loginUrl && (
                 <button
-                  onClick={() => window.open(loginUrl, '_blank')}
+                  onClick={() => void openExternalUrl(loginUrl)}
                   style={secondaryButtonStyle}
                 >
                   Re-open Login Page

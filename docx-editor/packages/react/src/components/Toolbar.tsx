@@ -607,7 +607,6 @@ export function Toolbar({
   onExportMd,
   onExportTxt,
   onReportBug,
-  onShowAbout,
   onInsertImage,
   onInsertTable,
   showTableInsert = true,
@@ -1122,7 +1121,7 @@ export function Toolbar({
       />
 
       {/* Help Menu */}
-      {(onReportBug || onShowAbout) && (
+      {onReportBug && (
         <MenuDropdown
           label={t('toolbar.help')}
           disabled={disabled}
@@ -1133,16 +1132,6 @@ export function Toolbar({
                     icon: 'bug_report',
                     label: t('toolbar.reportIssue'),
                     onClick: onReportBug,
-                  } as MenuEntry,
-                ]
-              : []),
-            ...(onReportBug && onShowAbout ? [{ type: 'separator' as const } as MenuEntry] : []),
-            ...(onShowAbout
-              ? [
-                  {
-                    icon: 'info',
-                    label: 'About Casual Editor',
-                    onClick: onShowAbout,
                   } as MenuEntry,
                 ]
               : []),

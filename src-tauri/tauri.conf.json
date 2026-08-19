@@ -4,12 +4,13 @@
   "version": "1.0.0",
   "identifier": "net.cookapps.cword",
   "build": {
-    "beforeDevCommand": "pnpm --filter docx-editor-monorepo dev",
+    "beforeDevCommand": "npm --prefix ../docx-editor run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "pnpm --filter docx-editor-monorepo build",
+    "beforeBuildCommand": "npm --prefix ../docx-editor run build:demo",
     "frontendDist": "../docx-editor/examples/vite/dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "CWord",
@@ -30,9 +31,6 @@
           "cookapps-cword"
         ]
       }
-    },
-    "single-instance": {
-      "enable": true
     }
   },
   "bundle": {

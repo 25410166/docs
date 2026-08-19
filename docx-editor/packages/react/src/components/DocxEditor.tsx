@@ -11879,12 +11879,6 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
                         path: 'Help',
                         run: handleReportBug,
                       },
-                      {
-                        id: 'help.about',
-                        label: 'About Casual Editor',
-                        path: 'Help',
-                        run: handleShowAbout,
-                      },
                     ]}
                   />
                 )}

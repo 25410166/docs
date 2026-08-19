@@ -256,6 +256,21 @@ export {
   type ProfilePatchWire,
 } from './file-source';
 
+export {
+  AuthService,
+  AuthDialog,
+  SecureAuthStore,
+  type AuthConfigOptions,
+  type AuthErrorCode,
+  type DeviceInfo,
+  type DesktopAuthExchangeResponse,
+  type DesktopAuthStartResponse,
+  type DesktopSessionResponse,
+  type EntitlementInfo,
+  type LoginState,
+  type UserPlanInfo,
+} from './auth';
+
 // Spell-check asset config — host must call this with URLs for the
 // Hunspell .aff / .dic files before the Tools → Spell check toggle
 // runs (lazy-loaded). The dictionary asset files aren't bundled into

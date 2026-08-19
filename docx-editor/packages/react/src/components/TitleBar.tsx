@@ -363,7 +363,6 @@ export function MenuBar() {
   const {
     openPageSetup: onPageSetup,
     openFileProperties: onFileProperties,
-    showAbout: onShowAbout,
     openCommandPalette: onOpenCommandPalette,
     openKeyboardShortcuts: onOpenKeyboardShortcuts,
     openPreferences: onOpenPreferences,
@@ -1112,16 +1111,6 @@ export function MenuBar() {
       label: t('toolbar.reportIssue'),
       onClick: () => (onReportBug ? onReportBug() : openReportIssue()),
     } as MenuEntry,
-    ...(onShowAbout
-      ? [
-          { type: 'separator' as const } as MenuEntry,
-          {
-            icon: 'info',
-            label: t('toolbar.aboutCasualEditor'),
-            onClick: onShowAbout,
-          } as MenuEntry,
-        ]
-      : []),
     ...(onOpenKeyboardShortcuts
       ? [
           { type: 'separator' as const } as MenuEntry,

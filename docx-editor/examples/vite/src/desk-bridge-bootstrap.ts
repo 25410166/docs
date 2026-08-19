@@ -20,7 +20,53 @@
  */
 
 const url = new URL(window.location.href);
-const isDesktop = url.searchParams.get('desk') === '1';
+const tauriWindow = window as Window & {
+  __TAURI__?: { core?: { invoke?: unknown } };
+};
+const isTauriRuntime = typeof tauriWindow.__TAURI__?.core?.invoke === 'function';
+const isDesktop = url.searchParams.get('desk') === '1' || isTauriRuntime;
+
+function setupDeskDeepLinkBridge() {
+  try {
+    if (!isDesktop || window.parent !== window) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tauriEvent = (window as any).__TAURI__?.event;
+    if (!tauriEvent?.listen) return;
+    const dispatchDeepLink = (callbackUrl: string) => {
+      window.dispatchEvent(new CustomEvent('cword:deeplink', { detail: { url: callbackUrl } }));
+    };
+
+    void tauriEvent
+      .listen('cword:deeplink', (event: { payload?: { url?: string } }) => {
+        const callbackUrl = event?.payload?.url;
+        if (callbackUrl) dispatchDeepLink(callbackUrl);
+      })
+      .catch(() => undefined);
+
+    // macOS receives deep links through the plugin event directly. Windows
+    // keeps the custom event path for single-instance command-line delivery.
+    if (/Mac/i.test(navigator.platform || '')) {
+      void tauriEvent
+        .listen('deep-link://new-url', (event: { payload?: unknown }) => {
+          const payload = event?.payload;
+          const candidates = Array.isArray(payload)
+            ? payload
+            : payload && typeof payload === 'object' && 'urls' in payload
+              ? (payload as { urls?: unknown[] }).urls
+              : [payload];
+          const callbackUrl = candidates?.find(
+            (value): value is string => typeof value === 'string' && value.startsWith('cookapps-cword://')
+          );
+          if (callbackUrl) dispatchDeepLink(callbackUrl);
+        })
+        .catch(() => undefined);
+    }
+  } catch {
+    /* Deep-link bridge is best-effort outside the Tauri shell. */
+  }
+}
+
+setupDeskDeepLinkBridge();
 
 /**
  * Desktop theme plumbing. The launcher owns the user's light/dark/system
@@ -430,6 +476,13 @@ if (isDesktop) {
         setDirty?(dirty: boolean): void;
         exportPdf?(suggestedName: string): Promise<string | null>;
         openViaMenu?(): Promise<void>;
+        authRequest?(request: {
+          url: string;
+          method: 'GET' | 'POST';
+          headers?: Record<string, string>;
+          body?: unknown;
+        }): Promise<{ status: number; body: unknown }>;
+        openExternalUrl?(url: string): Promise<void>;
       }
     | undefined;
 
@@ -556,6 +609,20 @@ if (isDesktop) {
       },
       get fileKind() {
         return fileKindFor(filePath);
+      },
+      async authRequest(request: {
+        url: string;
+        method: 'GET' | 'POST';
+        headers?: Record<string, string>;
+        body?: unknown;
+      }): Promise<{ status: number; body: unknown }> {
+        return (await inv('desktop_auth_request', { request })) as {
+          status: number;
+          body: unknown;
+        };
+      },
+      async openExternalUrl(targetUrl: string): Promise<void> {
+        await inv('plugin:opener|open_url', { url: targetUrl });
       },
       // Editor → bridge dirty signal. App.tsx forwards DocxEditor's `onChange`
       // here, so every real document change (mouse/toolbar/menu edits included)

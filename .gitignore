@@ -29,6 +29,9 @@ docx-editor/coverage/
 docx-editor/playwright-report/
 docx-editor/test-results/
 
+# Temporary IExpress payload used for local Windows installer builds.
+installer/payload/
+
 # Build/test artifacts at the outer repo root
 .pnpm-store/
 /test-results/

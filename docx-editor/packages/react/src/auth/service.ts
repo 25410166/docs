@@ -23,6 +23,15 @@ import type {
   LeasePayload,
 } from './types.ts';
 
+type DesktopAuthBridge = {
+  authRequest?: (request: {
+    url: string;
+    method: 'GET' | 'POST';
+    headers?: Record<string, string>;
+    body?: unknown;
+  }) => Promise<{ status: number; body: unknown }>;
+};
+
 export class AuthService {
   public static readonly APP_SLUG = CWORD_AUTH_CONFIG.appSlug;
   public static readonly CALLBACK_SCHEME = CWORD_AUTH_CONFIG.callbackScheme;
@@ -46,6 +55,45 @@ export class AuthService {
 
   private getApiPrefix(): string {
     return this.baseUrl;
+  }
+
+  private async requestJson(
+    url: string,
+    init: {
+      method: 'GET' | 'POST';
+      headers?: Record<string, string>;
+      body?: string;
+    }
+  ): Promise<{ status: number; data: unknown }> {
+    const desktopBridge =
+      typeof window !== 'undefined'
+        ? (window as Window & { __deskApp__?: DesktopAuthBridge }).__deskApp__
+        : undefined;
+
+    if (desktopBridge?.authRequest) {
+      let body: unknown;
+      if (init.body) {
+        try {
+          body = JSON.parse(init.body) as unknown;
+        } catch {
+          body = init.body;
+        }
+      }
+      const response = await desktopBridge.authRequest({
+        url,
+        method: init.method,
+        headers: init.headers,
+        body,
+      });
+      return { status: response.status, data: response.body };
+    }
+
+    const response = await fetch(url, init);
+    const data = await response.json().catch(() => ({}));
+    return {
+      status: typeof response.status === 'number' ? response.status : response.ok ? 200 : 400,
+      data,
+    };
   }
 
   /**
@@ -131,7 +179,7 @@ export class AuthService {
     }
 
     try {
-      const res = await fetch(`${this.getApiPrefix()}/api/desktop/auth/start`, {
+      const response = await this.requestJson(`${this.getApiPrefix()}/api/desktop/auth/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -140,9 +188,9 @@ export class AuthService {
         body: JSON.stringify(body),
       });
 
-      const data = (await res.json().catch(() => ({}))) as DesktopAuthStartResponse;
+      const data = response.data as DesktopAuthStartResponse;
 
-      if (!res.ok || !data.success || !data.loginUrl) {
+      if (response.status < 200 || response.status >= 300 || !data.success || !data.loginUrl) {
         await SecureAuthStore.clearPendingFlow();
         return {
           success: false,
@@ -150,7 +198,7 @@ export class AuthService {
           callbackScheme: AuthService.CALLBACK_SCHEME,
           expiresAt: '',
           errorCode: data.errorCode || 'LOGIN_REQUIRED',
-          error: data.error || `Start auth failed with status ${res.status}`,
+          error: data.error || `Start auth failed with status ${response.status}`,
         };
       }
 
@@ -231,7 +279,7 @@ export class AuthService {
     const body = { code, codeVerifier, deviceKey };
 
     try {
-      const res = await fetch(`${this.getApiPrefix()}/api/desktop/auth/exchange`, {
+      const response = await this.requestJson(`${this.getApiPrefix()}/api/desktop/auth/exchange`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -240,14 +288,14 @@ export class AuthService {
         body: JSON.stringify(body),
       });
 
-      const data = (await res.json().catch(() => ({}))) as DesktopAuthExchangeResponse;
+      const data = response.data as DesktopAuthExchangeResponse;
 
-      if (!res.ok || !data.authenticated || !data.accessToken) {
+      if (response.status < 200 || response.status >= 300 || !data.authenticated || !data.accessToken) {
         return {
           success: false,
           authenticated: false,
           errorCode: data.errorCode || 'INVALID_EXCHANGE_CODE',
-          error: data.error || `Exchange failed with status ${res.status}`,
+          error: data.error || `Exchange failed with status ${response.status}`,
           entitlement: data.entitlement,
           activeDevices: data.activeDevices,
         };
@@ -302,7 +350,9 @@ export class AuthService {
     const signature = await createDeviceProofSignature(privateKey, timestamp, nonce, AuthService.APP_SLUG);
 
     try {
-      const res = await fetch(`${this.getApiPrefix()}/api/desktop/session?appSlug=${AuthService.APP_SLUG}`, {
+      const response = await this.requestJson(
+        `${this.getApiPrefix()}/api/desktop/session?appSlug=${AuthService.APP_SLUG}`,
+        {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -311,9 +361,10 @@ export class AuthService {
           'X-CookApps-Nonce': nonce,
           'X-CookApps-Signature': signature,
         },
-      });
+        }
+      );
 
-      const data = (await res.json().catch(() => ({}))) as DesktopSessionResponse;
+      const data = response.data as DesktopSessionResponse;
 
       if (data.errorCode === 'IP_REAUTH_REQUIRED') {
         // Clear access token and lease token, but keep device key and keypair
@@ -336,12 +387,12 @@ export class AuthService {
         };
       }
 
-      if (!res.ok || !data.authenticated) {
+      if (response.status < 200 || response.status >= 300 || !data.authenticated) {
         return {
           success: false,
           authenticated: false,
           errorCode: data.errorCode || 'LOGIN_REQUIRED',
-          error: data.error || `Session check failed with HTTP ${res.status}`,
+          error: data.error || `Session check failed with HTTP ${response.status}`,
         };
       }
 

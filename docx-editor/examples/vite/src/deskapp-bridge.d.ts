@@ -115,6 +115,15 @@ declare global {
       /** Secure desktop storage bridge for OS credential store / Stronghold tokens */
       tokenGet?(key: string): Promise<string | null>;
       tokenSet?(key: string, value: string): Promise<void>;
+      /** Native HTTPS proxy for CookApps auth requests. */
+      authRequest?(request: {
+        url: string;
+        method: 'GET' | 'POST';
+        headers?: Record<string, string>;
+        body?: unknown;
+      }): Promise<{ status: number; body: unknown }>;
+      /** Open a URL in the OS default browser. */
+      openExternalUrl?(url: string): Promise<void>;
     };
   }
 }

@@ -25,6 +25,10 @@ import {
   convertToDocx,
   formatFromFilename,
   recordRecentFile,
+  AuthDialog,
+  AuthService,
+  type EntitlementInfo,
+  type UserPlanInfo,
   type AutoSaveEditorRef,
   type FileSource,
 } from '@casualoffice/docs';
@@ -406,6 +410,63 @@ export function App() {
   // like version history are NOT gated and work the same as on the web.
   const isDesktop = typeof window !== 'undefined' && window.__deskApp__?.isDesktop === true;
 
+  const authService = useMemo(() => new AuthService(), []);
+  const [authOpen, setAuthOpen] = useState(isDesktop);
+  const [authReady, setAuthReady] = useState(!isDesktop);
+  const [authUser, setAuthUser] = useState<UserPlanInfo | null>(null);
+  const [authEntitlement, setAuthEntitlement] = useState<EntitlementInfo | null>(null);
+
+  const handleAuthenticated = useCallback((user: UserPlanInfo, entitlement: EntitlementInfo) => {
+    setAuthUser(user);
+    setAuthEntitlement(entitlement);
+    setAuthOpen(false);
+  }, []);
+
+  const openAuth = useCallback(() => setAuthOpen(true), []);
+  const closeAuth = useCallback(() => {
+    if (!isDesktop || authUser) setAuthOpen(false);
+  }, [authUser, isDesktop]);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    let cancelled = false;
+    void authService.verifySession().then((result) => {
+      if (cancelled) return;
+      setAuthReady(true);
+      if (result.authenticated && result.user && result.entitlement) {
+        setAuthUser(result.user);
+        setAuthEntitlement(result.entitlement);
+        return;
+      }
+      setAuthOpen(true);
+    }).catch(() => {
+      if (cancelled) return;
+      setAuthReady(true);
+      setAuthOpen(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authService, isDesktop]);
+
+  const authDialog = (
+    <AuthDialog
+      isOpen={authOpen}
+      onClose={closeAuth}
+      canClose={!isDesktop || Boolean(authUser)}
+      autoStart={authReady}
+      onAuthenticated={handleAuthenticated}
+      authService={authService}
+    />
+  );
+
+  const withAuthDialog = (content: React.ReactNode) => (
+    <>
+      {content}
+      {authDialog}
+    </>
+  );
+
   // URL → view sync. Phase 1 IA mirror: pathname is the source of
   // truth for which surface is rendered, so browser back / refresh /
   // bookmark all converge. The legacy `?e2e=1` / `?skipHome=1` flags
@@ -480,7 +541,7 @@ export function App() {
   // Browser tab title = the open file's name (Google-Docs style), not the
   // app name. On the home screen, fall back to the product name.
   useEffect(() => {
-    const APP_NAME = 'Casual Editor';
+    const APP_NAME = 'CWord Editor';
     if (view === 'editor' && fileName) {
       const base = fileName.replace(/\.docx$/i, '').trim() || 'Untitled';
       document.title = `${base} — ${APP_NAME}`;
@@ -1309,7 +1370,7 @@ export function App() {
   // exact same SVG — no more drift between hand-coded inline icons
   // and the branded asset.
   const renderLogo = useCallback(() => {
-    // In Casual Office the logo brings the launcher window forward rather
+    // In CWord desktop the logo brings the launcher window forward rather
     // than navigating to a (nonexistent) web home, so label it accordingly.
     const logoLabel = isDesktop ? 'Back to Casual Office' : 'Return to home';
     return (
@@ -1364,6 +1425,25 @@ export function App() {
   const renderTitleBarRight = useCallback(
     () => (
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {isDesktop && (
+          <button
+            type="button"
+            style={{
+              ...styles.button,
+              background: authUser ? '#eff6ff' : '#2563eb',
+              color: authUser ? '#1d4ed8' : '#fff',
+              border: authUser ? '1px solid #bfdbfe' : 'none',
+            }}
+            onClick={openAuth}
+            title={
+              authUser
+                ? `${authUser.email}${authEntitlement?.allowed ? ' · CookApps active' : ''}`
+                : 'Sign in with CookApps'
+            }
+          >
+            {authUser ? authUser.name || 'Account' : 'Sign in'}
+          </button>
+        )}
         {/* Collab Share is gated by collabEnabled AND not in desktop
             mode (Casual Office is single-user). Open / Save / New live in
             the File menu, driven by <DocxEditor>'s internal handlers. */}
@@ -1421,7 +1501,7 @@ export function App() {
         {status && <span style={styles.status}>{status}</span>}
       </div>
     ),
-    [status, collabEnabled, isDesktop, deskProfile]
+    [status, collabEnabled, isDesktop, deskProfile, authUser, authEntitlement, openAuth]
   );
 
   // Collab mode is a hard fork: the editor binds to a Y.Doc fed by
@@ -1430,7 +1510,7 @@ export function App() {
   // by a child component so useCollab is always called when its
   // mounting condition is true.
   if (collabParams && collabParams.kind !== 'docx') {
-    return (
+    return withAuthDialog(
       <MarkdownCollabApp
         room={collabParams.room}
         backend={collabParams.backend}
@@ -1443,7 +1523,7 @@ export function App() {
   }
 
   if (collabParams) {
-    return (
+    return withAuthDialog(
       <CollabApp
         editorRef={editorRef}
         room={collabParams.room}
@@ -1462,23 +1542,29 @@ export function App() {
   }
 
   if (view === 'home') {
-    return (
+    return withAuthDialog(
       <Home
         onNewDocument={handleNewDocument}
         onSelectTemplate={handleSelectTemplate}
         onOpenFile={handleOpenFromHome}
+        onOpenAuth={openAuth}
+        authUserName={authUser?.name}
       />
     );
   }
 
   if (textDoc) {
     if (textDoc.kind === 'rtf') {
-      return <RtfViewer content={textDoc.text} fileName={textDoc.fileName} onBack={handleGoHome} />;
+      return withAuthDialog(
+        <RtfViewer content={textDoc.text} fileName={textDoc.fileName} onBack={handleGoHome} />
+      );
     }
     if (textDoc.kind === 'eml') {
-      return <EmlViewer content={textDoc.text} fileName={textDoc.fileName} onBack={handleGoHome} />;
+      return withAuthDialog(
+        <EmlViewer content={textDoc.text} fileName={textDoc.fileName} onBack={handleGoHome} />
+      );
     }
-    return (
+    return withAuthDialog(
       <MarkdownEditor
         initialText={textDoc.text}
         fileName={textDoc.fileName}
@@ -1494,7 +1580,7 @@ export function App() {
   // <DocxEditor> mounts here, so there is no Save path that could overwrite the
   // original file. The bound path was already unbound in the load catch.
   if (loadError) {
-    return (
+    return withAuthDialog(
       <div
         data-testid="load-error"
         style={{
@@ -1548,7 +1634,7 @@ export function App() {
     );
   }
 
-  return (
+  return withAuthDialog(
     <div style={styles.container}>
       <main style={styles.main}>
         {recoveryBuffer && (

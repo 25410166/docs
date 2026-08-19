@@ -9,6 +9,10 @@ import { afterAll, afterEach, expect, mock, test } from 'bun:test';
 GlobalRegistrator.register();
 
 mock.module('@casualoffice/docs', () => ({
+  AuthDialog: () => null,
+  AuthService: class {
+    verifySession = async () => ({ authenticated: false });
+  },
   AutosaveStatus: () => null,
   DocxEditor: ({ document }: { document?: { children?: ReadonlyArray<unknown> } }) => (
     <div data-testid="docx-editor" data-child-count={document?.children?.length ?? -1} />
@@ -88,7 +92,7 @@ test('blank Markdown clears the desktop file binding', () => {
   } as NonNullable<typeof window.__deskApp__>;
   fireEvent.click(view.getByRole('button', { name: 'Blank Markdown — Personal' }));
   expect(view.getByTestId('markdown-editor')).toBeTruthy();
-  expect(document.title).toBe('Untitled.md — Casual Editor');
+  expect(document.title).toBe('Untitled.md — CWord Editor');
   expect(window.__deskApp__.filePath).toBeNull();
 });
 

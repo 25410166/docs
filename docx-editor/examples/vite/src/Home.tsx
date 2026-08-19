@@ -31,6 +31,8 @@ interface HomeProps {
   onNewDocument: () => void;
   onSelectTemplate: (entry: TemplateEntry) => void;
   onOpenFile: (file: File) => void;
+  onOpenAuth?: () => void;
+  authUserName?: string;
 }
 
 type CategoryFilter = 'All' | TemplateCategory;
@@ -759,7 +761,13 @@ function RecentCard({
   );
 }
 
-export function Home({ onNewDocument, onSelectTemplate, onOpenFile }: HomeProps): React.JSX.Element {
+export function Home({
+  onNewDocument,
+  onSelectTemplate,
+  onOpenFile,
+  onOpenAuth,
+  authUserName,
+}: HomeProps): React.JSX.Element {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<CategoryFilter>('All');
@@ -854,26 +862,27 @@ export function Home({ onNewDocument, onSelectTemplate, onOpenFile }: HomeProps)
         <div style={styles.brandRow}>
           <img src="/logo.svg" alt="" style={styles.brandLogo} aria-hidden="true" />
           <div style={styles.brandName}>
-            Casual <span style={{ color: COLORS.brand }}>Editor</span>
+            CWord <span style={{ color: COLORS.brand }}>Editor</span>
           </div>
         </div>
         <div style={styles.topRight}>
-          <a
-            href="https://github.com/schnsrw/docx"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={styles.topLink}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = COLORS.ink;
-              e.currentTarget.style.background = COLORS.surface2;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = COLORS.inkMuted;
-              e.currentTarget.style.background = 'transparent';
-            }}
-          >
-            GitHub
-          </a>
+          {onOpenAuth && (
+            <button
+              type="button"
+              onClick={onOpenAuth}
+              style={{
+                ...styles.topLink,
+                border: authUserName ? `1px solid ${COLORS.border}` : 'none',
+                background: authUserName ? COLORS.surfaceRaised : COLORS.ctaSolid,
+                color: authUserName ? COLORS.ink : '#fff',
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+              title={authUserName ? `CookApps account: ${authUserName}` : 'Sign in with CookApps'}
+            >
+              {authUserName || 'Sign in'}
+            </button>
+          )}
         </div>
       </header>
 
@@ -887,7 +896,7 @@ export function Home({ onNewDocument, onSelectTemplate, onOpenFile }: HomeProps)
       />
 
       <section style={{ ...styles.hero, ...(isMobile && mobile.hero) }}>
-        <div style={styles.heroEyebrow}>Casual Editor</div>
+        <div style={styles.heroEyebrow}>CWord Editor</div>
         <h1 style={{ ...styles.heroTitle, ...(isMobile && mobile.heroTitle) }}>
           Start something today.
         </h1>
@@ -1088,80 +1097,7 @@ export function Home({ onNewDocument, onSelectTemplate, onOpenFile }: HomeProps)
         data-testid="home-file-input"
       />
 
-      <section
-        style={{
-          maxWidth: '1180px',
-          margin: '24px auto 0',
-          padding: isMobile ? '0 16px' : '0 40px',
-        }}
-        aria-label="AI features pre-release"
-      >
-        <div
-          style={{
-            background: '#e9edff',
-            border: `1px solid #bfdbfe`,
-            borderRadius: '10px',
-            padding: isMobile ? '10px 14px' : '10px 16px',
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '8px 12px',
-            alignItems: 'center',
-          }}
-        >
-          <span
-            style={{
-              display: 'inline-block',
-              fontSize: '10.5px',
-              fontWeight: 700,
-              color: '#1d4ed8',
-              background: '#dbeafe',
-              border: `1px solid #93c5fd`,
-              padding: '2px 8px',
-              borderRadius: '999px',
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              flexShrink: 0,
-            }}
-          >
-            Pre-release
-          </span>
-          <span style={{ fontSize: '13px', color: '#475569', lineHeight: 1.4 }}>
-            <strong style={{ color: '#0f172a' }}>AI features are on the way</strong> — inline ask,
-            rewrite panel, and a DocOps chat panel. On-device in the desktop app, or the Anthropic
-            API on the web.
-          </span>
-          <a
-            href="https://github.com/CasualOffice/docs#ai-features-pre-release"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              marginLeft: 'auto',
-              fontSize: '13px',
-              fontWeight: 600,
-              color: '#1d4ed8',
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
-            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
-          >
-            Learn more
-          </a>
-        </div>
-      </section>
 
-      <footer style={{ ...styles.footer, ...(isMobile && mobile.footer) }}>
-        <span>MIT fork of eigenpal/docx-editor · Node collab server (Hocuspocus + Yjs)</span>
-        <a
-          href="https://github.com/schnsrw/docx"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: COLORS.inkMuted, textDecoration: 'none' }}
-        >
-          schnsrw/docx
-        </a>
-      </footer>
     </div>
   );
 }
