@@ -2,6 +2,12 @@ name: Desktop Release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name (e.g. v1.0.1)'
+        required: false
+        default: 'v1.0.1'
+        type: string
   push:
     branches:
       - main
@@ -78,8 +84,8 @@ jobs:
           projectPath: src-tauri
           tauriScript: cargo tauri
           args: ${{ matrix.args }}
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_type == 'tag' && format('CWord {0}', github.ref_name) || '' }}
+          tagName: ${{ github.event.inputs.tag || (github.ref_type == 'tag' && github.ref_name) || 'v1.0.1' }}
+          releaseName: ${{ format('CWord {0}', github.event.inputs.tag || github.ref_name) }}
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           uploadUpdaterJson: false
