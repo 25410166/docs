@@ -482,6 +482,8 @@ if (isDesktop) {
           headers?: Record<string, string>;
           body?: unknown;
         }): Promise<{ status: number; body: unknown }>;
+        tokenGet?(key: string): Promise<string | null>;
+        tokenSet?(key: string, value: string): Promise<void>;
         openExternalUrl?(url: string): Promise<void>;
       }
     | undefined;
@@ -620,6 +622,12 @@ if (isDesktop) {
           status: number;
           body: unknown;
         };
+      },
+      async tokenGet(key: string): Promise<string | null> {
+        return (await inv('desktop_token_get', { key })) as string | null;
+      },
+      async tokenSet(key: string, value: string): Promise<void> {
+        await inv('desktop_token_set', { key, value });
       },
       async openExternalUrl(targetUrl: string): Promise<void> {
         await inv('plugin:opener|open_url', { url: targetUrl });

@@ -22,12 +22,25 @@ export class SecureAuthStore {
       try {
         const val = await desktopBridge.tokenGet(fullKey);
         if (val) return val;
-      } catch {
-        // Fallback if desk bridge fails
-      }
+
+        if (typeof localStorage !== 'undefined') {
+          try {
+            const legacyValue = localStorage.getItem(fullKey);
+            if (legacyValue) {
+              await desktopBridge.tokenSet?.(fullKey, legacyValue);
+              localStorage.removeItem(fullKey);
+              return legacyValue;
+            }
+          } catch {}
+        }
+
+        return null;
+      } catch {}
     }
     if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem(fullKey);
+      try {
+        return localStorage.getItem(fullKey);
+      } catch {}
     }
     return SecureAuthStore.memoryStore.get(fullKey) || null;
   }
@@ -47,18 +60,24 @@ export class SecureAuthStore {
     if (desktopBridge?.tokenSet) {
       try {
         await desktopBridge.tokenSet(fullKey, value ?? '');
+        if (typeof localStorage !== 'undefined') {
+          try {
+            localStorage.removeItem(fullKey);
+          } catch {}
+        }
         return;
-      } catch {
-        // Fallback if desk bridge fails
-      }
+      } catch {}
     }
 
     if (typeof localStorage !== 'undefined') {
-      if (value === null) {
-        localStorage.removeItem(fullKey);
-      } else {
-        localStorage.setItem(fullKey, value);
-      }
+      try {
+        if (value === null) {
+          localStorage.removeItem(fullKey);
+        } else {
+          localStorage.setItem(fullKey, value);
+        }
+        return;
+      } catch {}
     }
   }
 

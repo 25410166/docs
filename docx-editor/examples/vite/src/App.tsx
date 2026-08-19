@@ -436,6 +436,7 @@ export function App() {
       if (result.authenticated && result.user && result.entitlement) {
         setAuthUser(result.user);
         setAuthEntitlement(result.entitlement);
+        setAuthOpen(false);
         return;
       }
       setAuthOpen(true);
